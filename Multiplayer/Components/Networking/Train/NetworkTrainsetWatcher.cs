@@ -73,6 +73,7 @@ public class NetworkTrainsetWatcher : SingletonBehaviour<NetworkTrainsetWatcher>
             TrainCar trainCar = set.cars[i];
             if (!trainCar.TryNetworked(out NetworkedTrainCar _))
             {
+                Multiplayer.LogDebug(() => $"TrainCar UNKNOWN is not networked! Is active? {trainCar.gameObject.activeInHierarchy}");
                 Multiplayer.LogDebug(() => $"TrainCar {trainCar.ID} is not networked! Is active? {trainCar.gameObject.activeInHierarchy}");
                 continue;
             }

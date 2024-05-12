@@ -12,7 +12,7 @@ public readonly struct ModInfo
     public readonly string Id;
     public readonly string Version;
 
-    private ModInfo(string id, string version)
+    public ModInfo(string id, string version)
     {
         Id = id;
         Version = version;

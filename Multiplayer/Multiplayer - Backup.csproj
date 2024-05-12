@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
         <TargetFramework>net48</TargetFramework>
         <LangVersion>latest</LangVersion>
@@ -96,7 +96,7 @@
         <Copy SourceFiles="../info.json;../locale.csv;../LICENSE;$(TargetPath);$(OutDir)/Humanizer.dll" DestinationFolder="../build/" />
 
 		<!-- Sign Assemblies -->
-        <!--Exec Condition="$(Cert) != ''" Command="&quot;$(SignToolPath)SignTool.exe&quot; sign /fd SHA256 /n &quot;$(Cert)&quot; /t http://timestamp.sectigo.com &quot;../build/Multiplayer.dll&quot;" /-->
+		<Exec Condition="Exists('$(Cert)')" Command="SignTool sign /f '$(Cert)' /t http://timestamp.sectigo.com '../build/Humanizer.dll'>
 
 
         <!-- Copy to game install folder -->

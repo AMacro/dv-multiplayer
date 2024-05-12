@@ -91,5 +91,5 @@ public class StartGameData_ServerSave : AStartGameData
         return false;
     }
 
-    public override void MakeCurrent(){}
+    public override void MakeCurrent() { }
 }

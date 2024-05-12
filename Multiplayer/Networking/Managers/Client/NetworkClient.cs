@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using DV;
 using DV.Damage;
@@ -11,13 +14,17 @@ using DV.UI;
 using DV.UIFramework;
 using DV.WeatherSystem;
 using LiteNetLib;
+using Multiplayer.Components;
 using Multiplayer.Components.MainMenu;
 using Multiplayer.Components.Networking;
+using Multiplayer.Components.Networking.Jobs;
+using Multiplayer.Components.Networking.Player;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Components.Networking.World;
 using Multiplayer.Components.SaveGame;
 using Multiplayer.Networking.Data;
 using Multiplayer.Networking.Packets.Clientbound;
+using Multiplayer.Networking.Packets.Clientbound.Jobs;
 using Multiplayer.Networking.Packets.Clientbound.SaveGame;
 using Multiplayer.Networking.Packets.Clientbound.Train;
 using Multiplayer.Networking.Packets.Clientbound.World;
@@ -52,7 +59,8 @@ public class NetworkClient : NetworkManager
     public void Start(string address, int port, string password)
     {
         netManager.Start();
-        ServerboundClientLoginPacket serverboundClientLoginPacket = new() {
+        ServerboundClientLoginPacket serverboundClientLoginPacket = new()
+        {
             Username = Multiplayer.Settings.Username,
             Guid = Multiplayer.Settings.GetGuid().ToByteArray(),
             Password = password,
@@ -106,6 +114,10 @@ public class NetworkClient : NetworkManager
         netPacketProcessor.SubscribeReusable<ClientboundLicenseAcquiredPacket>(OnClientboundLicenseAcquiredPacket);
         netPacketProcessor.SubscribeReusable<ClientboundGarageUnlockPacket>(OnClientboundGarageUnlockPacket);
         netPacketProcessor.SubscribeReusable<ClientboundDebtStatusPacket>(OnClientboundDebtStatusPacket);
+
+        netPacketProcessor.SubscribeReusable<ClientboundJobsPacket>(OnClientboundJobsPacket);
+        netPacketProcessor.SubscribeReusable<ClientboundJobCreatePacket>(OnClientboundJobCreatePacket);
+        netPacketProcessor.SubscribeReusable<ClientboundJobTakeResponsePacket>(OnClientboundJobTakeResponsePacket);
     }
 
     #region Net Events
@@ -593,6 +605,115 @@ public class NetworkClient : NetworkManager
         CareerManagerDebtControllerPatch.HasDebt = packet.HasDebt;
     }
 
+    private void OnClientboundJobCreatePacket(ClientboundJobCreatePacket packet)
+    {
+        if (NetworkLifecycle.Instance.IsHost())
+            return;
+
+        List<Task> tasks = new List<Task>();
+        foreach (TaskBeforeDataData taskBeforeDataData in packet.job.Tasks)
+            tasks.Add(TaskBeforeDataData.ToTask(taskBeforeDataData));
+
+        StationsChainDataData chainData = packet.job.ChainData;
+        //packet.job.JobType
+        Job newJob = new Job(
+                tasks,
+                (JobType)packet.job.JobType,
+                packet.job.TimeLimit,
+                packet.job.InitialWage,
+                new StationsChainData(chainData.ChainOriginYardId, chainData.ChainDestinationYardId),
+                packet.job.ID,
+                (JobLicenses)packet.job.RequiredLicenses
+            );
+
+        //NetworkedJob netJob = NetworkedJob.AddJob(packet.stationId, newJob);
+        //netJob.NetId = packet.netId;
+
+        //Find the station
+        StationController station;
+        if(!StationComponentLookup.Instance.StationControllerFromId(packet.stationId, out station))
+        {
+            Multiplayer.LogWarning($"OnClientboundJobCreatePacket Could not get staion for stationId: {packet.stationId}");
+            return;
+        }
+
+        //create a new game object
+        NetworkedJob netJob = station.gameObject.AddComponent<NetworkedJob>();
+        if (netJob != null)
+        {
+            netJob.job = newJob;
+            netJob.stationID = packet.stationId;
+            netJob.NetId = packet.netId;
+        }
+
+    }
+    private void OnClientboundJobsPacket(ClientboundJobsPacket packet)
+    {
+        if (NetworkLifecycle.Instance.IsHost())
+            return;
+
+        if (!StationComponentLookup.Instance.StationControllerFromId(packet.stationId, out StationController station))
+        {
+            LogError("Received job packet but couldn't find station!");
+            return;
+        }
+
+        Multiplayer.Log($"Received job packet. Job count:{packet.Jobs.Count()}");
+
+        for (int i=0;i < packet.Jobs.Count(); i++)
+        {
+            JobData job = packet.Jobs[i];
+            ushort netId = packet.netIds[i];
+
+            var tasks = new List<Task>();
+            foreach (TaskBeforeDataData taskBeforeDataData in job.Tasks)
+                tasks.Add(TaskBeforeDataData.ToTask(taskBeforeDataData));
+
+            StationsChainDataData chainData = job.ChainData;
+
+            Job newJob = new Job(
+                tasks,
+                (JobType)job.JobType,
+                job.TimeLimit,
+                job.InitialWage,
+                new StationsChainData(chainData.ChainOriginYardId, chainData.ChainDestinationYardId),
+                job.ID,
+                (JobLicenses)job.RequiredLicenses
+            );
+
+            Multiplayer.Log($"Attempting to add Job with ID {newJob.ID} to station.");//\r\nExisting jobs are: {station.logicStation.availableJobs.Select(x=>x.ID + "\r\n\t").ToArray().Join()}\r\nDoes the Job already exist in station? {station.logicStation.availableJobs.Where(x => x.ID == newJob.ID).Count() > 0}");
+
+            //create a new game object
+            NetworkedJob netJob = station.gameObject.AddComponent<NetworkedJob>();
+            if (netJob != null)
+            {
+                netJob.job = newJob;
+                netJob.stationID = packet.stationId;
+                netJob.NetId = netId;
+            }
+        }
+    }
+
+    private void OnClientboundJobTakeResponsePacket(ClientboundJobTakeResponsePacket packet)
+    {
+        NetworkedJob networkedJob;
+
+        if(!NetworkedJob.Get(packet.netId, out networkedJob))
+            return;
+
+        NetworkedPlayer player;
+        if (PlayerManager.TryGetPlayer(packet.playerId, out player))
+        {
+            networkedJob.takenBy = player.Guid;
+        }
+
+        Multiplayer.Log($"OnClientboundJobTakeResponsePacket jobId: {networkedJob.job.ID}, Status: {packet.granted}");
+        networkedJob.allowTake = packet.granted;
+        networkedJob.jobValidator.ProcessJobOverview(networkedJob.jobOverview);
+        networkedJob.jobValidator = null;
+        networkedJob.jobOverview = null;
+    }
+
     #endregion
 
     #region Senders
@@ -615,7 +736,8 @@ public class NetworkClient : NetworkManager
 
     public void SendPlayerPosition(Vector3 position, Vector3 moveDir, float rotationY, bool isJumping, bool isOnCar, bool reliable)
     {
-        SendPacketToServer(new ServerboundPlayerPositionPacket {
+        SendPacketToServer(new ServerboundPlayerPositionPacket
+        {
             Position = position,
             MoveDir = new Vector2(moveDir.x, moveDir.z),
             RotationY = rotationY,
@@ -625,21 +747,24 @@ public class NetworkClient : NetworkManager
 
     public void SendPlayerCar(ushort carId)
     {
-        SendPacketToServer(new ServerboundPlayerCarPacket {
+        SendPacketToServer(new ServerboundPlayerCarPacket
+        {
             CarId = carId
         }, DeliveryMethod.ReliableOrdered);
     }
 
     public void SendTimeAdvance(float amountOfTimeToSkipInSeconds)
     {
-        SendPacketToServer(new ServerboundTimeAdvancePacket {
+        SendPacketToServer(new ServerboundTimeAdvancePacket
+        {
             amountOfTimeToSkipInSeconds = amountOfTimeToSkipInSeconds
         }, DeliveryMethod.ReliableUnordered);
     }
 
     public void SendJunctionSwitched(ushort netId, byte selectedBranch, Junction.SwitchMode mode)
     {
-        SendPacketToServer(new CommonChangeJunctionPacket {
+        SendPacketToServer(new CommonChangeJunctionPacket
+        {
             NetId = netId,
             SelectedBranch = selectedBranch,
             Mode = (byte)mode
@@ -648,7 +773,8 @@ public class NetworkClient : NetworkManager
 
     public void SendTurntableRotation(byte netId, float rotation)
     {
-        SendPacketToServer(new CommonRotateTurntablePacket {
+        SendPacketToServer(new CommonRotateTurntablePacket
+        {
             NetId = netId,
             rotation = rotation
         }, DeliveryMethod.ReliableOrdered);
@@ -656,7 +782,8 @@ public class NetworkClient : NetworkManager
 
     public void SendTrainCouple(Coupler coupler, Coupler otherCoupler, bool playAudio, bool viaChainInteraction)
     {
-        SendPacketToServer(new CommonTrainCouplePacket {
+        SendPacketToServer(new CommonTrainCouplePacket
+        {
             NetId = coupler.train.GetNetId(),
             IsFrontCoupler = coupler.isFrontCoupler,
             OtherNetId = otherCoupler.train.GetNetId(),
@@ -668,7 +795,8 @@ public class NetworkClient : NetworkManager
 
     public void SendTrainUncouple(Coupler coupler, bool playAudio, bool dueToBrokenCouple, bool viaChainInteraction)
     {
-        SendPacketToServer(new CommonTrainUncouplePacket {
+        SendPacketToServer(new CommonTrainUncouplePacket
+        {
             NetId = coupler.train.GetNetId(),
             IsFrontCoupler = coupler.isFrontCoupler,
             PlayAudio = playAudio,
@@ -679,7 +807,8 @@ public class NetworkClient : NetworkManager
 
     public void SendHoseConnected(Coupler coupler, Coupler otherCoupler, bool playAudio)
     {
-        SendPacketToServer(new CommonHoseConnectedPacket {
+        SendPacketToServer(new CommonHoseConnectedPacket
+        {
             NetId = coupler.train.GetNetId(),
             IsFront = coupler.isFrontCoupler,
             OtherNetId = otherCoupler.train.GetNetId(),
@@ -690,7 +819,8 @@ public class NetworkClient : NetworkManager
 
     public void SendHoseDisconnected(Coupler coupler, bool playAudio)
     {
-        SendPacketToServer(new CommonHoseDisconnectedPacket {
+        SendPacketToServer(new CommonHoseDisconnectedPacket
+        {
             NetId = coupler.train.GetNetId(),
             IsFront = coupler.isFrontCoupler,
             PlayAudio = playAudio
@@ -699,7 +829,8 @@ public class NetworkClient : NetworkManager
 
     public void SendMuConnected(MultipleUnitCable cable, MultipleUnitCable otherCable, bool playAudio)
     {
-        SendPacketToServer(new CommonMuConnectedPacket {
+        SendPacketToServer(new CommonMuConnectedPacket
+        {
             NetId = cable.muModule.train.GetNetId(),
             IsFront = cable.isFront,
             OtherNetId = otherCable.muModule.train.GetNetId(),
@@ -710,7 +841,8 @@ public class NetworkClient : NetworkManager
 
     public void SendMuDisconnected(ushort netId, MultipleUnitCable cable, bool playAudio)
     {
-        SendPacketToServer(new CommonMuDisconnectedPacket {
+        SendPacketToServer(new CommonMuDisconnectedPacket
+        {
             NetId = netId,
             IsFront = cable.isFront,
             PlayAudio = playAudio
@@ -719,7 +851,8 @@ public class NetworkClient : NetworkManager
 
     public void SendCockState(ushort netId, Coupler coupler, bool isOpen)
     {
-        SendPacketToServer(new CommonCockFiddlePacket {
+        SendPacketToServer(new CommonCockFiddlePacket
+        {
             NetId = netId,
             IsFront = coupler.isFrontCoupler,
             IsOpen = isOpen
@@ -728,14 +861,16 @@ public class NetworkClient : NetworkManager
 
     public void SendBrakeCylinderReleased(ushort netId)
     {
-        SendPacketToServer(new CommonBrakeCylinderReleasePacket {
+        SendPacketToServer(new CommonBrakeCylinderReleasePacket
+        {
             NetId = netId
         }, DeliveryMethod.ReliableUnordered);
     }
 
     public void SendHandbrakePositionChanged(ushort netId, float position)
     {
-        SendPacketToServer(new CommonHandbrakePositionPacket {
+        SendPacketToServer(new CommonHandbrakePositionPacket
+        {
             NetId = netId,
             Position = position
         }, DeliveryMethod.ReliableOrdered);
@@ -743,7 +878,8 @@ public class NetworkClient : NetworkManager
 
     public void SendPorts(ushort netId, string[] portIds, float[] portValues)
     {
-        SendPacketToServer(new CommonTrainPortsPacket {
+        SendPacketToServer(new CommonTrainPortsPacket
+        {
             NetId = netId,
             PortIds = portIds,
             PortValues = portValues
@@ -752,7 +888,8 @@ public class NetworkClient : NetworkManager
 
     public void SendFuses(ushort netId, string[] fuseIds, bool[] fuseValues)
     {
-        SendPacketToServer(new CommonTrainFusesPacket {
+        SendPacketToServer(new CommonTrainFusesPacket
+        {
             NetId = netId,
             FuseIds = fuseIds,
             FuseValues = fuseValues
@@ -761,21 +898,24 @@ public class NetworkClient : NetworkManager
 
     public void SendTrainSyncRequest(ushort netId)
     {
-        SendPacketToServer(new ServerboundTrainSyncRequestPacket {
+        SendPacketToServer(new ServerboundTrainSyncRequestPacket
+        {
             NetId = netId
         }, DeliveryMethod.ReliableUnordered);
     }
 
     public void SendTrainDeleteRequest(ushort netId)
     {
-        SendPacketToServer(new ServerboundTrainDeleteRequestPacket {
+        SendPacketToServer(new ServerboundTrainDeleteRequestPacket
+        {
             NetId = netId
         }, DeliveryMethod.ReliableUnordered);
     }
 
     public void SendTrainRerailRequest(ushort netId, ushort trackId, Vector3 position, Vector3 forward)
     {
-        SendPacketToServer(new ServerboundTrainRerailRequestPacket {
+        SendPacketToServer(new ServerboundTrainRerailRequestPacket
+        {
             NetId = netId,
             TrackId = trackId,
             Position = position,
@@ -785,11 +925,20 @@ public class NetworkClient : NetworkManager
 
     public void SendLicensePurchaseRequest(string id, bool isJobLicense)
     {
-        SendPacketToServer(new ServerboundLicensePurchaseRequestPacket {
+        SendPacketToServer(new ServerboundLicensePurchaseRequestPacket
+        {
             Id = id,
             IsJobLicense = isJobLicense
         }, DeliveryMethod.ReliableUnordered);
     }
+    public void SendJobTakeRequest(ushort netId)
+    {
+        SendPacketToServer(new ServerboundJobTakeRequestPacket
+        {
+            netId = netId
+        }, DeliveryMethod.ReliableUnordered);
+    }
+
 
     #endregion
 }

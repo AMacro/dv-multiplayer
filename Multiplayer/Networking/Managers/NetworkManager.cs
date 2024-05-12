@@ -22,7 +22,8 @@ public abstract class NetworkManager : INetEventListener
 
     protected NetworkManager(Settings settings)
     {
-        netManager = new NetManager(this) {
+        netManager = new NetManager(this)
+        {
             DisconnectTimeout = 10000
         };
         netPacketProcessor = new NetPacketProcessor(netManager);
@@ -36,8 +37,10 @@ public abstract class NetworkManager : INetEventListener
     private void RegisterNestedTypes()
     {
         netPacketProcessor.RegisterNestedType(BogieData.Serialize, BogieData.Deserialize);
+        netPacketProcessor.RegisterNestedType(JobData.Serialize, JobData.Deserialize);
         netPacketProcessor.RegisterNestedType(ModInfo.Serialize, ModInfo.Deserialize);
         netPacketProcessor.RegisterNestedType(RigidbodySnapshot.Serialize, RigidbodySnapshot.Deserialize);
+        netPacketProcessor.RegisterNestedType(StationsChainDataData.Serialize, StationsChainDataData.Deserialize);
         netPacketProcessor.RegisterNestedType(TrainsetMovementPart.Serialize, TrainsetMovementPart.Deserialize);
         netPacketProcessor.RegisterNestedType(TrainsetSpawnPart.Serialize, TrainsetSpawnPart.Deserialize);
         netPacketProcessor.RegisterNestedType(Vector2Serializer.Serialize, Vector2Serializer.Deserialize);
