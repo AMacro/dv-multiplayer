@@ -15,7 +15,7 @@ public static class CommsRadioCarDeleterPatch
     [HarmonyPatch(nameof(CommsRadioCarDeleter.OnUse))]
     private static bool OnUse_Prefix(CommsRadioCarDeleter __instance)
     {
-        if (__instance.state != CommsRadioCarDeleter.State.ConfirmDelete)
+        if (__instance.CurrentState != CommsRadioCarDeleter.State.ConfirmDelete)
             return true;
         if (NetworkLifecycle.Instance.IsHost() && NetworkLifecycle.Instance.Server.PlayerCount == 1)
             return true;
@@ -50,7 +50,7 @@ public static class CommsRadioCarDeleterPatch
     [HarmonyPatch(nameof(CommsRadioCarDeleter.OnUpdate))]
     private static bool OnUpdate_Prefix(CommsRadioCarDeleter __instance)
     {
-        if (__instance.state != CommsRadioCarDeleter.State.ScanCarToDelete)
+        if (__instance.CurrentState != CommsRadioCarDeleter.State.ScanCarToDelete)
             return true;
         if (NetworkLifecycle.Instance.IsHost() && NetworkLifecycle.Instance.Server.PlayerCount == 1)
             return true;

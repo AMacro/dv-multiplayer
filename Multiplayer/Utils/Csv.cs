@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -14,7 +15,8 @@ public static class Csv
     /// </summary>
     public static ReadOnlyDictionary<string, Dictionary<string, string>> Parse(string data)
     {
-        string[] lines = data.Split('\n');
+        string[] separators = new string[]{"\r\n" };
+        string[] lines = data.Split(separators, StringSplitOptions.None);
 
         // Dictionary<string, Dictionary<string, string>>
         OrderedDictionary columns = new(lines.Length - 1);
