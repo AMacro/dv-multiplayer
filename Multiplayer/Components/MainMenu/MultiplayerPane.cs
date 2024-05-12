@@ -1,8 +1,9 @@
-﻿using System;
+using System;
 using System.Text.RegularExpressions;
 using DV.UIFramework;
 using DV.Utils;
 using Multiplayer.Components.Networking;
+using TMPro;
 using UnityEngine;
 
 namespace Multiplayer.Components.MainMenu;
@@ -39,6 +40,7 @@ public class MultiplayerPane : MonoBehaviour
             return;
 
         popup.labelTMPro.text = Locale.SERVER_BROWSER__IP;
+        popup.GetComponentInChildren<TMP_InputField>().text = Multiplayer.Settings.DefaultRemoteIP;
 
         popup.Closed += result =>
         {
@@ -67,6 +69,7 @@ public class MultiplayerPane : MonoBehaviour
             return;
 
         popup.labelTMPro.text = Locale.SERVER_BROWSER__PORT;
+        popup.GetComponentInChildren<TMP_InputField>().text = Multiplayer.Settings.Port.ToString();
 
         popup.Closed += result =>
         {
@@ -95,6 +98,7 @@ public class MultiplayerPane : MonoBehaviour
             return;
 
         popup.labelTMPro.text = Locale.SERVER_BROWSER__PASSWORD;
+        popup.GetComponentInChildren<TMP_InputField>().text = Multiplayer.Settings.Password;
 
         popup.Closed += result =>
         {

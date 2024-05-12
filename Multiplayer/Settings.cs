@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Humanizer;
 using UnityEngine;
 using UnityModManagerNet;
@@ -21,6 +21,8 @@ public class Settings : UnityModManager.ModSettings, IDrawable
 
     [Space(10)]
     [Header("Server")]
+    [Draw("Default Remote IP", Tooltip = "The default server IP when joining as a client.")]
+    public string DefaultRemoteIP = "";
     [Draw("Password", Tooltip = "The password required to join your server. Leave blank for no password.")]
     public string Password = "";
     [Draw("Max Players", Tooltip = "The maximum number of players that can join your server, including yourself.")]
