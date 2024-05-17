@@ -11,6 +11,7 @@ mm/join_server__tooltip_disabled,Unused,,,,,,,,,,,,,,,,,,,,,,,,,,
 ,,,,,,,,,,,,,,,,,,,,,,,,,,,
 ,Server Browser,,,,,,,,,,,,,,,,,,,,,,,,,,
 sb/title,The title of the Server Browser tab,Server Browser,,,,,,,,Navigateur de serveurs,Server Liste,,,Ricerca Server,,,,,,,,,,Buscar servidores,,,
+sb/direct,Connect to IP button,Connect to IP,Свързване към IP,连接到IP,連接到IP,Připojit k IP,Opret forbindelse til IP,Verbinding maken met IP,Yhdistä IP-osoitteeseen,Connectez-vous à IP,Mit IP verbinden,आईपी से कनेक्ट करें,Csatlakozás az IP-hez,Connetti all'IP,IPに接続する,IP에 연결,Koble til IP,Połącz się z IP,Conecte-se ao IP,Conecte-se ao IP,Conectați-vă la IP,Подключиться к IP,Pripojiť k IP,Conectarse a IP,Anslut till IP,IP'ye Bağlan,Підключитися до IP
 sb/ip,IP popup,Enter IP Address,,,,,,,,Entrer l’adresse IP,IP Adresse eingeben,,,Inserire Indirizzo IP,,,,,,,,,,Ingrese la dirección IP,,,
 sb/ip_invalid,Invalid IP popup.,Invalid IP Address!,,,,,,,,Adresse IP invalide,Ungültige IP Adresse!,,,Indirizzo IP Invalido!,,,,,,,,,,¡Dirección IP inválida!,,,
 sb/port,Port popup.,Enter Port (7777 by default),,,,,,,,Entrer le port (7777 par défaut),Port eingeben (Standard: 7777),,,Inserire Porta (7777 di default),,,,,,,,,,Introduzca el número de puerto(7777 por defecto),,,

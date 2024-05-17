@@ -4,6 +4,7 @@ using DV.UIFramework;
 using HarmonyLib;
 using Multiplayer.Components.MainMenu;
 using Multiplayer.Utils;
+using TMPro;
 using UnityEngine;
 
 namespace Multiplayer.Patches.MainMenu;
@@ -42,6 +43,9 @@ public static class RightPaneController_OnEnable_Patch
             Multiplayer.LogError("Failed to find title object!");
             return;
         }
+
+        GameObject content =  multiplayerPane.FindChildByName("text header");
+        content.GetComponentInChildren<TextMeshProUGUI>().text = "Server browser not yet implemented.";
 
         titleObj.GetComponentInChildren<Localize>().key = Locale.SERVER_BROWSER__TITLE_KEY;
         Object.Destroy(titleObj.GetComponentInChildren<I2.Loc.Localize>());
