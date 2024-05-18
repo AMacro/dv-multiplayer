@@ -14,8 +14,10 @@ using LiteNetLib.Utils;
 using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Components.Networking.World;
+using Multiplayer.Components.Networking.Jobs;
 using Multiplayer.Networking.Data;
 using Multiplayer.Networking.Packets.Clientbound;
+using Multiplayer.Networking.Packets.Clientbound.Jobs;
 using Multiplayer.Networking.Packets.Clientbound.SaveGame;
 using Multiplayer.Networking.Packets.Clientbound.Train;
 using Multiplayer.Networking.Packets.Clientbound.World;
@@ -23,7 +25,6 @@ using Multiplayer.Networking.Packets.Common;
 using Multiplayer.Networking.Packets.Common.Train;
 using Multiplayer.Networking.Packets.Serverbound;
 using Multiplayer.Utils;
-using Newtonsoft.Json;
 using UnityEngine;
 using UnityModManagerNet;
 
@@ -281,30 +282,11 @@ public class NetworkServer : NetworkManager
         }, DeliveryMethod.ReliableUnordered, selfPeer);
     }
 
-    public void SendJobsToAll(Job[] jobs, string stationId)
+    public void SendJobCreatePacket(NetworkedJob job)
     {
-        JobData[] jobDatas = new JobData[jobs.Length];
-
-        for (int i = 0; i < jobs.Length; i++)
-        {
-            var data = JobData.FromJob(jobs[i]);
-
-            jobDatas[i] = data;
-
-            Multiplayer.Log("JOB ID: " + jobs[i].ID);
-            Multiplayer.Log(JsonConvert.SerializeObject(data));
-        }
-
-        SendPacketToAll(new ClientboudJobPacket
-        {
-            StationId = stationId,
-            Jobs = jobDatas,
-            ModInfo = new[] { new ModInfo("6727318026738916", "1.0") }
-        }, DeliveryMethod.ReliableOrdered, selfPeer);
-
-        Multiplayer.Log($"Sent {jobs.Length} jobs to all clients, Writer: {cachedWriter.Length}");
+        Multiplayer.Log("Sending JobCreatePacket with netId: " + job.NetId + ", Job ID: " + job.job.ID);
+        SendPacketToAll(ClientboundJobCreatePacket.FromNetworkedJob(job), DeliveryMethod.ReliableSequenced);
     }
-
     #endregion
 
     #region Listeners
@@ -459,6 +441,30 @@ public class NetworkServer : NetworkManager
         {
             LogDebug(() => $"Sending trainset {set.firstCar.GetNetId()} with {set.cars.Count} cars");
             SendPacket(peer, ClientboundSpawnTrainSetPacket.FromTrainSet(set), DeliveryMethod.ReliableOrdered);
+        }
+
+        //send jobs - do we need a job manager/job IDs to make this easier?
+        foreach (StationController station in StationController.allStations)
+        {
+            List<JobData> jobData = new List<JobData>();
+            List<ushort> netIds = new List<ushort>();
+
+            foreach (Job job in station.logicStation.availableJobs)
+            {
+                jobData.Add(JobData.FromJob(job));
+                netIds.Add(NetworkedJob.GetFromJob(job).NetId);
+            }
+
+            SendPacket(peer,
+                        new ClientboundJobsPacket
+                        {
+                            stationId = station.logicStation.ID,
+                            netIds = netIds.ToArray(),
+                            Jobs = jobData.ToArray(),
+                        },
+                        DeliveryMethod.ReliableOrdered
+                    );
+
         }
 
         // Send existing players

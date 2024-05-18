@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using DV;
 using DV.Damage;
@@ -15,11 +16,14 @@ using LiteNetLib;
 using Multiplayer.Components;
 using Multiplayer.Components.MainMenu;
 using Multiplayer.Components.Networking;
+using Multiplayer.Components.Networking.Jobs;
+using Multiplayer.Components.Networking.Player;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Components.Networking.World;
 using Multiplayer.Components.SaveGame;
 using Multiplayer.Networking.Data;
 using Multiplayer.Networking.Packets.Clientbound;
+using Multiplayer.Networking.Packets.Clientbound.Jobs;
 using Multiplayer.Networking.Packets.Clientbound.SaveGame;
 using Multiplayer.Networking.Packets.Clientbound.Train;
 using Multiplayer.Networking.Packets.Clientbound.World;
@@ -109,7 +113,8 @@ public class NetworkClient : NetworkManager
         netPacketProcessor.SubscribeReusable<ClientboundLicenseAcquiredPacket>(OnClientboundLicenseAcquiredPacket);
         netPacketProcessor.SubscribeReusable<ClientboundGarageUnlockPacket>(OnClientboundGarageUnlockPacket);
         netPacketProcessor.SubscribeReusable<ClientboundDebtStatusPacket>(OnClientboundDebtStatusPacket);
-        netPacketProcessor.SubscribeReusable<ClientboudJobPacket>(OnClientboundJobPacket);
+        netPacketProcessor.SubscribeReusable<ClientboundJobsPacket>(OnClientboundJobsPacket);
+        netPacketProcessor.SubscribeReusable<ClientboundJobCreatePacket>(OnClientboundJobCreatePacket);
     }
 
     #region Net Events
@@ -597,18 +602,71 @@ public class NetworkClient : NetworkManager
         CareerManagerDebtControllerPatch.HasDebt = packet.HasDebt;
     }
 
-    private void OnClientboundJobPacket(ClientboudJobPacket packet)
+    private void OnClientboundJobCreatePacket(ClientboundJobCreatePacket packet)
     {
-        if (!StationComponentLookup.Instance.StationControllerFromId(packet.StationId, out StationController station))
+        Multiplayer.Log($"OnClientboundJobCreatePacket()");
+        if (NetworkLifecycle.Instance.IsHost())
+            return;
+
+        List<Task> tasks = new List<Task>();
+        foreach (TaskBeforeDataData taskBeforeDataData in packet.job.Tasks)
+            tasks.Add(TaskBeforeDataData.ToTask(taskBeforeDataData));
+
+        Multiplayer.Log($"OnClientboundJobCreatePacket: tasks filled {tasks.Count}");
+
+        StationsChainDataData chainData = packet.job.ChainData;
+
+        Multiplayer.Log($"OnClientboundJobCreatePacket: Creating job");
+        Job newJob = new Job(
+                tasks,
+                (JobType)packet.job.JobType,
+                packet.job.TimeLimit,
+                packet.job.InitialWage,
+                new StationsChainData(chainData.ChainOriginYardId, chainData.ChainDestinationYardId),
+                packet.job.ID,
+                (JobLicenses)packet.job.RequiredLicenses
+            );
+
+        Multiplayer.Log($"OnClientboundJobCreatePacket: job created");
+
+        Multiplayer.Log($"OnClientboundJobCreatePacket: Looking for station {packet.stationId}");
+
+        //Find the station
+        StationController station;
+        if (!StationComponentLookup.Instance.StationControllerFromId(packet.stationId, out station))
+        {
+            Multiplayer.LogWarning($"OnClientboundJobCreatePacket Could not get station for stationId: {packet.stationId}");
+            return;
+        }
+
+        //create a new game object
+        NetworkedJob netJob = station.gameObject.AddComponent<NetworkedJob>();
+        if (netJob != null)
+        {
+            netJob.job = newJob;
+            netJob.stationID = packet.stationId;
+            netJob.NetId = packet.netId;
+        }
+
+    }
+    private void OnClientboundJobsPacket(ClientboundJobsPacket packet)
+    {
+        if (NetworkLifecycle.Instance.IsHost())
+            return;
+
+        if (!StationComponentLookup.Instance.StationControllerFromId(packet.stationId, out StationController station))
         {
             LogError("Received job packet but couldn't find station!");
             return;
         }
 
-        Multiplayer.Log("Received job packet");
+        Multiplayer.Log($"Received job packet. Job count:{packet.Jobs.Count()}");
 
-        foreach (var job in packet.Jobs)
+        for (int i = 0; i < packet.Jobs.Count(); i++)
         {
+            JobData job = packet.Jobs[i];
+            ushort netId = packet.netIds[i];
+
             var tasks = new List<Task>();
             foreach (TaskBeforeDataData taskBeforeDataData in job.Tasks)
                 tasks.Add(TaskBeforeDataData.ToTask(taskBeforeDataData));
@@ -625,10 +683,18 @@ public class NetworkClient : NetworkManager
                 (JobLicenses)job.RequiredLicenses
             );
 
-            station.logicStation.AddJobToStation(newJob);
+            Multiplayer.Log($"Attempting to add Job with ID {newJob.ID} to station.");//\r\nExisting jobs are: {station.logicStation.availableJobs.Select(x=>x.ID + "\r\n\t").ToArray().Join()}\r\nDoes the Job already exist in station? {station.logicStation.availableJobs.Where(x => x.ID == newJob.ID).Count() > 0}");
+
+            //create a new game object
+            NetworkedJob netJob = station.gameObject.AddComponent<NetworkedJob>();
+            if (netJob != null)
+            {
+                netJob.job = newJob;
+                netJob.stationID = packet.stationId;
+                netJob.NetId = netId;
+            }
         }
     }
-
     #endregion
 
     #region Senders

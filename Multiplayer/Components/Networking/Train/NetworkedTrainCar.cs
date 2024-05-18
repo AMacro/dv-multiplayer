@@ -20,6 +20,8 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     #region Lookup Cache
 
     private static readonly Dictionary<TrainCar, NetworkedTrainCar> trainCarsToNetworkedTrainCars = new();
+    private static readonly Dictionary<string, NetworkedTrainCar> trainCarIdToNetworkedTrainCars = new();
+    private static readonly Dictionary<string, TrainCar> trainCarIdToTrainCars = new();
     private static readonly Dictionary<HoseAndCock, Coupler> hoseToCoupler = new();
 
     public static bool Get(ushort netId, out NetworkedTrainCar obj)
@@ -45,7 +47,14 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     {
         return trainCarsToNetworkedTrainCars[trainCar];
     }
-
+    public static bool GetFromTrainId(string carId, out NetworkedTrainCar networkedTrainCar)
+    {
+        return trainCarIdToNetworkedTrainCars.TryGetValue(carId, out networkedTrainCar);
+    }
+    public static bool GetTrainCarFromTrainId(string carId, out TrainCar trainCar)
+    {
+        return trainCarIdToTrainCars.TryGetValue(carId, out trainCar);
+    }
     public static bool TryGetFromTrainCar(TrainCar trainCar, out NetworkedTrainCar networkedTrainCar)
     {
         return trainCarsToNetworkedTrainCars.TryGetValue(trainCar, out networkedTrainCar);
@@ -96,6 +105,8 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
         TrainCar = GetComponent<TrainCar>();
         trainCarsToNetworkedTrainCars[TrainCar] = this;
+
+        TrainCar.LogicCarInitialized += OnLogicCarInitialised;
 
         bogie1 = TrainCar.Bogies[0];
         bogie2 = TrainCar.Bogies[1];
@@ -157,7 +168,15 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         NetworkLifecycle.Instance.OnTick -= Server_OnTick;
         if (UnloadWatcher.isUnloading)
             return;
+
         trainCarsToNetworkedTrainCars.Remove(TrainCar);
+
+        if (TrainCar.logicCar != null)
+        {
+            trainCarIdToNetworkedTrainCars.Remove(TrainCar.ID);
+            trainCarIdToTrainCars.Remove(TrainCar.ID);
+        }
+
         foreach (Coupler coupler in TrainCar.couplers)
             hoseToCoupler.Remove(coupler.hoseAndCock);
         brakeSystem.HandbrakePositionChanged -= Common_OnHandbrakePositionChanged;
@@ -178,6 +197,22 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     }
 
     #region Server
+
+    private void OnLogicCarInitialised()
+    {
+        //Multiplayer.LogWarning("OnLogicCarInitialised");
+        if (TrainCar.logicCar != null)
+        {
+            trainCarIdToNetworkedTrainCars[TrainCar.ID] = this;
+            trainCarIdToTrainCars[TrainCar.ID] = TrainCar;
+
+            TrainCar.LogicCarInitialized -= OnLogicCarInitialised;
+        }
+        else
+        {
+            Multiplayer.LogWarning("OnLogicCarInitialised Car Not Initialised!");
+        }
+    }
 
     private IEnumerator Server_WaitForLogicCar()
     {
@@ -334,6 +369,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         {
             if (!simulationFlow.TryGetPort(portId, out Port _))
             {
+                Multiplayer.LogWarning($"Tried to dirty port {portId} on UNKNOWN but it doesn't exist!");
                 Multiplayer.LogWarning($"Tried to dirty port {portId} on {TrainCar.ID} but it doesn't exist!");
                 continue;
             }
@@ -351,6 +387,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         {
             if (!simulationFlow.TryGetFuse(fuseId, out Fuse _))
             {
+                Multiplayer.LogWarning($"Tried to dirty port {fuseId} on UNKOWN but it doesn't exist!");
                 Multiplayer.LogWarning($"Tried to dirty port {fuseId} on {TrainCar.ID} but it doesn't exist!");
                 continue;
             }
@@ -462,6 +499,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             yield return null;
         while ((client_bogie2Queue = bogie2.GetComponent<NetworkedBogie>()) == null)
             yield return null;
+
         client_Initialized = true;
     }
 
