@@ -16,10 +16,11 @@ public static class StationJobGenerationRange_PlayerSqrDistanceFromStationCenter
         Vector3 anchor = __instance.stationCenterAnchor.position;
 
         __result = float.MaxValue;
+
         //Loop through all of the players and return the one thats closest to the anchor
         foreach (ServerPlayer serverPlayer in NetworkLifecycle.Instance.Server.ServerPlayers)
         {
-            float sqDist = (serverPlayer.RawPosition - anchor).sqrMagnitude;
+            float sqDist = (serverPlayer.WorldPosition - anchor).sqrMagnitude;
             if (sqDist < __result)
                 __result = sqDist;
         }
@@ -42,7 +43,7 @@ public static class StationJobGenerationRange_PlayerSqrDistanceFromStationOffice
         //Loop through all of the players and return the one thats closest to the anchor
         foreach (ServerPlayer serverPlayer in NetworkLifecycle.Instance.Server.ServerPlayers)
         {
-            float sqDist = (serverPlayer.RawPosition - anchor).sqrMagnitude;
+            float sqDist = (serverPlayer.WorldPosition - anchor).sqrMagnitude;
             if (sqDist < __result)
                 __result = sqDist;
         }

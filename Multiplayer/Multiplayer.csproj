@@ -88,8 +88,6 @@
 
         <!-- Copy to game install folder -->
         <Exec Condition="Exists('$(DvInstallDir)') And '$(OS)' == 'Windows_NT'" Command="powershell -executionpolicy bypass -Command &quot;(../package.ps1 -NoArchive -OutputDirectory '$(DvInstallDir)\Mods')&quot;" />
-        <Exec Condition="Exists('$(DvInstallDir)') And '$(OS)' == 'Windows_NT'" Command="powershell -executionpolicy bypass -Command &quot;(../package.ps1 -NoArchive -OutputDirectory 'D:\SteamLibrary\steamapps\common\Derail Valley 2\Mods')&quot;" />
-        <Exec Condition="Exists('$(DvInstallDir)') And '$(OS)' == 'Windows_NT'" Command="powershell -executionpolicy bypass -Command &quot;(../openScript.ps1)&quot;" />
         <Exec Condition="Exists('$(DvInstallDir)') And '$(OS)' != 'Windows_NT'" Command="pwsh  -Command &quot;(../package.ps1 -NoArchive -OutputDirectory '$(DvInstallDir)/Mods')&quot;" />
     </Target>
 </Project>
