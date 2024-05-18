@@ -228,7 +228,7 @@ public class WarehouseTaskData : TaskBeforeDataData
     public string[] Cars { get; set; }
     public byte WarehouseTaskType { get; set; }
     public string WarehouseMachine { get; set; }
-    public byte CargoType { get; set; }
+    public CargoType CargoType { get; set; }
     public float CargoAmount { get; set; }
     public bool ReadyForMachine { get; set; }
 
@@ -239,7 +239,7 @@ public class WarehouseTaskData : TaskBeforeDataData
             Cars = task.cars.Select(x => x.ID).ToArray(),
             WarehouseTaskType = (byte)task.warehouseTaskType,
             WarehouseMachine = task.warehouseMachine.ID,
-            CargoType = (byte)task.cargoType,
+            CargoType = task.cargoType,
             CargoAmount = task.cargoAmount,
             ReadyForMachine = task.readyForMachine
         };
@@ -251,7 +251,7 @@ public class WarehouseTaskData : TaskBeforeDataData
             CarSpawner.Instance.allCars.FindAll(x => data.Cars.Contains(x.ID)).Select(x => x.logicCar).ToList(),
             (WarehouseTaskType)data.WarehouseTaskType,
             JobSaveManager.Instance.GetWarehouseMachineWithId(data.WarehouseMachine),
-            (CargoType)data.CargoType,
+            data.CargoType,
             data.CargoAmount
         );
     }
@@ -262,7 +262,7 @@ public class WarehouseTaskData : TaskBeforeDataData
         writer.PutArray(data.Cars);
         writer.Put(data.WarehouseTaskType);
         writer.Put(data.WarehouseMachine);
-        writer.Put(data.CargoType);
+        writer.Put((int)data.CargoType);
         writer.Put(data.CargoAmount);
         writer.Put(data.ReadyForMachine);
     }
@@ -274,7 +274,7 @@ public class WarehouseTaskData : TaskBeforeDataData
         data.Cars = reader.GetStringArray();
         data.WarehouseTaskType = reader.GetByte();
         data.WarehouseMachine = reader.GetString();
-        data.CargoType = reader.GetByte();
+        data.CargoType = (CargoType)reader.GetInt();
         data.CargoAmount = reader.GetFloat();
         data.ReadyForMachine = reader.GetBool();
 
