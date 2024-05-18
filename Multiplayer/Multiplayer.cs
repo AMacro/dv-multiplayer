@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using HarmonyLib;
 using JetBrains.Annotations;
@@ -130,7 +130,7 @@ public static class Multiplayer
 
     private static void WriteLog(string msg)
     {
-        string str = $"[{DateTime.Now:HH:mm:ss.fff}] {msg}";
+        string str = $"[{DateTime.Now.ToUniversalTime():HH:mm:ss.fff}] {msg}";
         if (Settings.EnableLogFile)
             File.AppendAllLines(LOG_FILE, new[] { str });
         ModEntry.Logger.Log(str);

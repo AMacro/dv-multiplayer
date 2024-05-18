@@ -251,7 +251,7 @@ public class WarehouseTaskData : TaskBeforeDataData
             CarSpawner.Instance.allCars.FindAll(x => data.Cars.Contains(x.ID)).Select(x => x.logicCar).ToList(),
             (WarehouseTaskType)data.WarehouseTaskType,
             JobSaveManager.Instance.GetWarehouseMachineWithId(data.WarehouseMachine),
-            data.CargoType,
+            (CargoType)data.CargoType,
             data.CargoAmount
         );
     }
@@ -287,21 +287,21 @@ public class TransportTaskData : TaskBeforeDataData
     public string[] Cars { get; set; }
     public string StartingTrack { get; set; }
     public string DestinationTrack { get; set; }
-    public byte[] TransportedCargoPerCar { get; set; }
+    public CargoType[] TransportedCargoPerCar { get; set; }
     public bool CouplingRequiredAndNotDone { get; set; }
     public bool AnyHandbrakeRequiredAndNotDone { get; set; }
 
     public static TransportTaskData FromTransportTask(TransportTask task)
     {
         Multiplayer.Log("Cars: " + task.cars.Select(x => x.ID).ToArray().Join());
-        Multiplayer.Log("TransportedCargoPerCar: " + task.transportedCargoPerCar?.Select(x => (byte)x).ToArray().Join());
+        Multiplayer.Log("FromTransportTask.TransportedCargoPerCar: " + task.transportedCargoPerCar?.Select(x => (int)x).ToArray().Join() + "\r\n\t" + task.transportedCargoPerCar?.ToArray().Join());
 
         return new TransportTaskData
         {
             Cars = task.cars.Select(x => x.ID).ToArray(),
             StartingTrack = task.startingTrack.ID.RailTrackGameObjectID,
             DestinationTrack = task.destinationTrack.ID.RailTrackGameObjectID,
-            TransportedCargoPerCar = task.transportedCargoPerCar?.Select(x => (byte)x).ToArray(),
+            TransportedCargoPerCar = task.transportedCargoPerCar?.ToArray(),
             CouplingRequiredAndNotDone = task.couplingRequiredAndNotDone,
             AnyHandbrakeRequiredAndNotDone = task.anyHandbrakeRequiredAndNotDone
         };
@@ -313,7 +313,7 @@ public class TransportTaskData : TaskBeforeDataData
             CarSpawner.Instance.allCars.FindAll(x => data.Cars.Contains(x.ID)).Select(x => x.logicCar).ToList(),
             RailTrackRegistry.Instance.GetTrackWithName(data.DestinationTrack).logicTrack,
             RailTrackRegistry.Instance.GetTrackWithName(data.StartingTrack).logicTrack,
-            data.TransportedCargoPerCar.Select(x => (CargoType)x).ToList()
+            data.TransportedCargoPerCar?.ToList()
         );
     }
 
@@ -323,7 +323,18 @@ public class TransportTaskData : TaskBeforeDataData
         writer.PutArray(data.Cars);
         writer.Put(data.StartingTrack);
         writer.Put(data.DestinationTrack);
-        writer.PutBytesWithLength(data.TransportedCargoPerCar);
+
+        //transport cargo data exists?
+        writer.Put(data.TransportedCargoPerCar != null);
+
+        //write data if it exists
+        if (data.TransportedCargoPerCar != null)
+        {
+            writer.PutArray(data.TransportedCargoPerCar?.Select(x => (int)x).ToArray());
+            //                   transportedCargoPerCar?.Select(x => (int)x).ToArray()
+            Multiplayer.Log("Serialising cargo: " + (int)data.TransportedCargoPerCar[0]);
+        }
+
         writer.Put(data.CouplingRequiredAndNotDone);
         writer.Put(data.AnyHandbrakeRequiredAndNotDone);
     }
@@ -341,12 +352,19 @@ public class TransportTaskData : TaskBeforeDataData
         Multiplayer.Log("4");
         data.DestinationTrack = reader.GetString();
         Multiplayer.Log("5");
-        data.TransportedCargoPerCar = reader.GetBytesWithLength();
+
+        if (reader.GetBool())
+        {
+            //transport data exists
+            data.TransportedCargoPerCar = reader.GetArray<int>(sizeof(int))?.Select(x => (CargoType)x).ToArray();
+        }
+
+        Multiplayer.Log("TransportedCargoPerCar: " + data.TransportedCargoPerCar?.Select(x => (int)x).ToArray().Join() + "\r\n\t" + data.TransportedCargoPerCar?.ToArray().Join());
         Multiplayer.Log("6");
         data.CouplingRequiredAndNotDone = reader.GetBool();
         Multiplayer.Log("7");
         data.AnyHandbrakeRequiredAndNotDone = reader.GetBool();
-        Multiplayer.Log(JsonConvert.SerializeObject(data, Formatting.Indented));
+        //Multiplayer.Log(JsonConvert.SerializeObject(data, Formatting.Indented));
 
         return data;
     }
