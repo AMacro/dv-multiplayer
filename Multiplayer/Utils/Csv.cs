@@ -15,46 +15,49 @@ namespace Multiplayer.Utils
         /// </summary>
         public static ReadOnlyDictionary<string, Dictionary<string, string>> Parse(string data)
         {
+            Multiplayer.Log("CSV.Parse()");
             // Split the input data into lines
-            string[] separators = new string[] { "\r\n" };
-            string[] lines = data.Split(separators, StringSplitOptions.None);
+            string[] separators = new string[] { "\r\n", "\n" };
+            string[] lines = data.Split(separators, StringSplitOptions.RemoveEmptyEntries);
 
             // Use an OrderedDictionary to preserve the insertion order of keys
             var columns = new OrderedDictionary();
+
+            Multiplayer.Log($"Parsing Line 0: <<<<{lines[0]}>>>>");
 
             // Parse the header line to get the column keys
             List<string> keys = ParseLine(lines[0]);
             foreach (string key in keys)
             {
+                Multiplayer.Log($"Adding key: {key}");
                 if (!string.IsNullOrWhiteSpace(key))
                     columns.Add(key, new Dictionary<string, string>());
             }
 
-            // Iterate through the remaining lines (rows)
+            Multiplayer.Log("Columns added");
 
+            // Iterate through the remaining lines (rows)
             for (int i = 1; i < lines.Length; i++)
             {
+                Multiplayer.Log($"Parsing line: {i}");
                 string line = lines[i];
                 List<string> values = ParseLine(line);
-
+                Multiplayer.Log($"Parsed line: {i}");
                 if (values.Count == 0 || string.IsNullOrWhiteSpace(values[0]))
                     continue;
 
+                Multiplayer.Log($"Not-skipped line: {i}");
+
                 string rowKey = values[0];
-              
-               //ensure we don't have too many
-                if (values.Count > columns.Count)
-                {
-                    Multiplayer.LogWarning($"CSV Line {i + 1}: Found {values.Count} columns, expected {columns.Count}\r\n\t{line}");
-                    continue;
-                }
 
                 // Add the row values to the appropriate column dictionaries
                 for (int j = 0; j < values.Count && j < keys.Count; j++)
                 {
+                    Multiplayer.Log($"Looping line: {j}, key: {keys[j]}");
                     string columnKey = keys[j];
                     if (!string.IsNullOrWhiteSpace(columnKey))
                     {
+                        Multiplayer.Log($"Checking Dict: {j}, value: {values[j]}");
                         var columnDict = (Dictionary<string, string>)columns[columnKey];
                         columnDict[rowKey] = values[j];
                     }
@@ -75,7 +78,6 @@ namespace Multiplayer.Utils
             List<string> values = new();
             StringBuilder builder = new();
 
-            // Helper method to add the current value to the list and reset the builder
             void FinishValue()
             {
                 values.Add(builder.ToString());
@@ -151,10 +153,11 @@ namespace Multiplayer.Utils
                         result.Append(',');
                     }
                 }
+
                 result.Remove(result.Length - 1, 1);
                 result.Append('\n');
             }
-          
+
             return result.ToString();
         }
     }

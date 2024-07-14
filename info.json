@@ -1,6 +1,6 @@
 {
   "Id": "Multiplayer",
-  "Version": "0.1.5.0",
+  "Version": "0.1.5.2",
   "DisplayName": "Multiplayer",
   "Author": "Insprill, Macka, Morm",
   "EntryMethod": "Multiplayer.Multiplayer.Load",
