@@ -49,7 +49,7 @@ public class JobData
         writer.Put(data.InitialWage);
         writer.Put(data.State);
         writer.Put(data.TimeLimit);
-        Multiplayer.Log(JsonConvert.SerializeObject(data, Formatting.Indented));
+        Multiplayer.Log(JsonConvert.SerializeObject(data, Formatting.None));
     }
 
     public static JobData Deserialize(NetDataReader reader)
@@ -64,9 +64,9 @@ public class JobData
         var tasks = new TaskBeforeDataData[tasksLength];
         for (int i = 0; i < tasksLength; i++)
             tasks[i] = TaskBeforeDataData.DeserializeTask(reader);
-        Multiplayer.Log("JobData.Deserialize() tasks: " + JsonConvert.SerializeObject(tasks, Formatting.Indented));
+        //Multiplayer.Log("JobData.Deserialize() tasks: " + JsonConvert.SerializeObject(tasks, Formatting.None));
         var chainData = StationsChainDataData.Deserialize(reader);
-        Multiplayer.Log("JobData.Deserialize() chainData: " + JsonConvert.SerializeObject(chainData, Formatting.Indented));
+        //Multiplayer.Log("JobData.Deserialize() chainData: " + JsonConvert.SerializeObject(chainData, Formatting.Indented));
         var requiredLicenses = reader.GetInt();
         Multiplayer.Log("JobData.Deserialize() requiredLicenses: " + requiredLicenses);
         var startTime = reader.GetFloat();
@@ -90,7 +90,8 @@ public class JobData
             InitialWage = initialWage,
             State = state,
             TimeLimit = timeLimit
-        }, Formatting.Indented));
+        }, Formatting.None));
+
         return new JobData
         {
             JobType = jobType,

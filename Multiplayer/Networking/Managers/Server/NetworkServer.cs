@@ -27,6 +27,7 @@ using Multiplayer.Networking.Packets.Serverbound;
 using Multiplayer.Utils;
 using UnityEngine;
 using UnityModManagerNet;
+using Unity.Jobs;
 
 namespace Multiplayer.Networking.Listeners;
 
@@ -85,6 +86,8 @@ public class NetworkServer : NetworkManager
         netPacketProcessor.SubscribeReusable<CommonHandbrakePositionPacket, NetPeer>(OnCommonHandbrakePositionPacket);
         netPacketProcessor.SubscribeReusable<CommonTrainPortsPacket, NetPeer>(OnCommonTrainPortsPacket);
         netPacketProcessor.SubscribeReusable<CommonTrainFusesPacket, NetPeer>(OnCommonTrainFusesPacket);
+
+        netPacketProcessor.SubscribeReusable<ServerboundJobTakeRequestPacket, NetPeer>(OnServerboundJobTakeRequestPacket);
     }
 
     private void OnLoaded()
@@ -282,11 +285,13 @@ public class NetworkServer : NetworkManager
         }, DeliveryMethod.ReliableUnordered, selfPeer);
     }
 
+
     public void SendJobCreatePacket(NetworkedJob job)
     {
         Multiplayer.Log("Sending JobCreatePacket with netId: " + job.NetId + ", Job ID: " + job.job.ID);
-        SendPacketToAll(ClientboundJobCreatePacket.FromNetworkedJob(job), DeliveryMethod.ReliableSequenced);
+        SendPacketToAll(ClientboundJobCreatePacket.FromNetworkedJob(job),DeliveryMethod.ReliableSequenced);
     }
+
     #endregion
 
     #region Listeners
@@ -444,12 +449,12 @@ public class NetworkServer : NetworkManager
         }
 
         //send jobs - do we need a job manager/job IDs to make this easier?
-        foreach (StationController station in StationController.allStations)
+        foreach(StationController station in StationController.allStations)
         {
             List<JobData> jobData = new List<JobData>();
             List<ushort> netIds = new List<ushort>();
 
-            foreach (Job job in station.logicStation.availableJobs)
+            foreach(Job job in station.logicStation.availableJobs)
             {
                 jobData.Add(JobData.FromJob(job));
                 netIds.Add(NetworkedJob.GetFromJob(job).NetId);
@@ -457,15 +462,16 @@ public class NetworkServer : NetworkManager
 
             SendPacket(peer,
                         new ClientboundJobsPacket
-                        {
-                            stationId = station.logicStation.ID,
-                            netIds = netIds.ToArray(),
-                            Jobs = jobData.ToArray(),
-                        },
+                            {
+                                stationId = station.logicStation.ID,
+                                netIds = netIds.ToArray(),
+                                Jobs = jobData.ToArray(),
+                            },
                         DeliveryMethod.ReliableOrdered
                     );
-
+                
         }
+
 
         // Send existing players
         foreach (ServerPlayer player in ServerPlayers)
@@ -702,6 +708,40 @@ public class NetworkServer : NetworkManager
             LicenseManager.Instance.AcquireJobLicense(jobLicense);
         else
             LicenseManager.Instance.AcquireGeneralLicense(generalLicense);
+    }
+
+    private void OnServerboundJobTakeRequestPacket(ServerboundJobTakeRequestPacket packet, NetPeer peer)
+    {
+        NetworkedJob networkedJob;
+
+        if (!NetworkedJob.Get(packet.netId, out networkedJob))
+        {
+            Multiplayer.Log($"OnServerboundJobTakeRequestPacket netId Not Found: {packet.netId}");
+            return;
+        }
+
+        if (networkedJob.job.State != JobState.Available) {
+
+            Multiplayer.Log($"OnServerboundJobTakeRequestPacket jobId: {networkedJob.job.ID}, DENIED");
+            ServerPlayer player = ServerPlayers.First(x => x.Guid == networkedJob.takenBy);
+            //deny the request
+            SendPacket(peer, new ClientboundJobTakeResponsePacket { netId = packet.netId, granted = false, playerId = player.Id }, DeliveryMethod.ReliableOrdered);
+        }
+        else
+        {
+            //probably need to do more here
+            ServerPlayer player;
+            if (!TryGetServerPlayer(peer, out player))
+                return;
+
+            networkedJob.takenBy = player.Guid;
+            //networkedJob.job.State = JobState.InProgress;
+
+            //todo: officially take the job
+            Multiplayer.Log($"OnServerboundJobTakeRequestPacket jobId: {networkedJob.job.ID}, GRANTED");
+            SendPacket(peer, new ClientboundJobTakeResponsePacket { netId = packet.netId, granted = true, playerId = player.Id }, DeliveryMethod.ReliableOrdered);
+
+        }
     }
 
     #endregion

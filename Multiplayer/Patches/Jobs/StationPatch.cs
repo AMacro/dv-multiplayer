@@ -3,6 +3,8 @@ using HarmonyLib;
 using Multiplayer.Components;
 using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.Jobs;
+using Multiplayer.Components.Networking.Train;
+using Multiplayer.Utils;
 
 namespace Multiplayer.Patches.Jobs;
 
@@ -15,15 +17,15 @@ public static class Station_AddJobToStation_Patch
             return false;
 
         Multiplayer.Log($"Station_AddJobToStation_Patch adding NetworkJob for stationId: {__instance.ID}, jobId: {job.ID}");
-
+        
         StationController stationController;
-        if (!StationComponentLookup.Instance.StationControllerFromId(__instance.ID, out stationController))
+        if(!StationComponentLookup.Instance.StationControllerFromId(__instance.ID, out stationController))
             return false;
-
+        
         NetworkedJob netJob = stationController.gameObject.AddComponent<NetworkedJob>();
         if (netJob != null)
         {
-            netJob.job = job;
+            netJob.job=job;
             netJob.stationID = __instance.ID;
 
         }

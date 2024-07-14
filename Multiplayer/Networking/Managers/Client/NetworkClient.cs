@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using DV;
 using DV.Damage;
@@ -113,8 +114,10 @@ public class NetworkClient : NetworkManager
         netPacketProcessor.SubscribeReusable<ClientboundLicenseAcquiredPacket>(OnClientboundLicenseAcquiredPacket);
         netPacketProcessor.SubscribeReusable<ClientboundGarageUnlockPacket>(OnClientboundGarageUnlockPacket);
         netPacketProcessor.SubscribeReusable<ClientboundDebtStatusPacket>(OnClientboundDebtStatusPacket);
+
         netPacketProcessor.SubscribeReusable<ClientboundJobsPacket>(OnClientboundJobsPacket);
         netPacketProcessor.SubscribeReusable<ClientboundJobCreatePacket>(OnClientboundJobCreatePacket);
+        netPacketProcessor.SubscribeReusable<ClientboundJobTakeResponsePacket>(OnClientboundJobTakeResponsePacket);
     }
 
     #region Net Events
@@ -604,7 +607,6 @@ public class NetworkClient : NetworkManager
 
     private void OnClientboundJobCreatePacket(ClientboundJobCreatePacket packet)
     {
-        Multiplayer.Log($"OnClientboundJobCreatePacket()");
         if (NetworkLifecycle.Instance.IsHost())
             return;
 
@@ -612,11 +614,8 @@ public class NetworkClient : NetworkManager
         foreach (TaskBeforeDataData taskBeforeDataData in packet.job.Tasks)
             tasks.Add(TaskBeforeDataData.ToTask(taskBeforeDataData));
 
-        Multiplayer.Log($"OnClientboundJobCreatePacket: tasks filled {tasks.Count}");
-
         StationsChainDataData chainData = packet.job.ChainData;
-
-        Multiplayer.Log($"OnClientboundJobCreatePacket: Creating job");
+        //packet.job.JobType
         Job newJob = new Job(
                 tasks,
                 (JobType)packet.job.JobType,
@@ -627,15 +626,14 @@ public class NetworkClient : NetworkManager
                 (JobLicenses)packet.job.RequiredLicenses
             );
 
-        Multiplayer.Log($"OnClientboundJobCreatePacket: job created");
-
-        Multiplayer.Log($"OnClientboundJobCreatePacket: Looking for station {packet.stationId}");
+        //NetworkedJob netJob = NetworkedJob.AddJob(packet.stationId, newJob);
+        //netJob.NetId = packet.netId;
 
         //Find the station
         StationController station;
-        if (!StationComponentLookup.Instance.StationControllerFromId(packet.stationId, out station))
+        if(!StationComponentLookup.Instance.StationControllerFromId(packet.stationId, out station))
         {
-            Multiplayer.LogWarning($"OnClientboundJobCreatePacket Could not get station for stationId: {packet.stationId}");
+            Multiplayer.LogWarning($"OnClientboundJobCreatePacket Could not get staion for stationId: {packet.stationId}");
             return;
         }
 
@@ -662,7 +660,7 @@ public class NetworkClient : NetworkManager
 
         Multiplayer.Log($"Received job packet. Job count:{packet.Jobs.Count()}");
 
-        for (int i = 0; i < packet.Jobs.Count(); i++)
+        for (int i=0;i < packet.Jobs.Count(); i++)
         {
             JobData job = packet.Jobs[i];
             ushort netId = packet.netIds[i];
@@ -695,6 +693,27 @@ public class NetworkClient : NetworkManager
             }
         }
     }
+
+    private void OnClientboundJobTakeResponsePacket(ClientboundJobTakeResponsePacket packet)
+    {
+        NetworkedJob networkedJob;
+
+        if(!NetworkedJob.Get(packet.netId, out networkedJob))
+            return;
+
+        NetworkedPlayer player;
+        if (PlayerManager.TryGetPlayer(packet.playerId, out player))
+        {
+            networkedJob.takenBy = player.Guid;
+        }
+
+        Multiplayer.Log($"OnClientboundJobTakeResponsePacket jobId: {networkedJob.job.ID}, Status: {packet.granted}");
+        networkedJob.allowTake = packet.granted;
+        networkedJob.jobValidator.ProcessJobOverview(networkedJob.jobOverview);
+        networkedJob.jobValidator = null;
+        networkedJob.jobOverview = null;
+    }
+
     #endregion
 
     #region Senders
@@ -912,6 +931,14 @@ public class NetworkClient : NetworkManager
             IsJobLicense = isJobLicense
         }, DeliveryMethod.ReliableUnordered);
     }
+    public void SendJobTakeRequest(ushort netId)
+    {
+        SendPacketToServer(new ServerboundJobTakeRequestPacket
+        {
+            netId = netId
+        }, DeliveryMethod.ReliableUnordered);
+    }
+
 
     #endregion
 }

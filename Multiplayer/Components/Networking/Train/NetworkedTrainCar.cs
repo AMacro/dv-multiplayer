@@ -51,10 +51,11 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     {
         return trainCarIdToNetworkedTrainCars.TryGetValue(carId, out networkedTrainCar);
     }
-    public static bool GetTrainCarFromTrainId(string carId, out TrainCar trainCar)
+    public static bool  GetTrainCarFromTrainId(string carId, out TrainCar trainCar)
     {
         return trainCarIdToTrainCars.TryGetValue(carId, out trainCar);
     }
+
     public static bool TryGetFromTrainCar(TrainCar trainCar, out NetworkedTrainCar networkedTrainCar)
     {
         return trainCarsToNetworkedTrainCars.TryGetValue(trainCar, out networkedTrainCar);
@@ -107,7 +108,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         trainCarsToNetworkedTrainCars[TrainCar] = this;
 
         TrainCar.LogicCarInitialized += OnLogicCarInitialised;
-
+        
         bogie1 = TrainCar.Bogies[0];
         bogie2 = TrainCar.Bogies[1];
 
@@ -170,7 +171,6 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             return;
 
         trainCarsToNetworkedTrainCars.Remove(TrainCar);
-
         if (TrainCar.logicCar != null)
         {
             trainCarIdToNetworkedTrainCars.Remove(TrainCar.ID);
@@ -212,12 +212,13 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         {
             Multiplayer.LogWarning("OnLogicCarInitialised Car Not Initialised!");
         }
+        
     }
-
     private IEnumerator Server_WaitForLogicCar()
     {
         while (TrainCar.logicCar == null)
             yield return null;
+
         TrainCar.logicCar.CargoLoaded += Server_OnCargoLoaded;
         TrainCar.logicCar.CargoUnloaded += Server_OnCargoUnloaded;
         NetworkLifecycle.Instance.Server.SendSpawnTrainCar(this);
@@ -369,6 +370,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         {
             if (!simulationFlow.TryGetPort(portId, out Port _))
             {
+
                 Multiplayer.LogWarning($"Tried to dirty port {portId} on UNKNOWN but it doesn't exist!");
                 Multiplayer.LogWarning($"Tried to dirty port {portId} on {TrainCar.ID} but it doesn't exist!");
                 continue;

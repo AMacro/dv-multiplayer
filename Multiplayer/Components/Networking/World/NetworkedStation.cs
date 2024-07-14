@@ -5,6 +5,8 @@ using System.Linq;
 using DV.Logic.Job;
 using Multiplayer.Components.Networking.Train;
 using UnityEngine;
+using static DV.Common.GameFeatureFlags;
+using static DV.UI.ATutorialsMenuProvider;
 
 namespace Multiplayer.Components.Networking.World;
 
@@ -33,8 +35,8 @@ public class NetworkedStation : MonoBehaviour
     public static IEnumerator UpdateCarPlates(List<DV.Logic.Job.Task> tasks, string jobId)
     {
 
-        List<Car> cars = new List<Car>();
-        UpdateCarPlatesRecursive(tasks, jobId, ref cars);
+       List<Car> cars = new List<Car>();
+       UpdateCarPlatesRecursive(tasks, jobId, ref cars);
 
 
         if (cars != null)
@@ -55,7 +57,7 @@ public class NetworkedStation : MonoBehaviour
                         Multiplayer.Log("NetworkedStation.UpdateCarPlates() TimeOut");
                         break;
                     }
-
+                        
 
                     yield return null;
                 }

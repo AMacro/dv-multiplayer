@@ -294,7 +294,7 @@ public class TransportTaskData : TaskBeforeDataData
     public static TransportTaskData FromTransportTask(TransportTask task)
     {
         Multiplayer.Log("Cars: " + task.cars.Select(x => x.ID).ToArray().Join());
-        Multiplayer.Log("FromTransportTask.TransportedCargoPerCar: " + task.transportedCargoPerCar?.Select(x => (int)x).ToArray().Join() + "\r\n\t" + task.transportedCargoPerCar?.ToArray().Join());
+        Multiplayer.Log("FromTransportTask.TransportedCargoPerCar: " + task.transportedCargoPerCar?.Select(x => (int)x).ToArray().Join() + "\r\n\t"+ task.transportedCargoPerCar?.ToArray().Join());
 
         return new TransportTaskData
         {
@@ -358,7 +358,7 @@ public class TransportTaskData : TaskBeforeDataData
             //transport data exists
             data.TransportedCargoPerCar = reader.GetArray<int>(sizeof(int))?.Select(x => (CargoType)x).ToArray();
         }
-
+        
         Multiplayer.Log("TransportedCargoPerCar: " + data.TransportedCargoPerCar?.Select(x => (int)x).ToArray().Join() + "\r\n\t" + data.TransportedCargoPerCar?.ToArray().Join());
         Multiplayer.Log("6");
         data.CouplingRequiredAndNotDone = reader.GetBool();
