@@ -9,6 +9,7 @@ public class ServerPlayer
     public byte Id { get; set; }
     public bool IsLoaded { get; set; }
     public string Username { get; set; }
+    public string OriginalUsername { get; set; }
     public Guid Guid { get; set; }
     public Vector3 RawPosition { get; set; }
     public float RawRotationY { get; set; }

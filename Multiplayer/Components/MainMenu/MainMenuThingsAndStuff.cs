@@ -4,90 +4,108 @@ using DV.Utils;
 using JetBrains.Annotations;
 using UnityEngine;
 
-namespace Multiplayer.Components.MainMenu;
-
-public class MainMenuThingsAndStuff : SingletonBehaviour<MainMenuThingsAndStuff>
+namespace Multiplayer.Components.MainMenu
 {
-    public PopupManager popupManager;
-    public Popup renamePopupPrefab;
-    public Popup okPopupPrefab;
-    public UIMenuController uiMenuController;
-
-    protected override void Awake()
+    public class MainMenuThingsAndStuff : SingletonBehaviour<MainMenuThingsAndStuff>
     {
-        bool shouldDestroy = false;
+        public PopupManager popupManager;
+        public Popup renamePopupPrefab;
+        public Popup okPopupPrefab;
+        public UIMenuController uiMenuController;
 
-        if (popupManager == null)
+        protected override void Awake()
         {
-            Multiplayer.LogError("Failed to find PopupManager! Destroying self.");
-            shouldDestroy = true;
+            bool shouldDestroy = false;
+
+            // Check if PopupManager is assigned
+            if (popupManager == null)
+            {
+                Multiplayer.LogError("Failed to find PopupManager! Destroying self.");
+                shouldDestroy = true;
+            }
+
+            // Check if renamePopupPrefab is assigned
+            if (renamePopupPrefab == null)
+            {
+                Multiplayer.LogError($"{nameof(renamePopupPrefab)} is null! Destroying self.");
+                shouldDestroy = true;
+            }
+
+            // Check if okPopupPrefab is assigned
+            if (okPopupPrefab == null)
+            {
+                Multiplayer.LogError($"{nameof(okPopupPrefab)} is null! Destroying self.");
+                shouldDestroy = true;
+            }
+
+            // Check if uiMenuController is assigned
+            if (uiMenuController == null)
+            {
+                Multiplayer.LogError($"{nameof(uiMenuController)} is null! Destroying self.");
+                shouldDestroy = true;
+            }
+
+            // If all required components are assigned, call base.Awake(), otherwise destroy self
+            if (!shouldDestroy)
+            {
+                base.Awake();
+                return;
+            }
+
+            Destroy(this);
         }
 
-        if (renamePopupPrefab == null)
+        // Switch to the default menu
+        public void SwitchToDefaultMenu()
         {
-            Multiplayer.LogError($"{nameof(renamePopupPrefab)} is null! Destroying self.");
-            shouldDestroy = true;
+            uiMenuController.SwitchMenu(uiMenuController.defaultMenuIndex);
         }
 
-        if (okPopupPrefab == null)
+        // Switch to a specific menu by index
+        public void SwitchToMenu(byte index)
         {
-            Multiplayer.LogError($"{nameof(okPopupPrefab)} is null! Destroying self.");
-            shouldDestroy = true;
+            uiMenuController.SwitchMenu(index);
         }
 
-        if (uiMenuController == null)
+        // Show the rename popup if possible
+        [CanBeNull]
+        public Popup ShowRenamePopup()
         {
-            Multiplayer.LogError($"{nameof(uiMenuController)} is null! Destroying self.");
-            shouldDestroy = true;
+            Debug.Log("public Popup ShowRenamePopup() ...");
+            return ShowPopup(renamePopupPrefab);
         }
 
-        if (!shouldDestroy)
+        // Show the OK popup if possible
+        [CanBeNull]
+        public Popup ShowOkPopup()
         {
-            base.Awake();
-            return;
+            return ShowPopup(okPopupPrefab);
         }
 
-        Destroy(this);
-    }
+        // Generic method to show a popup if the PopupManager can show it
+        [CanBeNull]
+        private Popup ShowPopup(Popup popup)
+        {
+            if (popupManager.CanShowPopup())
+                return popupManager.ShowPopup(popup);
 
-    public void SwitchToDefaultMenu()
-    {
-        uiMenuController.SwitchMenu(uiMenuController.defaultMenuIndex);
-    }
+            Multiplayer.LogError($"{nameof(PopupManager)} cannot show popup!");
+            return null;
+        }
 
-    public void SwitchToMenu(byte index)
-    {
-        uiMenuController.SwitchMenu(index);
-    }
+        /// <param name="func">A function to apply to the MainMenuPopupManager while the object is disabled</param>
+        public static void Create(Action<MainMenuThingsAndStuff> func)
+        {
+            // Create a new GameObject for MainMenuThingsAndStuff and disable it
+            GameObject go = new($"[{nameof(MainMenuThingsAndStuff)}]");
+            go.SetActive(false);
 
-    [CanBeNull]
-    public Popup ShowRenamePopup()
-    {
-        return ShowPopup(renamePopupPrefab);
-    }
+            // Add MainMenuThingsAndStuff component and apply the provided function
+            MainMenuThingsAndStuff manager = go.AddComponent<MainMenuThingsAndStuff>();
+            func.Invoke(manager);
 
-    [CanBeNull]
-    public Popup ShowOkPopup()
-    {
-        return ShowPopup(okPopupPrefab);
-    }
-
-    [CanBeNull]
-    private Popup ShowPopup(Popup popup)
-    {
-        if (popupManager.CanShowPopup())
-            return popupManager.ShowPopup(popup);
-        Multiplayer.LogError($"{nameof(PopupManager)} cannot show popup!");
-        return null;
-    }
-
-    /// <param name="func">A function to apply to the MainMenuPopupManager while the object is disabled</param>
-    public static void Create(Action<MainMenuThingsAndStuff> func)
-    {
-        GameObject go = new($"[{nameof(MainMenuThingsAndStuff)}]");
-        go.SetActive(false);
-        MainMenuThingsAndStuff manager = go.AddComponent<MainMenuThingsAndStuff>();
-        func.Invoke(manager);
-        go.SetActive(true);
+            // Re-enable the GameObject
+            go.SetActive(true);
+        }
     }
 }

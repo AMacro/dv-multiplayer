@@ -16,7 +16,7 @@ public static class Multiplayer
 {
     private const string LOG_FILE = "multiplayer.log";
 
-    private static UnityModManager.ModEntry ModEntry;
+    public static UnityModManager.ModEntry ModEntry;
     public static Settings Settings;
 
     private static AssetBundle assetBundle;

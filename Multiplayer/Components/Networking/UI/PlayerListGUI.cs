@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using Multiplayer.Components.Networking.Player;
 using UnityEngine;
 
-namespace Multiplayer.Components.Networking;
+namespace Multiplayer.Components.Networking.UI;
 
 public class PlayerListGUI : MonoBehaviour
 {

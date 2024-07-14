@@ -67,7 +67,7 @@ public abstract class NetworkManager : INetEventListener
         netManager.PollEvents();
     }
 
-    public void Stop()
+    public virtual void Stop()
     {
         netManager.Stop(true);
         Settings.OnSettingsUpdated -= OnSettingsUpdated;

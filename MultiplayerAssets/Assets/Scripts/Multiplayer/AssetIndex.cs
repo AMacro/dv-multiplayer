@@ -10,5 +10,8 @@ namespace Multiplayer.Editor
 
         [Header("Textures")]
         public Sprite multiplayerIcon;
+        public Sprite lockIcon;
+        public Sprite refreshIcon;
+        public Sprite connectIcon;
     }
 }

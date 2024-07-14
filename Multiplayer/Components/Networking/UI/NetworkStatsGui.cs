@@ -5,7 +5,7 @@ using Humanizer;
 using LiteNetLib;
 using UnityEngine;
 
-namespace Multiplayer.Components.Networking;
+namespace Multiplayer.Components.Networking.UI;
 
 public class NetworkStatsGui : MonoBehaviour
 {
