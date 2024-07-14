@@ -95,16 +95,16 @@ See [LICENSE][license-url] for more information.
 <!-- MARKDOWN LINKS & IMAGES -->
 <!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
 
-[contributors-shield]: https://img.shields.io/github/contributors/Insprill/dv-multiplayer.svg?style=for-the-badge
-[contributors-url]: https://github.com/Insprill/dv-multiplayer/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/Insprill/dv-multiplayer.svg?style=for-the-badge
-[forks-url]: https://github.com/Insprill/dv-multiplayer/network/members
-[stars-shield]: https://img.shields.io/github/stars/Insprill/dv-multiplayer.svg?style=for-the-badge
-[stars-url]: https://github.com/Insprill/dv-multiplayer/stargazers
-[issues-shield]: https://img.shields.io/github/issues/Insprill/dv-multiplayer.svg?style=for-the-badge
-[issues-url]: https://github.com/Insprill/dv-multiplayer/issues
-[license-shield]: https://img.shields.io/github/license/Insprill/dv-multiplayer.svg?style=for-the-badge
-[license-url]: https://github.com/Insprill/dv-multiplayer/blob/master/LICENSE
+[contributors-shield]: https://img.shields.io/github/contributors/AMacro/dv-multiplayer.svg?style=for-the-badge
+[contributors-url]: https://github.com/AMacro/dv-multiplayer/graphs/contributors
+[forks-shield]: https://img.shields.io/github/forks/AMacro/dv-multiplayer.svg?style=for-the-badge
+[forks-url]: https://github.com/AMacro/dv-multiplayer/network/members
+[stars-shield]: https://img.shields.io/github/stars/AMacro/dv-multiplayer.svg?style=for-the-badge
+[stars-url]: https://github.com/AMacro/dv-multiplayer/stargazers
+[issues-shield]: https://img.shields.io/github/issues/AMacro/dv-multiplayer.svg?style=for-the-badge
+[issues-url]: https://github.com/AMacro/dv-multiplayer/issues
+[license-shield]: https://img.shields.io/github/license/AMacro/dv-multiplayer.svg?style=for-the-badge
+[license-url]: https://github.com/AMacro/dv-multiplayer/blob/master/LICENSE
 [altfuture-support-email-url]: mailto:support@altfuture.gg
 [contributing-quickstart-url]: https://docs.github.com/en/get-started/quickstart/contributing-to-projects
 [asset-studio-url]: https://github.com/Perfare/AssetStudio
