@@ -71,7 +71,7 @@ namespace Multiplayer.Components.MainMenu
         [CanBeNull]
         public Popup ShowRenamePopup()
         {
-            Debug.Log("public Popup ShowRenamePopup() ...");
+            Multiplayer.Log("public Popup ShowRenamePopup() ...");
             return ShowPopup(renamePopupPrefab);
         }
 

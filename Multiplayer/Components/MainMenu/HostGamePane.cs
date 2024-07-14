@@ -103,28 +103,28 @@ public class HostGamePane : MonoBehaviour
         GameObject dividerPrefab = goMMC.FindChildByName("Divider");
         if (dividerPrefab == null)
         {
-            Debug.Log("Divider not found!");
+            Multiplayer.LogError("Divider not found!");
             return;
         }
 
         GameObject cbPrefab = goMMC.FindChildByName("CheckboxFreeCam");
         if (cbPrefab == null)
         {
-            Debug.Log("CheckboxFreeCam not found!");
+            Multiplayer.LogError("CheckboxFreeCam not found!");
             return;
         }
 
         GameObject sliderPrefab = goMMC.FindChildByName("SliderLimitSession");
         if (sliderPrefab == null)
         {
-            Debug.Log("SliderLimitSession not found!");
+            Multiplayer.LogError("SliderLimitSession not found!");
             return;
         }
         
         GameObject inputPrefab = MainMenuThingsAndStuff.Instance.renamePopupPrefab.gameObject.FindChildByName("TextFieldTextIcon");
         if (inputPrefab == null)
         {
-            Debug.Log("TextFieldTextIcon not found!");
+            Multiplayer.LogError("TextFieldTextIcon not found!");
             return;
         }
 
@@ -132,7 +132,7 @@ public class HostGamePane : MonoBehaviour
         lcInstance = goMMC.FindChildByName("PaneRight Launcher").GetComponent<LauncherController>();
         if (lcInstance == null)
         {
-            Debug.Log("No Run Button");
+            Multiplayer.LogError("No Run Button");
             return;
         }
         Sprite playSprite = lcInstance.runButton.FindChildByName("[icon]").GetComponent<Image>().sprite;
@@ -331,7 +331,7 @@ private void SetupListeners(bool on)
 
         startButton.ToggleInteractable(valid);
 
-        Debug.Log($"Validated: {valid}");
+        //Multiplayer.Log($"HostPane validated: {valid}");
     }
 
 
@@ -391,7 +391,7 @@ private void SetupListeners(bool on)
 
 
         var ContinueGameRequested  = lcInstance.GetType().GetMethod("OnRunClicked", BindingFlags.NonPublic | BindingFlags.Instance);
-        Debug.Log($"OnRunClicked exists: {ContinueGameRequested != null}");
+        //Multiplayer.Log($"OnRunClicked exists: {ContinueGameRequested != null}");
         ContinueGameRequested?.Invoke(lcInstance, null);
     }
 

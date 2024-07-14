@@ -134,7 +134,7 @@ public class NetworkedJob : IdMonoBehaviour<ushort, NetworkedJob>
             //station.logicStation.AddJobToStation(job);
             if (station.logicStation.availableJobs.Contains(job))
             {
-                Debug.LogError("Trying to add the same job[" + job.ID + "] multiple times to station! Skipping, trying to recover.");
+                Multiplayer.LogError("Trying to add the same job[" + job.ID + "] multiple times to station! Skipping, trying to recover.");
                 return;
             }
 

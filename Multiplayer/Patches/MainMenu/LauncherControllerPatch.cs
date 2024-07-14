@@ -93,10 +93,7 @@ public static class LauncherController_Patch
 
     private static void HostAction()
     {
-        // Implement host action logic here
-        Debug.Log("Host button clicked.");
-
-        
+        //Debug.Log("Host button clicked.");
 
         RightPaneController_OnEnable_Patch.uIMenuController.SwitchMenu(RightPaneController_OnEnable_Patch.hostMenuIndex);
 

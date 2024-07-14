@@ -64,7 +64,7 @@ namespace Multiplayer.Components.MainMenu
                     RequestAbortion();
                     return;
                 default:
-                    Debug.LogError(string.Format("Unhandled action {0}", action), this);
+                    Multiplayer.LogError(string.Format("Unhandled action {0}", action));
                     break;
             }
         }

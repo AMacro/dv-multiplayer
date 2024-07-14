@@ -115,7 +115,7 @@ public class NetworkServer : NetworkManager
 
     private void OnLoaded()
     {
-        Debug.Log($"Server loaded, isSinglePlayer: {isSinglePlayer} isPublic: {isPublic}");
+        //Debug.Log($"Server loaded, isSinglePlayer: {isSinglePlayer} isPublic: {isPublic}");
         if (!isSinglePlayer && isPublic)
         {
             lobbyServerManager = NetworkLifecycle.Instance.GetOrAddComponent<LobbyServerManager>();

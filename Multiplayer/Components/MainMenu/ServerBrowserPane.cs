@@ -71,44 +71,8 @@ namespace Multiplayer.Components.MainMenu
 
         private void Awake()
         {
-            Multiplayer.Log("MultiplayerPane Awake()");
-            /*
-             * 
-             * Temp testing code
-             * 
-             */
+            //Multiplayer.Log("MultiplayerPane Awake()");
 
-            //GameObject chat = new GameObject("ChatUI", typeof(ChatGUI));
-            //chat.transform.SetParent(GameObject.Find("MenuOpeningScene").transform,false);
-
-            //////////Debug.Log("Instantiating Overlay");
-            //////////GameObject overlay = new GameObject("Overlay", typeof(ChatGUI));
-            //////////GameObject parent = GameObject.Find("MenuOpeningScene");
-            //////////if (parent != null)
-            //////////{
-            //////////    overlay.transform.SetParent(parent.transform, false);
-            //////////    Debug.Log("Overlay parent set to MenuOpeningScene");
-            //////////}
-            //////////else
-            //////////{
-            //////////    Debug.LogError("MenuOpeningScene not found");
-            //////////}
-
-            //////////Debug.Log("Overlay instantiated with components:");
-            //////////foreach (Transform child in overlay.transform)
-            //////////{
-            //////////    Debug.Log("Child: " + child.name);
-            //////////    foreach (Transform grandChild in child)
-            //////////    {
-            //////////        Debug.Log("GrandChild: " + grandChild.name);
-            //////////    }
-            //////////}
-
-            /*
-             * 
-             * End Temp testing code
-             * 
-             */
             CleanUI();
             BuildUI();
 
@@ -119,12 +83,12 @@ namespace Multiplayer.Components.MainMenu
 
         private void OnEnable()
         {
-            Multiplayer.Log("MultiplayerPane OnEnable()");
+            //Multiplayer.Log("MultiplayerPane OnEnable()");
             if (!this.parentScroller)
             {
-                Multiplayer.Log("Find ScrollRect");
+                //Multiplayer.Log("Find ScrollRect");
                 this.parentScroller = this.gridView.GetComponentInParent<ScrollRect>();
-                Multiplayer.Log("Found ScrollRect");
+                //Multiplayer.Log("Found ScrollRect");
             }
             this.SetupListeners(true);
             this.serverIDOnRefresh = "";
@@ -376,7 +340,7 @@ namespace Multiplayer.Components.MainMenu
 
         private void DirectAction()
         {
-            Debug.Log($"DirectAction()");
+            //Debug.Log($"DirectAction()");
             buttonDirectIP.ToggleInteractable(false);
             buttonJoin.ToggleInteractable(false)    ;
 
@@ -388,13 +352,13 @@ namespace Multiplayer.Components.MainMenu
 
         private void IndexChanged(AGridView<IServerBrowserGameDetails> gridView)
         {
-            Debug.Log($"Index: {gridView.SelectedModelIndex}");
+            //Debug.Log($"Index: {gridView.SelectedModelIndex}");
             if (serverRefreshing)
                 return;
 
             if (gridView.SelectedModelIndex >= 0)
             {
-                Debug.Log($"Selected server: {gridViewModel[gridView.SelectedModelIndex].Name}");
+                //Debug.Log($"Selected server: {gridViewModel[gridView.SelectedModelIndex].Name}");
 
                 selectedServer = gridViewModel[gridView.SelectedModelIndex];
                 
@@ -402,9 +366,9 @@ namespace Multiplayer.Components.MainMenu
 
                 //Check if we can connect to this server
 
-                Debug.Log($"server: \"{selectedServer.GameVersion}\" \"{selectedServer.MultiplayerVersion}\"");
-                Debug.Log($"client: \"{BuildInfo.BUILD_VERSION_MAJOR.ToString()}\" \"{Multiplayer.ModEntry.Version.ToString()}\"");
-                Debug.Log($"result: \"{selectedServer.GameVersion == BuildInfo.BUILD_VERSION_MAJOR.ToString()}\" \"{selectedServer.MultiplayerVersion == Multiplayer.ModEntry.Version.ToString()}\"");
+                Multiplayer.Log($"Server: \"{selectedServer.GameVersion}\" \"{selectedServer.MultiplayerVersion}\"");
+                Multiplayer.Log($"Client: \"{BuildInfo.BUILD_VERSION_MAJOR.ToString()}\" \"{Multiplayer.ModEntry.Version.ToString()}\"");
+                Multiplayer.Log($"Result: \"{selectedServer.GameVersion == BuildInfo.BUILD_VERSION_MAJOR.ToString()}\" \"{selectedServer.MultiplayerVersion == Multiplayer.ModEntry.Version.ToString()}\"");
 
                 bool canConnect = selectedServer.GameVersion == BuildInfo.BUILD_VERSION_MAJOR.ToString() &&
                                   selectedServer.MultiplayerVersion == Multiplayer.ModEntry.Version.ToString();
@@ -425,7 +389,7 @@ namespace Multiplayer.Components.MainMenu
 
             if (selectedServer != null)
             {
-                Debug.Log("Prepping Data");
+                //Multiplayer.Log("Prepping Data");
                 serverName.text = selectedServer.Name;
 
                 //note: built-in localisations have a trailing colon e.g. 'Game mode:'
@@ -442,14 +406,14 @@ namespace Multiplayer.Components.MainMenu
                 details += "<br>";
                 details += selectedServer.ServerDetails;
 
-                Debug.Log("Finished Prepping Data");
+                //Multiplayer.Log("Finished Prepping Data");
                 detailsPane.text = details;
             }
         }
 
         private void ShowIpPopup()
         {
-            Debug.Log("In ShowIpPpopup");
+            Multiplayer.Log("In ShowIpPpopup");
             var popup = MainMenuThingsAndStuff.Instance.ShowRenamePopup();
             if (popup == null)
             {
@@ -568,7 +532,7 @@ namespace Multiplayer.Components.MainMenu
         private void HandleConnectionEstablished()
         {
             // Connection established, handle the UI or game state accordingly
-            Debug.Log("Connection established!");
+            Multiplayer.Log("Connection established!");
             // HideConnectingPopup(); // Hide the connecting message
         }
 
@@ -576,7 +540,7 @@ namespace Multiplayer.Components.MainMenu
         private void HandleConnectionFailed()
         {
             // Connection failed, show an error message or handle the failure scenario
-            Debug.LogError("Connection failed!");
+            Multiplayer.LogError("Connection failed!");
             // ShowConnectionFailedPopup();
         }
 
@@ -592,21 +556,21 @@ namespace Multiplayer.Components.MainMenu
 
                 if (webRequest.isNetworkError)
                 {
-                    Debug.Log(pages[page] + ": Error: " + webRequest.error);
+                    Multiplayer.LogError(pages[page] + ": Error: " + webRequest.error);
                 }
                 else
                 {
-                    Debug.Log(pages[page] + ":\nReceived: " + webRequest.downloadHandler.text);
+                    Multiplayer.Log(pages[page] + ":\nReceived: " + webRequest.downloadHandler.text);
 
                     LobbyServerData[] response;
 
                     response = Newtonsoft.Json.JsonConvert.DeserializeObject<LobbyServerData[]>(webRequest.downloadHandler.text);
 
-                    Debug.Log($"servers: {response.Length}");
+                    Multiplayer.Log($"Serverbrowser servers: {response.Length}");
 
                     foreach (LobbyServerData server in response)
                     {
-                        Debug.Log($"Name: {server.Name}\tIP: {server.ip}");
+                        Multiplayer.Log($"Server name: {server.Name}\tIP: {server.ip}");
                     }
 
                     if (response.Length == 0)
@@ -686,7 +650,7 @@ namespace Multiplayer.Components.MainMenu
                 item.MultiplayerVersion = UnityEngine.Random.Range(1, 10) > 3 ? Multiplayer.ModEntry.Version.ToString() : "0.1.0";
 
 
-                Debug.Log(item.HasPassword);
+                //Debug.Log(item.HasPassword);
                 gridViewModel.Add(item);
             }
 
