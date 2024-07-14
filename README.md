@@ -102,7 +102,7 @@ See [LICENSE][license-url] for more information.
 [stars-shield]: https://img.shields.io/github/stars/Insprill/dv-multiplayer.svg?style=for-the-badge
 [stars-url]: https://github.com/Insprill/dv-multiplayer/stargazers
 [issues-shield]: https://img.shields.io/github/issues/AMacro/dv-multiplayer.svg?style=for-the-badge
-[issues-url]: https://github.com/Insprill/dv-multiplayer/issues
+[issues-url]: https://github.com/AMacro/dv-multiplayer/issues
 [license-shield]: https://img.shields.io/github/license/Insprill/dv-multiplayer.svg?style=for-the-badge
 [license-url]: https://github.com/Insprill/dv-multiplayer/blob/master/LICENSE
 [altfuture-support-email-url]: mailto:support@altfuture.gg
