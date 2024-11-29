@@ -564,7 +564,7 @@ public class ChatGUI : MonoBehaviour
 
         //Setup placeholder
         chatInputIF.placeholder.GetComponent<TMP_Text>().richText = false;
-        chatInputIF.placeholder.GetComponent<TMP_Text>().text = "Type a message and press Enter!";
+        chatInputIF.placeholder.GetComponent<TMP_Text>().text = Locale.CHAT_PLACEHOLDER;// "Type a message and press Enter!"; //translate
         //Setup input renderer
         TMP_Text chatInputRenderer = textInputGO.FindChildByName("text [noloc]").GetComponent<TMP_Text>();
         chatInputRenderer.fontSize = 18;

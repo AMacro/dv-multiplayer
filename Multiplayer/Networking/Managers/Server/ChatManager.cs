@@ -206,7 +206,24 @@ public static class ChatManager
 
     private static void HelpMessage(NetPeer peer)
     {
-        string message = $"<color=#{MESSAGE_COLOUR_HELP}>Available commands:" +
+        string message = $"<color=#{MESSAGE_COLOUR_HELP}>{Locale.CHAT_HELP_AVAILABLE}" +
+
+                            $"\r\n\r\n\t{Locale.CHAT_HELP_SERVER_MSG}" +
+                                $"\r\n\t\t/server <{Locale.CHAT_HELP_MSG}>" +
+                                $"\r\n\t\t/s <{Locale.CHAT_HELP_MSG}>" +
+
+                            $"\r\n\r\n\t{Locale.CHAT_HELP_WHISPER_MSG}" +
+                                $"\r\n\t\t/whisper <{Locale.CHAT_HELP_PLAYER_NAME}> <{Locale.CHAT_HELP_MSG}>" +
+                                $"\r\n\t\t/w <{Locale.CHAT_HELP_PLAYER_NAME}> <{Locale.CHAT_HELP_MSG}>" +
+
+                            $"\r\n\r\n\t{Locale.CHAT_HELP_HELP}" +
+                                "\r\n\t\t/help" +
+                                "\r\n\t\t/?" +
+
+                        "</color>";
+
+        /*
+         * $"<color=#{MESSAGE_COLOUR_HELP}>Available commands:" +
 
                         "\r\n\r\n\tSend a message as the server (host only)" +
                         "\r\n\t\t/server <message>" +
@@ -221,7 +238,7 @@ public static class ChatManager
                         "\r\n\t\t/?" +
 
                         "</color>";
-
+        */
         NetworkLifecycle.Instance.Server.SendWhisper(message, peer);
     }
 

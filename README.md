@@ -33,6 +33,7 @@
     <li><a href="#roadmap">Roadmap</a></li>
     <li><a href="#building">Building</a></li>
     <li><a href="#contributing">Contributing</a></li>
+    <li><a href="#translations">Translations</a></li>
     <li><a href="#license">License</a></li>
   </ol>
 </details>
@@ -85,6 +86,20 @@ Once the Unity project is compiled, the rest of the mod uses the same build syst
 Contributions are what make the open source community such an amazing place to learn, inspire, and create.  
 Any contributions you make are **greatly appreciated**!  
 If you're new to contributing to open-source projects, you can follow [this][contributing-quickstart-url] guide.
+
+
+
+
+<!-- TRANSLATIONS -->
+
+## Translations
+
+Special thanks to those who have assisted with translations - Apologies if I've missed you, drop me a line and I'll update this section.
+If you'd like to help with translations, please create a pull request or send a message on our [Discord channel](https://discord.com/channels/332511223536943105/1234574186161377363).
+| **Translator** | **Language** |
+| :------------ | :------------ 
+| Ádi | Hungarian   |
+| My Name Is BorING | Chinese (Simplified) |
 
 
 

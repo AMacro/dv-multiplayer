@@ -2,8 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
+using dnlib.DotNet;
+using DV.Rain;
+using Humanizer;
+using System.Xml.Linq;
 using I2.Loc;
 using Multiplayer.Utils;
+using static VLB.Consts;
 
 namespace Multiplayer
 {
@@ -143,6 +148,20 @@ namespace Multiplayer
         #endregion
 
         #region Chat
+        public static string CHAT_PLACEHOLDER => Get(CHAT_PLACEHOLDER_KEY);
+        public const string CHAT_PLACEHOLDER_KEY = $"{PREFIX_CHAT_INFO}/placeholder";
+        public static string CHAT_HELP_AVAILABLE => Get(CHAT_HELP_AVAILABLE_KEY);
+        public const string CHAT_HELP_AVAILABLE_KEY = $"{PREFIX_CHAT_INFO}/help/available";
+        public static string CHAT_HELP_SERVER_MSG => Get(CHAT_HELP_SERVER_MSG_KEY);
+        public const string CHAT_HELP_SERVER_MSG_KEY = $"{PREFIX_CHAT_INFO}/help/servermsg";
+        public static string CHAT_HELP_WHISPER_MSG => Get(CHAT_HELP_WHISPER_MSG_KEY);
+        public const string CHAT_HELP_WHISPER_MSG_KEY = $"{PREFIX_CHAT_INFO}/help/whispermsg";
+        public static string CHAT_HELP_HELP => Get(CHAT_HELP_HELP_KEY);
+        public const string CHAT_HELP_HELP_KEY = $"{PREFIX_CHAT_INFO}/help/help";
+        public static string CHAT_HELP_MSG => Get(CHAT_HELP_MSG_KEY);
+        public const string CHAT_HELP_MSG_KEY = $"{PREFIX_CHAT_INFO}/help/msg";
+        public static string CHAT_HELP_PLAYER_NAME => Get(CHAT_HELP_PLAYER_NAME_KEY);
+        public const string CHAT_HELP_PLAYER_NAME_KEY = $"{PREFIX_CHAT_INFO}/help/playername";
         #endregion
 
         #region Pause Menu
