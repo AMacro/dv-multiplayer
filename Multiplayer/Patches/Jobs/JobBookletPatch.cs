@@ -29,8 +29,11 @@ public static class JobBooklet_Patch
     [HarmonyPrefix]
     private static void DestroyJobBooklet(JobBooklet __instance)
     {
-        if (!NetworkedJob.TryGetFromJob(__instance.job, out NetworkedJob networkedJob))
-            Multiplayer.LogError($"JobBooklet.DestroyJobBooklet() NetworkedJob not found for Job ID: {__instance.job?.ID}");
+        if (__instance == null || __instance.job == null)
+            return;
+
+        if (!NetworkedJob.TryGetFromJob(__instance?.job, out NetworkedJob networkedJob))
+            Multiplayer.LogError($"JobBooklet.DestroyJobBooklet() NetworkedJob not found for Job ID: {__instance?.job?.ID}");
         else
             networkedJob.JobBooklet = null;
     }
