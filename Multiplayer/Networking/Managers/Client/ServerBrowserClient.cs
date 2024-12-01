@@ -45,8 +45,10 @@ public class ServerBrowserClient : NetworkManager, IDisposable
 
     public void Start()
     {
-        netManager.Start();
         netManager.UseNativeSockets = true;
+        netManager.IPv6Enabled = true;
+        netManager.Start();
+
         netManager.UpdateTime = 0;
     }
     public override void Stop()

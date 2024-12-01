@@ -21,6 +21,17 @@ namespace Multiplayer.Components.MainMenu.ServerBrowser
         private const int PING_WIDTH = 124; // Adjusted width for the ping text
         private const int PING_POS_X = 650; // X position for the ping text
 
+        private const string PING_COLOR_UNKNOWN = "#808080";
+        private const string PING_COLOR_EXCELLENT = "#00ff00";
+        private const string PING_COLOR_GOOD = "#ffa500";
+        private const string PING_COLOR_HIGH = "#ff4500";
+        private const string PING_COLOR_POOR = "#ff0000";
+
+        private const int PING_THRESHOLD_NONE = -1;
+        private const int PING_THRESHOLD_EXCELLENT = 60;
+        private const int PING_THRESHOLD_GOOD = 100;
+        private const int PING_THRESHOLD_HIGH = 150;
+
         protected override void Awake()
         {
             // Find and assign TextMeshProUGUI components for displaying server details
@@ -84,30 +95,37 @@ namespace Multiplayer.Components.MainMenu.ServerBrowser
 
         public void UpdateView()
         {
+
             // Update the text fields with the data from the server
             networkName.text = data.Name;
             playerCount.text = $"{data.CurrentPlayers} / {data.MaxPlayers}";
-            ping.text = $"<color={GetColourForPing(data.Ping)}>{(data.Ping < 0 ? "?" : data.Ping)} ms</color>";
+
+            if (data.MultiplayerVersion == Multiplayer.Ver)
+                ping.text = $"<color={GetColourForPing(data.Ping)}>{(data.Ping < 0 ? "?" : data.Ping)} ms</color>";
+            else
+                ping.text = $"<color={PING_COLOR_UNKNOWN}>N/A</color>";
 
             // Hide the icon if the server does not have a password
-            goIconPassword.SetActive(data.HasPassword); 
-            goIconLAN.SetActive(!string.IsNullOrEmpty(data.LocalIPv4));
+            goIconPassword.SetActive(data.HasPassword);
+
+            bool isLan = !string.IsNullOrEmpty(data.LocalIPv4) || !string.IsNullOrEmpty(data.LocalIPv6);
+            goIconLAN.SetActive(isLan);
         }
 
         private string GetColourForPing(int ping)
         {
             switch (ping)
             {
-                case -1:
-                    return "#808080";  // Mid-range gray for unknown
-                case < 60:
-                    return "#00ff00";  // Bright green for excellent ping
-                case < 100:
-                    return "#ffa500";  // Orange for good ping
-                case < 150:
-                    return "#ff4500";  // OrangeRed for high ping
+                case PING_THRESHOLD_NONE:
+                    return PING_COLOR_UNKNOWN;
+                case < PING_THRESHOLD_EXCELLENT:
+                    return PING_COLOR_EXCELLENT;
+                case < PING_THRESHOLD_GOOD:
+                    return PING_COLOR_GOOD;
+                case < PING_THRESHOLD_HIGH:
+                    return PING_COLOR_HIGH;
                 default:
-                    return "#ff0000";  // Red for don't even bother
+                    return PING_COLOR_POOR;
             }
         }
     }

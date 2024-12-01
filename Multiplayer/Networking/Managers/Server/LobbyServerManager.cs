@@ -85,7 +85,7 @@ public class LobbyServerManager : MonoBehaviour
 
         if(server_id == null || server_id == string.Empty)
         {
-            server_id = $"LAN-{Guid.NewGuid()}";
+            server_id = Guid.NewGuid().ToString();
         }
 
         server.serverData.id = server_id;
@@ -385,8 +385,10 @@ public class LobbyServerManager : MonoBehaviour
         discoveryListener = new EventBasedNetListener();
         discoveryManager = new NetManager(discoveryListener)
                             {
+                                IPv6Enabled = true,
                                 UnconnectedMessagesEnabled = true,
                                 BroadcastReceiveEnabled = true,
+                                
                             };
         packetProcessor = new NetPacketProcessor(discoveryManager);
 
@@ -397,8 +399,8 @@ public class LobbyServerManager : MonoBehaviour
 
         foreach (int port in discoveryPorts)
         {
-            if (discoveryManager.Start(port))
-                server.LogDebug(()=>$"Discovery server started on port {port}");
+            if (discoveryManager.Start(IPAddress.Any, IPAddress.IPv6Any, port))
+                server.LogDebug(()=>$"Discovery server started on port {port}"); 
             else
                 server.LogError($"Failed to start discovery server on port {port}");
         }

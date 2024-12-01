@@ -59,7 +59,7 @@ public class NetworkServer : NetworkManager
     private bool IsLoaded;
 
     //we don't care if the client doesn't have these mods
-    private string[] modWhiteList = { "RuntimeUnityEditor", "BookletOrganizer" };
+    public static string[] modWhiteList = { "RuntimeUnityEditor", "BookletOrganizer" };
 
     public NetworkServer(IDifficulty difficulty, Settings settings, bool isSinglePlayer, LobbyServerData serverData) : base(settings)
     {
@@ -87,7 +87,8 @@ public class NetworkServer : NetworkManager
         {
             Multiplayer.Log($"Starting server, will listen to IPv6: {ipv6Address.ToString()}");
             //start the connection, IPv4 messages can come from anywhere, IPv6 messages need to specifically come from the static IPv6
-            return netManager.Start(IPAddress.Any, ipv6Address,port);
+            //return netManager.Start(IPAddress.Any, ipv6Address,port);
+            return netManager.Start(IPAddress.Any, IPAddress.IPv6Any,port);
         }
 
         //we're not running IPv6, start as normal
@@ -982,7 +983,7 @@ public class NetworkServer : NetworkManager
     private void OnUnconnectedPingPacket(UnconnectedPingPacket packet, IPEndPoint endPoint)
     {
         //Multiplayer.Log($"OnUnconnectedPingPacket({endPoint.Address})");
-        SendUnconnectedPacket(packet, endPoint.Address.ToString(),endPoint.Port);
+        SendUnconnectedPacket(packet, endPoint.Address.ToString(), endPoint.Port);
     }
 
     private void OnCommonItemChangePacket(CommonItemChangePacket packet, NetPeer peer)

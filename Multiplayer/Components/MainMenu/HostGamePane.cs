@@ -14,6 +14,9 @@ using UnityEngine.Events;
 using Multiplayer.Networking.Data;
 using Multiplayer.Components.Networking;
 using Multiplayer.Components.Util;
+using Multiplayer.Networking.Listeners;
+using UnityModManagerNet;
+using System.Linq;
 namespace Multiplayer.Components.MainMenu;
 
 public class HostGamePane : MonoBehaviour
@@ -370,7 +373,16 @@ private void SetupListeners(bool on)
         serverData.CurrentPlayers = 0;
         serverData.MaxPlayers = (int)maxPlayers.value;
 
-        serverData.RequiredMods = ""; //FIX THIS - get the mods required
+        ModInfo[] serverMods = ModInfo.FromModEntries(UnityModManager.modEntries)
+                            .Where(mod => !NetworkServer.modWhiteList.Contains(mod.Id) && mod.Id != Multiplayer.ModEntry.Info.Id).ToArray();
+
+        string requiredMods = "";
+        if( serverMods.Length > 0)
+        {
+            requiredMods = string.Join(", ", serverMods.Select(mod => $"{{{mod.Id}, {mod.Version}}}"));
+        }
+
+        serverData.RequiredMods = requiredMods; //FIX THIS - get the mods required
         serverData.GameVersion = BuildInfo.BUILD_VERSION_MAJOR.ToString();
         serverData.MultiplayerVersion = Multiplayer.Ver;
 

@@ -535,7 +535,7 @@ namespace Multiplayer.Components.MainMenu
                 details += "<alpha=#50>" + LocalizationAPI.L("launcher/in_game_time_passed", Array.Empty<string>()) + "</color> " + selectedServer.TimePassed + "<br>";
                 details += "<alpha=#50>" + Locale.SERVER_BROWSER__PLAYERS + ":</color> " + selectedServer.CurrentPlayers + '/' + selectedServer.MaxPlayers + "<br>";
                 details += "<alpha=#50>" + Locale.SERVER_BROWSER__PASSWORD_REQUIRED + ":</color> " + (selectedServer.HasPassword ? Locale.SERVER_BROWSER__YES : Locale.SERVER_BROWSER__NO) + "<br>";
-                details += "<alpha=#50>" + Locale.SERVER_BROWSER__MODS_REQUIRED + ":</color> " + (selectedServer.RequiredMods != null? Locale.SERVER_BROWSER__YES : Locale.SERVER_BROWSER__NO) + "<br>";
+                details += "<alpha=#50>" + Locale.SERVER_BROWSER__MODS_REQUIRED + ":</color> " + (string.IsNullOrEmpty(selectedServer.RequiredMods) ? Locale.SERVER_BROWSER__NO : Locale.SERVER_BROWSER__YES) + "<br>";
                 details += "<br>";
                 details += "<alpha=#50>" + Locale.SERVER_BROWSER__GAME_VERSION + ":</color> " + (selectedServer.GameVersion != BuildInfo.BUILD_VERSION_MAJOR.ToString() ? "<color=\"red\">" : "") + selectedServer.GameVersion + "</color><br>";
                 details += "<alpha=#50>" + Locale.SERVER_BROWSER__MOD_VERSION + ":</color> " + (selectedServer.MultiplayerVersion != Multiplayer.Ver ? "<color=\"red\">" : "") + selectedServer.MultiplayerVersion + "</color><br>";
@@ -1126,12 +1126,16 @@ namespace Multiplayer.Components.MainMenu
         }
         private void SendPing(IServerBrowserGameDetails server)
         {
-            string ipv4 = server.ipv4;
+            //Ensure we are using the same MP mod version, don't ping other versions
+            Multiplayer.LogDebug(()=>$"SendPing: {server.Name}, {server.MultiplayerVersion}, {Multiplayer.Ver}");
+            if (server.MultiplayerVersion != Multiplayer.Ver)
+                return;
 
-            if(!string.IsNullOrEmpty(server.LocalIPv4))
-                ipv4 = server.LocalIPv4;
-                
-            serverBrowserClient.SendUnconnectedPingPacket(server.id, ipv4, server.ipv6, server.port);
+            // For LAN servers, prioritize the local IP addresses
+            string ipv4 = server.LocalIPv4 ?? server.ipv4;
+            string ipv6 = server.LocalIPv6 ?? server.ipv6;
+
+            serverBrowserClient.SendUnconnectedPingPacket(server.id, ipv4, ipv6, server.port);
         }
 
         private float GetPingInterval() 
@@ -1180,26 +1184,43 @@ namespace Multiplayer.Components.MainMenu
 
         private void OnDiscovery(IPEndPoint endpoint, LobbyServerData data)
         {
-            //Multiplayer.Log($"OnDiscovery({endpoint}) ID: {data.id}, Name: {data.Name}");
+            if (data == null || endpoint == null)
+                return;
 
-            IServerBrowserGameDetails existing = localServers.FirstOrDefault(element => element.id == data.id);
-            if (existing != default(IServerBrowserGameDetails))
+            Multiplayer.Log($"Discovery - Endpoint: {endpoint}, EP Family: {endpoint.AddressFamily}, LocalIPv4: {data?.LocalIPv4}, LocalIPv6: {data?.LocalIPv6}");
+
+            // Set local IP based on endpoint address type first
+            if (endpoint.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
             {
-                localServers.Remove(existing);
+                data.LocalIPv4 = endpoint.Address.ToString();
+                Multiplayer.Log($"Setting LocalIPv4 to {data.LocalIPv4}");
+            }
+            else if (endpoint.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+            {
+                data.LocalIPv6 = endpoint.Address.ToString();
+                Multiplayer.Log($"Setting LocalIPv6 to {data.LocalIPv6}");
             }
 
-            data.LastSeen = (int)Time.time;
-            localServers.Add(data);
-
-            existing = gridViewModel.FirstOrDefault(element => element.id == data.id);
-            if (existing != default(IServerBrowserGameDetails))
+            // Then handle server list management
+            if (!string.IsNullOrEmpty(data.id))
             {
-                existing.LastSeen = (int)Time.time;
-                existing.LocalIPv4 = data.LocalIPv4;
-            }
+                IServerBrowserGameDetails existing = localServers.FirstOrDefault(element => element.id == data.id);
+                if (existing != default(IServerBrowserGameDetails))
+                {
+                    localServers.Remove(existing);
+                }  
 
-            data.LastSeen = (int)Time.time;
-            localServers.Add(data);
+                data.LastSeen = (int)Time.time;
+                localServers.Add(data);
+
+                existing = gridViewModel.FirstOrDefault(element => element.id == data.id);
+                if (existing != default(IServerBrowserGameDetails))
+                {
+                    existing.LastSeen = (int)Time.time;
+                    existing.LocalIPv4 = data.LocalIPv4;
+                    existing.LocalIPv6 = data.LocalIPv6;
+                }
+            }
         }
 
         private void ExpireLocalServers()

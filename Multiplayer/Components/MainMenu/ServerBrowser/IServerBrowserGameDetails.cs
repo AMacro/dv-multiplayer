@@ -17,6 +17,7 @@ namespace Multiplayer.Components.MainMenu
         string ipv6 { get; set; }
         string ipv4 { get; set; }
         string LocalIPv4 { get; set; }
+        string LocalIPv6 { get; set; }
         int port { get; set; }
         string Name { get; set; }
         bool HasPassword { get; set; }

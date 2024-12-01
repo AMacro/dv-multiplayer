@@ -18,6 +18,8 @@ namespace Multiplayer.Networking.Data
 
         [JsonIgnore]
         public string LocalIPv4 { get; set; }
+        [JsonIgnore]
+        public string LocalIPv6 { get; set; }
 
         [JsonProperty("server_name")]
         public string Name { get; set; }
