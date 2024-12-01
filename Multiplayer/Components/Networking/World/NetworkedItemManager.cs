@@ -10,7 +10,7 @@ using Multiplayer.Utils;
 using DV;
 using DV.Interaction;
 
-namespace Multiplayer.Components.Networking.Train;
+namespace Multiplayer.Components.Networking.World;
 
 public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
 {

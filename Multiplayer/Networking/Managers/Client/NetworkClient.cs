@@ -83,11 +83,12 @@ public class NetworkClient : NetworkManager
         selfPeer = netManager.Connect(address, port, cachedWriter);
 
         isAlsoHost = NetworkLifecycle.Instance.IsServerRunning;
+        originalSession = UserManager.Instance.CurrentUser.CurrentSession;
     }
 
     public override void Stop()
     {
-        if (!isAlsoHost)
+        if (!isAlsoHost && originalSession != null)
         {
             LogDebug(() => $"NetworkClient.Stop() destroying session...");
             IGameSession session = UserManager.Instance.CurrentUser.CurrentSession;
@@ -338,9 +339,6 @@ public class NetworkClient : NetworkManager
         AStartGameData.DestroyAllInstances();
 
         GameObject go = new("Server Start Game Data");
-
-        //backup the session
-        originalSession = UserManager.Instance.CurrentUser.CurrentSession;
 
         //create a new save and load it
         go.AddComponent<StartGameData_ServerSave>().SetFromPacket(packet);
