@@ -24,6 +24,7 @@ public class NetworkedSaveGameManager : SingletonBehaviour<NetworkedSaveGameMana
         Inventory.Instance.MoneyChanged += Server_OnMoneyChanged;
         LicenseManager.Instance.LicenseAcquired += Server_OnLicenseAcquired;
         LicenseManager.Instance.JobLicenseAcquired += Server_OnJobLicenseAcquired;
+        LicenseManager.Instance.GarageUnlocked += Server_OnGarageUnlocked;
     }
 
     protected override void OnDestroy()
