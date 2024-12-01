@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Linq;
 using DV;
 using DV.CabControls;
+using DV.Common;
 using DV.UserManagement;
 using DV.Utils;
 using Multiplayer.Components.Networking;
@@ -44,6 +45,24 @@ public class StartGameData_ServerSave : AStartGameData
         saveGameData.SetBool(SaveGameKeys.Damage_Popup_Shown, true);
 
         CareerManagerDebtControllerPatch.HasDebt = packet.HasDebt;
+
+        Multiplayer.LogDebug(() =>
+        {
+            string unlockedGen = string.Join(", ", UnlockablesManager.Instance.UnlockedGeneralLicenses);
+            string packetGen = string.Join(", ", packet.AcquiredGeneralLicenses);
+
+            string unlockedJob = string.Join(", ", UnlockablesManager.Instance.UnlockedJobLicenses);
+            string packetJob = string.Join(", ", packet.AcquiredJobLicenses);
+
+            return $"StartGameData_ServerSave.SetFromPacket() UnlockedGen: {{{unlockedGen}}}, PacketGen: {{{packetGen}}},  UnlockedJob: {{{unlockedJob}}}, PacketJob: {{{packetJob}}}";
+        });
+
+
+        //For clients we need to have a session - new users may not have a session and this may also be causing problems with licenses syncing
+        if (NetworkLifecycle.Instance.IsHost())
+            return;
+
+        Client_GameSession.SetCurrent(new Client_GameSession(packet.GameMode, DifficultyToUse));
     }
 
     public override void Initialize()

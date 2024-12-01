@@ -38,6 +38,8 @@ using Object = UnityEngine.Object;
 using Multiplayer.Networking.Packets.Serverbound.Train;
 using System.Linq;
 using LiteNetLib.Utils;
+using DV.UserManagement;
+using DV.Common;
 
 namespace Multiplayer.Networking.Listeners;
 
@@ -56,6 +58,9 @@ public class NetworkClient : NetworkManager
 
     private ChatGUI chatGUI;
     public bool isSinglePlayer;
+
+    private bool isAlsoHost;
+    IGameSession originalSession;
 
     public NetworkClient(Settings settings) : base(settings)
     {
@@ -76,6 +81,21 @@ public class NetworkClient : NetworkManager
         };
         netPacketProcessor.Write(cachedWriter, serverboundClientLoginPacket);
         selfPeer = netManager.Connect(address, port, cachedWriter);
+
+        isAlsoHost = NetworkLifecycle.Instance.IsServerRunning;
+    }
+
+    public override void Stop()
+    {
+        if (!isAlsoHost)
+        {
+            LogDebug(() => $"NetworkClient.Stop() destroying session...");
+            IGameSession session = UserManager.Instance.CurrentUser.CurrentSession;
+            Client_GameSession.SetCurrent(originalSession);
+            session?.Dispose(); 
+        }
+
+        base.Stop();
     }
 
     protected override void Subscribe()
@@ -318,7 +338,14 @@ public class NetworkClient : NetworkManager
         AStartGameData.DestroyAllInstances();
 
         GameObject go = new("Server Start Game Data");
+
+        //backup the session
+        originalSession = UserManager.Instance.CurrentUser.CurrentSession;
+
+        //create a new save and load it
         go.AddComponent<StartGameData_ServerSave>().SetFromPacket(packet);
+
+        //ensure save is not destroyed on scene switch
         Object.DontDestroyOnLoad(go);
 
         SceneSwitcher.SwitchToScene(DVScenes.Game);
@@ -331,7 +358,6 @@ public class NetworkClient : NetworkManager
             Log($"WorldStreamingInit.LoadingFinished() SendReadyPacket()");
             SendReadyPacket();
         };
-        
 
         TrainStress.globalIgnoreStressCalculation = true;
 
