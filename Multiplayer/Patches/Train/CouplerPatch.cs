@@ -12,6 +12,13 @@ public static class Coupler_CoupleTo_Patch
     {
         if (UnloadWatcher.isUnloading || NetworkLifecycle.Instance.IsProcessingPacket)
             return;
+
+        if(__instance == null || other == null)
+        {
+            Multiplayer.LogError($"Coupler_CoupleTo_Patch({__instance?.train?.ID}, {other?.train?.ID}, {playAudio}, {viaChainInteraction})\r\n{new System.Diagnostics.StackTrace()}");
+            return;
+        }
+
         NetworkLifecycle.Instance.Client?.SendTrainCouple(__instance, other, playAudio, viaChainInteraction);
     }
 }

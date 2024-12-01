@@ -16,7 +16,8 @@ public static class HoseAndCock_SetCock_Patch
 
         if(!NetworkedTrainCar.TryGetCoupler(__instance, out Coupler coupler))
         {
-            Multiplayer.LogError($"HoseAndCock.SetCock() Coupler not found! - Cars may be getting destroyed on load?");
+            TrainCar me = TrainCar.Resolve(__instance?.parentSystem?.gameObject);
+            Multiplayer.LogError($"HoseAndCock.SetCock() Coupler not found! - Cars may be getting destroyed on load? TrainCar ID: {me?.ID}");
         }
 
         if (coupler == null || !coupler.train.TryNetworked(out NetworkedTrainCar networkedTrainCar))

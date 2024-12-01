@@ -1,4 +1,5 @@
 using LiteNetLib.Utils;
+using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Networking.Serialization;
 using Multiplayer.Utils;
@@ -76,6 +77,12 @@ public readonly struct TrainsetSpawnPart
     {
         TrainCar trainCar = networkedTrainCar.TrainCar;
         Transform transform = networkedTrainCar.transform;
+
+        NetworkLifecycle.Instance.Server.LogDebug(() =>
+        {
+            return $"TrainsetSpawnPart.FromTrainCar({networkedTrainCar?.NetId}) TrainCarID: {trainCar?.ID}, Livery: {trainCar?.carLivery}, LiveryID: {trainCar?.carLivery?.id}";
+        });
+
         return new TrainsetSpawnPart(
             networkedTrainCar.NetId,
             trainCar.carLivery.id,
@@ -97,8 +104,15 @@ public readonly struct TrainsetSpawnPart
         TrainsetSpawnPart[] parts = new TrainsetSpawnPart[trainset.cars.Count];
         for (int i = 0; i < trainset.cars.Count; i++)
         {
-            if(trainset.cars[i].TryNetworked(out NetworkedTrainCar networkedTrainCar))
-                parts[i] = FromTrainCar(networkedTrainCar);
+            NetworkedTrainCar networkedTrainCar;
+
+            if (!trainset.cars[i].TryNetworked(out networkedTrainCar))
+            {
+                NetworkLifecycle.Instance.Server.LogWarning($"TrainsetSpawnPart.FromTrainSet({trainset?.id}) Failed to find NetworkedTrainCar for: {trainset?.cars[i]?.ID}");
+                networkedTrainCar = trainset.cars[i].GetOrAddComponent<NetworkedTrainCar>();
+            }
+
+            parts[i] = FromTrainCar(networkedTrainCar);
         }
         return parts;
     }

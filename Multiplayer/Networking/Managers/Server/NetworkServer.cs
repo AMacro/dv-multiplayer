@@ -31,6 +31,7 @@ using UnityModManagerNet;
 using System.Net;
 using Multiplayer.Networking.Packets.Serverbound.Train;
 using Multiplayer.Networking.Packets.Unconnected;
+using System.Text;
 
 namespace Multiplayer.Networking.Listeners;
 
@@ -631,7 +632,21 @@ public class NetworkServer : NetworkManager
         // Send trains
         foreach (Trainset set in Trainset.allSets)
         {
-            LogDebug(() => $"Sending trainset {set.firstCar.GetNetId()} with {set.cars.Count} cars");
+            LogDebug(() =>
+            {
+                StringBuilder sb = new StringBuilder();
+
+                sb.Append($"Sending trainset {set?.firstCar?.GetNetId()} with {set?.cars?.Count} cars");
+
+                TrainCar[] noNetId = set?.cars?.Where(car => car.GetNetId() == 0).ToArray();
+
+                if (noNetId.Length > 0)
+                    sb.AppendLine($"Erroneous cars!: {string.Join(", ", noNetId.Select(car=> $"{{{car?.ID}, {car?.CarGUID}, {car.logicCar != null}}}"))}");
+
+                return sb.ToString();
+
+            });
+
             SendPacket(peer, ClientboundSpawnTrainSetPacket.FromTrainSet(set), DeliveryMethod.ReliableOrdered);
         }
 
