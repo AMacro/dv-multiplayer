@@ -15,6 +15,7 @@ using LiteNetLib.Utils;
 using Multiplayer.Networking.Packets.Unconnected;
 using System.Net;
 using LocoSim.Implementations;
+using System.Linq;
 
 namespace Multiplayer.Networking.Managers.Server;
 public class LobbyServerManager : MonoBehaviour
@@ -397,13 +398,14 @@ public class LobbyServerManager : MonoBehaviour
         packetProcessor.RegisterNestedType(LobbyServerData.Serialize, LobbyServerData.Deserialize);
         packetProcessor.SubscribeReusable<UnconnectedDiscoveryPacket, IPEndPoint>(OnUnconnectedDiscoveryPacket);
 
-        foreach (int port in discoveryPorts)
-        {
-            if (discoveryManager.Start(IPAddress.Any, IPAddress.IPv6Any, port))
-                server.LogDebug(()=>$"Discovery server started on port {port}"); 
-            else
-                server.LogError($"Failed to start discovery server on port {port}");
-        }
+        //start listening for discovery packets
+        int successPort = discoveryPorts.FirstOrDefault(port =>
+            discoveryManager.Start(IPAddress.Any, IPAddress.IPv6Any, port));
+
+        if (successPort != 0)
+            server.Log($"Discovery server started on port {successPort}");
+        else
+            server.LogError("Failed to start discovery server on any port");
     }
     protected NetDataWriter WritePacket<T>(T packet) where T : class, new()
     {
