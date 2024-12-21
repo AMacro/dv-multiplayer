@@ -108,7 +108,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
     protected override void Awake()
     {
         base.Awake();
-        Multiplayer.LogDebug(() => $"NetworkedItem.Awake() {name}");
+        //Multiplayer.LogDebug(() => $"NetworkedItem.Awake() {name}");
         NetworkedItemManager.Instance.CheckInstance(); //Ensure the NetworkedItemManager is initialised
 
         Register();
@@ -131,7 +131,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
     public void Initialize<T>(T item, ushort netId = 0, bool createDirty = true) where T : Component
     {
-        Multiplayer.LogDebug(() => $"NetworkedItem.Initialize<{typeof(T)}>(netId: {netId}, name: {name}, createDirty: {createdDirty})");
+        //Multiplayer.LogDebug(() => $"NetworkedItem.Initialize<{typeof(T)}>(netId: {netId}, name: {name}, createDirty: {createdDirty})");
 
         if (netId != 0)
             NetId = netId;
@@ -186,13 +186,13 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
     private void OnUngrabbed(ControlImplBase obj)
     {
-        Multiplayer.LogDebug(() => $"NetworkedItem.OnUngrabbed() NetID: {NetId}, {name}");
+        //Multiplayer.LogDebug(() => $"NetworkedItem.OnUngrabbed() NetID: {NetId}, {name}");
         stateDirty = true;
     }
 
     private void OnGrabbed(ControlImplBase obj)
     {
-        Multiplayer.LogDebug(() => $"NetworkedItem.OnGrabbed() NetID: {NetId}, {name}");
+        //Multiplayer.LogDebug(() => $"NetworkedItem.OnGrabbed() NetID: {NetId}, {name}");
         stateDirty = true;
     }
 
@@ -209,7 +209,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         thrownPosition = Item.transform.position - WorldMover.currentMove;
         thrownRotation = Item.transform.rotation;
 
-        Multiplayer.LogDebug(() => $"NetworkedItem.OnThrow() netId: {NetId}, Name: {name}, Raw Position: {Item.transform.position}, Position: {thrownPosition}, Rotation: {thrownRotation}, Direction: {throwDirection}");
+        //Multiplayer.LogDebug(() => $"NetworkedItem.OnThrow() netId: {NetId}, Name: {name}, Raw Position: {Item.transform.position}, Position: {thrownPosition}, Rotation: {thrownRotation}, Direction: {throwDirection}");
          
         wasThrown = true;
         stateDirty = true;
@@ -219,13 +219,13 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
     #region Item Value Tracking
     public void RegisterTrackedValue<T>(string key, Func<T> valueGetter, Action<T> valueSetter, Func<T, T, bool> thresholdComparer = null, bool serverAuthoritative = false)
     {
-        Multiplayer.LogDebug(() => $"NetworkedItem.RegisterTrackedValue(\"{key}\", {valueGetter != null}, {valueSetter != null}, {thresholdComparer != null}, {serverAuthoritative}) itemNetId {NetId}, item name: {name}");
+        //Multiplayer.LogDebug(() => $"NetworkedItem.RegisterTrackedValue(\"{key}\", {valueGetter != null}, {valueSetter != null}, {thresholdComparer != null}, {serverAuthoritative}) itemNetId {NetId}, item name: {name}");
         trackedValues.Add(new TrackedValue<T>(key, valueGetter, valueSetter, thresholdComparer, serverAuthoritative));
     }
 
     public void FinaliseTrackedValues()
     {
-        Multiplayer.LogDebug(() => $"NetworkedItem.FinaliseTrackedValues() itemNetId: {NetId}, item name: {name}");
+        //Multiplayer.LogDebug(() => $"NetworkedItem.FinaliseTrackedValues() itemNetId: {NetId}, item name: {name}");
 
         while (pendingSnapshots.Count > 0)
         {
@@ -393,7 +393,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
     public ItemUpdateData CreateUpdateData(ItemUpdateData.ItemUpdateType updateType)
     {
-        Multiplayer.LogDebug(() => $"NetworkedItem.CreateUpdateData({updateType}) NetId: {NetId}, name: {name}");
+        //Multiplayer.LogDebug(() => $"NetworkedItem.CreateUpdateData({updateType}) NetId: {NetId}, name: {name}");
 
         Vector3 position;
         Quaternion rotation;
@@ -451,7 +451,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
     private ItemState GetItemState()
     {
-        Multiplayer.LogDebug(() => $"GetItemState() NetId: {NetId}, {name}, Parent: {Item.transform.parent} WorldMover: {WorldMover.OriginShiftParent}, wasThrown: {wasThrown}, isGrabbed: {Item.IsGrabbed()} Inventory.Contains(): {Inventory.Instance.Contains(this.gameObject, false)} Storage.Contains: {StorageController.Instance.StorageInventory.ContainsItem(Item)}");
+        //Multiplayer.LogDebug(() => $"GetItemState() NetId: {NetId}, {name}, Parent: {Item.transform.parent} WorldMover: {WorldMover.OriginShiftParent}, wasThrown: {wasThrown}, isGrabbed: {Item.IsGrabbed()} Inventory.Contains(): {Inventory.Instance.Contains(this.gameObject, false)} Storage.Contains: {StorageController.Instance.StorageInventory.ContainsItem(Item)}");
 
 
         if (Item.transform.parent == WorldMover.OriginShiftParent && !wasThrown)

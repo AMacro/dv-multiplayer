@@ -492,13 +492,16 @@ public class NetworkClient : NetworkManager
 
     private void OnClientboundSpawnTrainSetPacket(ClientboundSpawnTrainSetPacket packet)
     {
-        LogDebug(() =>
+        LogDebug(() => $"Spawning trainset consisting of {string.Join(", ", packet.SpawnParts.Select(p => $"{p.CarId} ({p.LiveryId}) with netId: {p.NetId}"))}");
+
+        foreach (var part in packet.SpawnParts)
         {
-            StringBuilder sb = new("Spawning trainset consisting of ");
-            foreach (TrainsetSpawnPart spawnPart in packet.SpawnParts)
-                sb.Append($"{spawnPart.CarId} ({spawnPart.LiveryId}) with net ID {spawnPart.NetId}, ");
-            return sb.ToString();
-        });
+            if(NetworkedTrainCar.GetTrainCarFromTrainId(part.CarId, out TrainCar car))
+            {
+                LogError($"ClientboundSpawnTrainSetPacket() Tried to spawn trainset with carId: {part.CarId}, but car already exists!");
+                return; 
+            }
+        }
 
         NetworkedCarSpawner.SpawnCars(packet.SpawnParts);
 
@@ -813,37 +816,37 @@ public class NetworkClient : NetworkManager
 
     private void OnCommonItemChangePacket(CommonItemChangePacket packet)
     {
-        LogDebug(() => $"OnCommonItemChangePacket({packet?.Items?.Count})");
+        //LogDebug(() => $"OnCommonItemChangePacket({packet?.Items?.Count})");
 
 
-        Multiplayer.LogDebug(() =>
-        {
-            string debug = "";
+        //Multiplayer.LogDebug(() =>
+        //{
+        //    string debug = "";
 
-            foreach (var item in packet?.Items)
-            {
-                debug += "UpdateType: " + item?.UpdateType + "\r\n";
-                debug += "itemNetId: " + item?.ItemNetId + "\r\n";
-                debug += "PrefabName: " + item?.PrefabName + "\r\n";
-                debug += "Equipped: " + item?.ItemState + "\r\n";
-                debug += "Position: " + item?.ItemPosition + "\r\n";
-                debug += "Rotation: " + item?.ItemRotation + "\r\n";
-                debug += "ThrowDirection: " + item?.ThrowDirection + "\r\n";
-                debug += "Player: " + item?.Player + "\r\n";
-                debug += "CarNetId: " + item?.CarNetId + "\r\n";
-                debug += "AttachedFront: " + item?.AttachedFront + "\r\n";
+        //    foreach (var item in packet?.Items)
+        //    {
+        //        debug += "UpdateType: " + item?.UpdateType + "\r\n";
+        //        debug += "itemNetId: " + item?.ItemNetId + "\r\n";
+        //        debug += "PrefabName: " + item?.PrefabName + "\r\n";
+        //        debug += "Equipped: " + item?.ItemState + "\r\n";
+        //        debug += "Position: " + item?.ItemPosition + "\r\n";
+        //        debug += "Rotation: " + item?.ItemRotation + "\r\n";
+        //        debug += "ThrowDirection: " + item?.ThrowDirection + "\r\n";
+        //        debug += "Player: " + item?.Player + "\r\n";
+        //        debug += "CarNetId: " + item?.CarNetId + "\r\n";
+        //        debug += "AttachedFront: " + item?.AttachedFront + "\r\n";
 
-                debug += $"States: {item?.States?.Count}\r\n";
+        //        debug += $"States: {item?.States?.Count}\r\n";
 
-                if (item.States != null)
-                    foreach (var state in item?.States)
-                        debug += "\t" + state.Key + ": " + state.Value + "\r\n";
-                else
-                    debug += "\r\n";
-            }
+        //        if (item.States != null)
+        //            foreach (var state in item?.States)
+        //                debug += "\t" + state.Key + ": " + state.Value + "\r\n";
+        //        else
+        //            debug += "\r\n";
+        //    }
 
-            return debug;
-        });
+        //    return debug;
+        //});
 
         //NetworkedItemManager.Instance.ReceiveSnapshots(packet.Items, null);
     }

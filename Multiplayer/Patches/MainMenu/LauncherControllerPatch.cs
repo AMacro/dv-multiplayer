@@ -27,7 +27,7 @@ public static class LauncherController_Patch
     private static void OnEnable(LauncherController __instance)
     {
 
-        Multiplayer.Log("LauncherController_Patch()");
+        //Multiplayer.Log("LauncherController_Patch()");
 
         if (goHost != null)
             return;
@@ -60,7 +60,7 @@ public static class LauncherController_Patch
 
             goHost.SetActive(true);
 
-            Multiplayer.Log("LauncherController_Patch() complete");
+            //Multiplayer.Log("LauncherController_Patch() complete");
         }
     }
  

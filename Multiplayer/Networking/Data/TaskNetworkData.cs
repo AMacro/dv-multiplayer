@@ -253,10 +253,10 @@ public class TransportTaskData : TaskNetworkData<TransportTaskData>
             //Multiplayer.Log($"TaskNetworkData.Deserialize() TransportedCargoPerCar != null True");
             TransportedCargoPerCar = reader.GetIntArray().Select(x => (CargoType)x).ToArray();
         }
-        else
-        {
-            Multiplayer.LogWarning($"TaskNetworkData.Deserialize() TransportedCargoPerCar != null False");
-        }
+        //else
+        //{
+        //    Multiplayer.LogWarning($"TaskNetworkData.Deserialize() TransportedCargoPerCar != null False");
+        //}
         CouplingRequiredAndNotDone = reader.GetBool();
         //Multiplayer.Log($"TaskNetworkData.Deserialize() CouplingRequiredAndNotDone {CouplingRequiredAndNotDone}");
         AnyHandbrakeRequiredAndNotDone = reader.GetBool();

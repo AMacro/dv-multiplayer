@@ -15,7 +15,7 @@ namespace Multiplayer.Components.MainMenu
          
         protected override void Awake()
         {
-            Multiplayer.Log("serverBrowserGridview Awake()");
+            //Multiplayer.Log("serverBrowserGridview Awake()");
 
             //copy the copy
             this.viewElementPrefab.SetActive(false);

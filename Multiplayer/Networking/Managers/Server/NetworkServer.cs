@@ -666,7 +666,7 @@ public class NetworkServer : NetworkManager
             }
             else
             {
-                Multiplayer.LogError($"Sending job packets... Failed to get NetworkedStation from station");
+                LogError($"Sending job packets... Failed to get NetworkedStation from station");
             }
         }
 
@@ -687,6 +687,7 @@ public class NetworkServer : NetworkManager
         }
 
         // All data has been sent, allow the client to load into the world.
+        Log($"Sending Remove Loading Screen to {serverPlayer.Username}");
         SendPacket(peer, new ClientboundRemoveLoadingScreenPacket(), DeliveryMethod.ReliableOrdered);
 
         serverPlayer.IsLoaded = true;
@@ -1003,39 +1004,39 @@ public class NetworkServer : NetworkManager
 
     private void OnCommonItemChangePacket(CommonItemChangePacket packet, NetPeer peer)
     {
-        if(!TryGetServerPlayer(peer, out var player))
-            return;
+        //if(!TryGetServerPlayer(peer, out var player))
+        //    return;
 
-        LogDebug(()=>$"OnCommonItemChangePacket({packet?.Items?.Count}, {peer.Id} (\"{player.Username}\"))");
+        //LogDebug(()=>$"OnCommonItemChangePacket({packet?.Items?.Count}, {peer.Id} (\"{player.Username}\"))");
 
-        Multiplayer.LogDebug(() =>
-        {
-            string debug = "";
+        //Multiplayer.LogDebug(() =>
+        //{
+        //    string debug = "";
 
-            foreach (var item in packet?.Items)
-            {
-                debug += "UpdateType: " + item?.UpdateType + "\r\n";
-                debug += "itemNetId: " + item?.ItemNetId + "\r\n";
-                debug += "PrefabName: " + item?.PrefabName + "\r\n";
-                debug += "Equipped: " + item?.ItemState + "\r\n";
-                debug += "Position: " + item?.ItemPosition + "\r\n";
-                debug += "Rotation: " + item?.ItemRotation + "\r\n";
-                debug += "ThrowDirection: " + item?.ThrowDirection + "\r\n";
-                debug += "Player: " + item?.Player + "\r\n";
-                debug += "CarNetId: " + item?.CarNetId + "\r\n";
-                debug += "AttachedFront: " + item?.AttachedFront + "\r\n";
+        //    foreach (var item in packet?.Items)
+        //    {
+        //        debug += "UpdateType: " + item?.UpdateType + "\r\n";
+        //        debug += "itemNetId: " + item?.ItemNetId + "\r\n";
+        //        debug += "PrefabName: " + item?.PrefabName + "\r\n";
+        //        debug += "Equipped: " + item?.ItemState + "\r\n";
+        //        debug += "Position: " + item?.ItemPosition + "\r\n";
+        //        debug += "Rotation: " + item?.ItemRotation + "\r\n";
+        //        debug += "ThrowDirection: " + item?.ThrowDirection + "\r\n";
+        //        debug += "Player: " + item?.Player + "\r\n";
+        //        debug += "CarNetId: " + item?.CarNetId + "\r\n";
+        //        debug += "AttachedFront: " + item?.AttachedFront + "\r\n";
 
-                debug += "States:";
+        //        debug += "States:";
 
-                if (item.States != null)
-                    foreach (var state in item?.States)
-                        debug += "\r\n\t" + state.Key + ": " + state.Value;
-            }
+        //        if (item.States != null)
+        //            foreach (var state in item?.States)
+        //                debug += "\r\n\t" + state.Key + ": " + state.Value;
+        //    }
 
-            return debug;
-        }
+        //    return debug;
+        //}
 
-        );
+        //);
         
         //NetworkedItemManager.Instance.ReceiveSnapshots(packet.Items, player);
     }

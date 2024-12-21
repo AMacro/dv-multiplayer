@@ -93,14 +93,14 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
 
     public static void QueueJobValidator(JobValidator jobValidator)
     {
-        Multiplayer.Log($"QueueJobValidator() {jobValidator.transform.parent.name}");
+        //Multiplayer.Log($"QueueJobValidator() {jobValidator.transform.parent.name}");
 
         jobValidators.Add(jobValidator);
     }
 
     private static void RegisterJobValidator(JobValidator jobValidator, NetworkedStationController stationController)
     {
-        Multiplayer.Log($"RegisterJobValidator() {jobValidator.transform.parent.name}, {stationController.name}");
+        //Multiplayer.Log($"RegisterJobValidator() {jobValidator.transform.parent.name}, {stationController.name}");
         stationController.JobValidator = jobValidator;
         jobValidatorToNetworkedStation[jobValidator] = stationController;
     }
@@ -150,7 +150,7 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
         abandonedJobs = StationController.logicStation.abandonedJobs;
         completedJobs = StationController.logicStation.completedJobs;
 
-        Multiplayer.Log($"NetworkedStation.Awake({StationController.logicStation.ID})");
+        //Multiplayer.Log($"NetworkedStation.Awake({StationController.logicStation.ID})");
 
         foreach (JobValidator validator in jobValidators)
         {
@@ -452,7 +452,7 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
 
     private void GenerateOverview(NetworkedJob networkedJob, ushort itemNetId, ItemPositionData posData)
     {
-        Multiplayer.Log($"GenerateOverview({networkedJob.Job.ID}) Position: {posData.Position}, Less currentMove: {posData.Position + WorldMover.currentMove} ");
+        Multiplayer.Log($"GenerateOverview({networkedJob.Job.ID}, {itemNetId}) Position: {posData.Position}, Less currentMove: {posData.Position + WorldMover.currentMove} ");
         JobOverview jobOverview = BookletCreator_JobOverview.Create(networkedJob.Job, posData.Position + WorldMover.currentMove, posData.Rotation,WorldMover.OriginShiftParent);
 
         NetworkedItem netItem = jobOverview.GetOrAddComponent<NetworkedItem>();

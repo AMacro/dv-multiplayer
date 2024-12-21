@@ -59,7 +59,7 @@ namespace Multiplayer.Patches.MainMenu
 
             // Activate the multiplayer button
             MainMenuController_Awake_Patch.multiplayerButton.SetActive(true);
-            Multiplayer.Log("At end!");
+            //Multiplayer.Log("At end!");
 
             // Check if the host pane already exists
             if (__instance.HasChildWithName("PaneRight Host"))

@@ -215,6 +215,7 @@ namespace Multiplayer.Components.MainMenu
             {
                 ExpireLocalServers();   //remove any that have not been seen in a while
                 RefreshGridView();
+                IndexChanged(gridView); //Revalidate any selected servers
 
                 localRefreshComplete = false;
                 remoteRefreshComplete = false;

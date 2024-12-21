@@ -486,7 +486,7 @@ public class ChatGUI : MonoBehaviour
 
         if (saveLoad == null)
         {
-            Multiplayer.Log("Could not find SaveLoadController, attempting to instanciate");
+            //Multiplayer.Log("Could not find SaveLoadController, attempting to instantiate");
             AppUtil.Instance.PauseGame();
 
             Multiplayer.Log("Paused");
@@ -495,16 +495,16 @@ public class ChatGUI : MonoBehaviour
 
             if (saveLoad == null)
             {
-                Multiplayer.Log("Failed to get SaveLoadController");
+                Multiplayer.LogError("Failed to get SaveLoadController");
             }
             else
             {
-                Multiplayer.Log("Made a SaveLoadController!");
+                //Multiplayer.Log("Made a SaveLoadController!");
                 scrollViewPrefab = saveLoad.FindChildByName("Scroll View");
 
                 if (scrollViewPrefab == null)
                 {
-                    Multiplayer.Log("Could not find scrollViewPrefab");
+                    Multiplayer.LogError("Could not find scrollViewPrefab");
                     
                 }
                 else
