@@ -2,7 +2,7 @@ using LiteNetLib.Utils;
 using Multiplayer.Networking.Serialization;
 using System;
 using UnityEngine;
-namespace Multiplayer.Networking.Data;
+namespace Multiplayer.Networking.Data.Train;
 
 public readonly struct TrainsetMovementPart
 {
@@ -20,7 +20,7 @@ public readonly struct TrainsetMovementPart
     {
         Physics = 1,
         RigidBody = 2,
-        Sync = 4
+        Position = 4
     }
 
     public TrainsetMovementPart(float speed, float slowBuildUpStress, BogieData bogie1, BogieData bogie2, Vector3? position = null, Quaternion? rotation = null)
@@ -32,11 +32,11 @@ public readonly struct TrainsetMovementPart
         Bogie1 = bogie1;
         Bogie2 = bogie2;
 
-        if(position != null && rotation != null)
+        if (position != null && rotation != null)
         {
             //Multiplayer.LogDebug(()=>$"new TrainsetMovementPart() Sync");
 
-            typeFlag |= MovementType.Sync;  //includes positional data
+            typeFlag |= MovementType.Position;  //includes positional data
 
             Position = (Vector3)position;
             Rotation = (Quaternion)rotation;
@@ -52,26 +52,27 @@ public readonly struct TrainsetMovementPart
         RigidbodySnapshot = rigidbodySnapshot;
     }
 
-#pragma warning disable EPS05
     public static void Serialize(NetDataWriter writer, TrainsetMovementPart data)
-#pragma warning restore EPS05
     {
         writer.Put((byte)data.typeFlag);
 
         //Multiplayer.LogDebug(() => $"TrainsetMovementPart.Serialize() {data.typeFlag}");
 
-        if (data.typeFlag == MovementType.RigidBody)
+        if (data.typeFlag.HasFlag(MovementType.RigidBody))
         {
             RigidbodySnapshot.Serialize(writer, data.RigidbodySnapshot);
             return;
         }
 
-        writer.Put(data.Speed);
-        writer.Put(data.SlowBuildUpStress);
-        BogieData.Serialize(writer, data.Bogie1);
-        BogieData.Serialize(writer, data.Bogie2);
+        if (data.typeFlag.HasFlag(MovementType.Physics))
+        {
+            writer.Put(data.Speed);
+            writer.Put(data.SlowBuildUpStress);
+            BogieData.Serialize(writer, data.Bogie1);
+            BogieData.Serialize(writer, data.Bogie2);
+        }
 
-        if (data.typeFlag.HasFlag(MovementType.Sync))   //serialise positional data
+        if (data.typeFlag.HasFlag(MovementType.Position))
         {
             Vector3Serializer.Serialize(writer, data.Position);
             QuaternionSerializer.Serialize(writer, data.Rotation);
@@ -80,31 +81,34 @@ public readonly struct TrainsetMovementPart
 
     public static TrainsetMovementPart Deserialize(NetDataReader reader)
     {
+        float speed = 0;
+        float slowBuildUpStress = 0;
+        Vector3? position = null;
+        Quaternion? rotation = null;
+        BogieData bd1 = default;
+        BogieData bd2 = default;
+
         MovementType dataType = (MovementType)reader.GetByte();
 
-        //Multiplayer.LogDebug(() => $"TrainsetMovementPart.Deserialize() {dataType}");
-
-        if (dataType == MovementType.RigidBody)
+        if (dataType.HasFlag(MovementType.RigidBody))
         {
             return new TrainsetMovementPart(RigidbodySnapshot.Deserialize(reader));
         }
-        else
+
+        if (dataType.HasFlag(MovementType.Physics))
         {
-            float speed = reader.GetFloat();
-            float slowBuildUpStress = reader.GetFloat();
-            BogieData bd1 = BogieData.Deserialize(reader);
-            BogieData bd2 = BogieData.Deserialize(reader);
-
-            Vector3? position = null;
-            Quaternion? rotation = null;
-
-            if (dataType.HasFlag(MovementType.Sync))
-            {
-                position = Vector3Serializer.Deserialize(reader);
-                rotation = QuaternionSerializer.Deserialize(reader);
-            }
-
-            return new TrainsetMovementPart(speed,  slowBuildUpStress, bd1, bd2, position, rotation);
+            speed = reader.GetFloat();
+            slowBuildUpStress = reader.GetFloat();
+            bd1 = BogieData.Deserialize(reader);
+            bd2 = BogieData.Deserialize(reader);
         }
+
+        if (dataType.HasFlag(MovementType.Position))
+        {
+            position = Vector3Serializer.Deserialize(reader);
+            rotation = QuaternionSerializer.Deserialize(reader);
+        }
+
+        return new TrainsetMovementPart(speed, slowBuildUpStress, bd1, bd2, position, rotation);
     }
 }

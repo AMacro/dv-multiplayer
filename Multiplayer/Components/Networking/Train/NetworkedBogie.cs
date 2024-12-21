@@ -1,5 +1,5 @@
 using Multiplayer.Components.Networking.World;
-using Multiplayer.Networking.Data;
+using Multiplayer.Networking.Data.Train;
 using UnityEngine;
 
 namespace Multiplayer.Components.Networking.Train;

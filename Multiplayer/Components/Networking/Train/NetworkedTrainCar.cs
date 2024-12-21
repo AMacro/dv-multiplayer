@@ -7,8 +7,8 @@ using DV.ThingTypes;
 using LocoSim.Definitions;
 using LocoSim.Implementations;
 using Multiplayer.Components.Networking.Player;
-using Multiplayer.Components.Networking.World;
 using Multiplayer.Networking.Data;
+using Multiplayer.Networking.Data.Train;
 using Multiplayer.Networking.Packets.Common.Train;
 using Multiplayer.Utils;
 using UnityEngine;
@@ -655,7 +655,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         else
         {
             //move the car to the correct position first - maybe?
-            if (movementPart.typeFlag.HasFlag(TrainsetMovementPart.MovementType.Sync))
+            if (movementPart.typeFlag.HasFlag(TrainsetMovementPart.MovementType.Position))
             {
                 /*
                 float d1 = (TrainCar.transform.position - (movementPart.Position + WorldMover.currentMove)).sqrMagnitude;

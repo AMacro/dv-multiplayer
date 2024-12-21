@@ -181,6 +181,12 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
 
             foreach (var item in allItems)
             {
+                if (item == null)
+                {
+                    NetworkLifecycle.Instance.Server.LogDebug(() => $"UpdatePlayerItemLists() Null item found in allItems!");
+                    continue;
+                }
+
                 float sqrDistance = (player.WorldPosition - item.transform.position).sqrMagnitude;
 
                 if (sqrDistance <= MAX_DISTANCE_TO_ITEM_SQR)

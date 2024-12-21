@@ -3,7 +3,7 @@ using LiteNetLib.Utils;
 using Multiplayer.Networking.Serialization;
 using UnityEngine;
 
-namespace Multiplayer.Networking.Data;
+namespace Multiplayer.Networking.Data.Train;
 
 public class RigidbodySnapshot
 {
@@ -35,7 +35,8 @@ public class RigidbodySnapshot
     {
         IncludedData IncludedDataFlags = (IncludedData)reader.GetByte();
 
-        RigidbodySnapshot snapshot = new() {
+        RigidbodySnapshot snapshot = new()
+        {
             IncludedDataFlags = (byte)IncludedDataFlags
         };
 
@@ -56,7 +57,8 @@ public class RigidbodySnapshot
 
     public static RigidbodySnapshot From(Rigidbody rb, IncludedData includedDataFlags = IncludedData.All)
     {
-        RigidbodySnapshot snapshot = new() {
+        RigidbodySnapshot snapshot = new()
+        {
             IncludedDataFlags = (byte)includedDataFlags
         };
 
