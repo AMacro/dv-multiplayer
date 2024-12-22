@@ -30,7 +30,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
     public static List<NetworkedItem> GetAll()
     {
-        return itemBaseToNetworkedItem.Values.ToList();
+        return itemBaseToNetworkedItem.Values.Where(val => val.Item != null).ToList();
     }
     public static bool Get(ushort netId, out NetworkedItem obj)
     {
