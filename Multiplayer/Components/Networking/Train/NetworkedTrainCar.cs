@@ -95,7 +95,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
     #region Client
 
-    private bool client_Initialized;
+    public bool Client_Initialized {get; private set;}
     public TickedQueue<float> Client_trainSpeedQueue;
     public TickedQueue<RigidbodySnapshot> Client_trainRigidbodyQueue;
     public TickedQueue<BogieData> client_bogie1Queue;

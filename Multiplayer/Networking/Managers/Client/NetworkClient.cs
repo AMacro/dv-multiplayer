@@ -672,17 +672,59 @@ public class NetworkClient : NetworkManager
         networkedTrainCar.CargoModelIndex = packet.CargoModelIndex;
         Car logicCar = networkedTrainCar.TrainCar.logicCar;
 
+        if (logicCar == null)
+        {
+            Multiplayer.LogWarning($"OnClientboundCargoStatePacket() Failed to find logic car for [{networkedTrainCar.TrainCar.ID}, {packet.NetId}] is initialised: {networkedTrainCar.Client_Initialized}");
+            return;
+        }
+
         if (packet.CargoType == (ushort)CargoType.None && logicCar.CurrentCargoTypeInCar == CargoType.None)
             return;
 
+        //packet.CargoAmount is the total amount, not the amount to load/unload
         float cargoAmount = Mathf.Clamp(packet.CargoAmount, 0, logicCar.capacity);
 
         // todo: cache warehouse machine
         WarehouseMachine warehouse = string.IsNullOrEmpty(packet.WarehouseMachineId) ? null : JobSaveManager.Instance.GetWarehouseMachineWithId(packet.WarehouseMachineId);
         if (packet.IsLoading)
-            logicCar.LoadCargo(cargoAmount, (CargoType)packet.CargoType, warehouse);
+        {
+            //Check correct cargo is loaded and the amount is correct
+            if (logicCar.LoadedCargoAmount == cargoAmount && logicCar.CurrentCargoTypeInCar == (CargoType)packet.CargoType)
+                return;
+
+            //We need either no cargo or the same cargo - if it's different, we need to remove it first
+            if (logicCar.CurrentCargoTypeInCar != CargoType.None && logicCar.CurrentCargoTypeInCar != (CargoType)packet.CargoType)
+                logicCar.DumpCargo();
+
+            //We have the correct cargo, but not the right amount, calculate the delta
+            if (logicCar.CurrentCargoTypeInCar == (CargoType)packet.CargoType)
+                cargoAmount = cargoAmount - logicCar.LoadedCargoAmount;
+
+            if(cargoAmount > 0)
+                logicCar.LoadCargo(cargoAmount, (CargoType)packet.CargoType, warehouse);
+        }
         else
-            logicCar.UnloadCargo(cargoAmount, (CargoType)packet.CargoType, warehouse);
+        {
+            //Check correct cargo is loaded and the amount is correct
+            if (logicCar.LoadedCargoAmount == cargoAmount && logicCar.CurrentCargoTypeInCar == (CargoType)packet.CargoType)
+                return;
+
+            //If there is different cargo we need to remove it, then load the appropriate amount
+            if (logicCar.CurrentCargoTypeInCar == CargoType.None || logicCar.CurrentCargoTypeInCar != (CargoType)packet.CargoType)
+            {
+                //avoid triggering the load event by backdooring it
+                logicCar.LastUnloadedCargoType = logicCar.CurrentCargoTypeInCar;
+                logicCar.CurrentCargoTypeInCar = (CargoType)packet.CargoType;
+                logicCar.LoadedCargoAmount = cargoAmount;
+            }
+
+            //We have the correct cargo, calculate the delta
+            if (logicCar.CurrentCargoTypeInCar == (CargoType)packet.CargoType)
+                cargoAmount = logicCar.LoadedCargoAmount - cargoAmount;
+
+            if (cargoAmount > 0)
+                logicCar.UnloadCargo(cargoAmount, (CargoType)packet.CargoType, warehouse);
+        }
     }
 
     private void OnClientboundCarHealthUpdatePacket(ClientboundCarHealthUpdatePacket packet)
