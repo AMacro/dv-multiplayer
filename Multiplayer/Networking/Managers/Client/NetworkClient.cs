@@ -504,7 +504,7 @@ public class NetworkClient : NetworkManager
             }
         }
 
-        NetworkedCarSpawner.SpawnCars(packet.SpawnParts);
+        NetworkedCarSpawner.SpawnCars(packet.SpawnParts, packet.AutoCouple);
 
         foreach (TrainsetSpawnPart spawnPart in packet.SpawnParts)
             SendTrainSyncRequest(spawnPart.NetId);

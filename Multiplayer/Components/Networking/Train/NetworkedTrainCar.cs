@@ -81,8 +81,6 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     private bool handbrakeDirty;
     private bool mainResPressureDirty;
     public bool BogieTracksDirty;
-    public int Bogie1TrackDirection;
-    public int Bogie2TrackDirection;
     private bool cargoDirty;
     private bool cargoIsLoading;
     public byte CargoModelIndex = byte.MaxValue;
@@ -267,7 +265,8 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
         TrainCar.logicCar.CargoLoaded += Server_OnCargoLoaded;
         TrainCar.logicCar.CargoUnloaded += Server_OnCargoUnloaded;
-        NetworkLifecycle.Instance.Server.SendSpawnTrainCar(this);
+
+        Server_DirtyAllState();
     }
 
     public void Server_DirtyAllState()
@@ -371,7 +370,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
         Server_SendBrakePressures();
         Server_SendFireBoxState();
-        Server_SendCouplers();
+        //Server_SendCouplers();
         Server_SendCables();
         Server_SendCargoState();
         Server_SendHealthState();
@@ -383,6 +382,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     {
         if (!mainResPressureDirty)
             return;
+
         mainResPressureDirty = false;
         //B99 review need / mod NetworkLifecycle.Instance.Server.SendBrakePressures(NetId, brakeSystem.mainReservoirPressure, brakeSystem.independentPipePressure, brakeSystem.brakePipePressure, brakeSystem.brakeCylinderPressure);
     }
@@ -400,6 +400,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     {
         if (!sendCouplers)
             return;
+
         sendCouplers = false;
 
         if(TrainCar.frontCoupler.IsCoupled())
@@ -635,13 +636,14 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         while ((client_bogie2Queue = bogie2.GetComponent<NetworkedBogie>()) == null)
             yield return null;
 
-        client_Initialized = true;
+        Client_Initialized = true;
     }
 
     public void Client_ReceiveTrainPhysicsUpdate(in TrainsetMovementPart movementPart, uint tick)
     {
-        if (!client_Initialized)
+        if (!Client_Initialized)
             return;
+
         if (TrainCar.isEligibleForSleep)
             TrainCar.ForceOptimizationState(false);
 
@@ -657,12 +659,6 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             //move the car to the correct position first - maybe?
             if (movementPart.typeFlag.HasFlag(TrainsetMovementPart.MovementType.Position))
             {
-                /*
-                float d1 = (TrainCar.transform.position - (movementPart.Position + WorldMover.currentMove)).sqrMagnitude;
-                Quaternion d2 = TrainCar.transform.rotation *  Quaternion.Inverse(movementPart.Rotation);
-
-                Multiplayer.LogDebug(()=> $"Client_ReceiveTrainPhysicsUpdate({TrainCar.ID}, {tick}): Sync, Queue counts: {Client_trainSpeedQueue.snapshots.Count}, {Client_trainRigidbodyQueue.snapshots.Count}, {client_bogie1Queue.snapshots.Count}, {client_bogie2Queue.snapshots.Count}, Deltas: {d1}, {d2}");
-                */
                 TrainCar.transform.position = movementPart.Position + WorldMover.currentMove;
                 TrainCar.transform.rotation = movementPart.Rotation;
 
@@ -673,11 +669,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
                 client_bogie2Queue.Clear();
 
                 TrainCar.stress.ResetTrainStress();
-            }/*
-            else
-            {
-                Multiplayer.LogDebug(() => $"Client_ReceiveTrainPhysicsUpdate({TrainCar.ID}, {tick}): Physics");
-            }*/
+            }
 
             Client_trainSpeedQueue.ReceiveSnapshot(movementPart.Speed, tick);
             TrainCar.stress.slowBuildUpStress = movementPart.SlowBuildUpStress;

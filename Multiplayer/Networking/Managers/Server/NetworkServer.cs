@@ -275,6 +275,37 @@ public class NetworkServer : NetworkManager
         SendPacketToAll(ClientboundGameParamsPacket.FromGameParams(gameParams), DeliveryMethod.ReliableOrdered, selfPeer);
     }
 
+    public void SendSpawnTrainset(List<TrainCar> set, bool autoCouple, bool sendToAll, NetPeer sendTo = null)
+    {
+
+        LogDebug(() =>
+        {
+            StringBuilder sb = new StringBuilder();
+
+            sb.Append($"SendSpawnTrainSet() Sending trainset {set?.FirstOrDefault()?.GetNetId()} with {set?.Count} cars");
+
+            TrainCar[] noNetId = set?.Where(car => car.GetNetId() == 0).ToArray();
+
+            if (noNetId.Length > 0)
+                sb.AppendLine($"Erroneous cars!: {string.Join(", ", noNetId.Select(car => $"{{{car?.ID}, {car?.CarGUID}, {car.logicCar != null}}}"))}");
+
+            return sb.ToString();
+
+        });
+
+        var packet = ClientboundSpawnTrainSetPacket.FromTrainSet(set, autoCouple);
+
+        if (!sendToAll)
+        {
+            if (sendTo == null)
+                LogError($"SendSpawnTrainSet() Trying to send to null peer!");
+            else
+                SendPacket(sendTo, packet, DeliveryMethod.ReliableOrdered);
+        }
+        else
+            SendPacketToAll(packet, DeliveryMethod.ReliableOrdered, selfPeer);
+    }
+
     public void SendSpawnTrainCar(NetworkedTrainCar networkedTrainCar)
     {
         SendPacketToAll(ClientboundSpawnTrainCarPacket.FromTrainCar(networkedTrainCar), DeliveryMethod.ReliableOrdered, selfPeer);
@@ -632,22 +663,14 @@ public class NetworkServer : NetworkManager
         // Send trains
         foreach (Trainset set in Trainset.allSets)
         {
-            LogDebug(() =>
+            try
             {
-                StringBuilder sb = new StringBuilder();
-
-                sb.Append($"Sending trainset {set?.firstCar?.GetNetId()} with {set?.cars?.Count} cars");
-
-                TrainCar[] noNetId = set?.cars?.Where(car => car.GetNetId() == 0).ToArray();
-
-                if (noNetId.Length > 0)
-                    sb.AppendLine($"Erroneous cars!: {string.Join(", ", noNetId.Select(car=> $"{{{car?.ID}, {car?.CarGUID}, {car.logicCar != null}}}"))}");
-
-                return sb.ToString();
-
-            });
-
-            SendPacket(peer, ClientboundSpawnTrainSetPacket.FromTrainSet(set), DeliveryMethod.ReliableOrdered);
+                SendSpawnTrainset(set.cars, false, false, peer);
+            }
+            catch (Exception e)
+            {
+                LogWarning($"Exception when trying to send train set spawn data for [{set?.firstCar?.ID}, {set?.firstCar?.GetNetId()}]\r\n{e.Message}\r\n{e.StackTrace}");
+            }
         }
 
         // Sync Stations (match NetIDs with StationIDs) - we could do this the same as junctions but juntions may need to be upgraded to work this way - future planning for mod integration

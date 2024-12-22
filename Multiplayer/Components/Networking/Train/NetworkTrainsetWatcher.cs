@@ -42,10 +42,9 @@ public class NetworkTrainsetWatcher : SingletonBehaviour<NetworkTrainsetWatcher>
 
         cachedSendPacket.Tick = tick;
         foreach (Trainset set in Trainset.allSets)
-            Server_TickSet(set);
+            Server_TickSet(set, tick);
     }
-
-    private void Server_TickSet(Trainset set)
+    private void Server_TickSet(Trainset set, uint tick)
     {
         bool anyCarMoving = false;
         bool maxTicksReached = false;
@@ -57,9 +56,10 @@ public class NetworkTrainsetWatcher : SingletonBehaviour<NetworkTrainsetWatcher>
             return;
         }
 
-        cachedSendPacket.NetId = set.firstCar.GetNetId();
+        cachedSendPacket.FirstNetId = set.firstCar.GetNetId();
+        cachedSendPacket.LastNetId = set.lastCar.GetNetId();
         //car may not be initialised, missing a valid NetID
-        if (cachedSendPacket.NetId == 0)
+        if (cachedSendPacket.FirstNetId == 0 || cachedSendPacket.LastNetId == 0)
             return;
 
         foreach (TrainCar trainCar in set.cars)
@@ -73,7 +73,7 @@ public class NetworkTrainsetWatcher : SingletonBehaviour<NetworkTrainsetWatcher>
             //If we can locate the networked car, we'll add to the ticks counter and check if any tracks are dirty
             if (NetworkedTrainCar.TryGetFromTrainCar(trainCar, out NetworkedTrainCar netTC))
             {
-                maxTicksReached |=  netTC.TicksSinceSync >= MAX_UNSYNC_TICKS;
+                maxTicksReached |= netTC.TicksSinceSync >= MAX_UNSYNC_TICKS;
                 anyTracksDirty |= netTC.BogieTracksDirty;
             }
 
@@ -123,8 +123,8 @@ public class NetworkTrainsetWatcher : SingletonBehaviour<NetworkTrainsetWatcher>
                 trainsetParts[i] = new TrainsetMovementPart(
                     trainCar.GetForwardSpeed(),
                     trainCar.stress.slowBuildUpStress,
-                    BogieData.FromBogie(trainCar.Bogies[0], networkedTrainCar.BogieTracksDirty, networkedTrainCar.Bogie1TrackDirection),
-                    BogieData.FromBogie(trainCar.Bogies[1], networkedTrainCar.BogieTracksDirty, networkedTrainCar.Bogie2TrackDirection),
+                    BogieData.FromBogie(trainCar.Bogies[0], networkedTrainCar.BogieTracksDirty),
+                    BogieData.FromBogie(trainCar.Bogies[1], networkedTrainCar.BogieTracksDirty),
                     position,   //only used in full sync
                     rotation    //only used in full sync
                 );
@@ -142,19 +142,26 @@ public class NetworkTrainsetWatcher : SingletonBehaviour<NetworkTrainsetWatcher>
 
     public void Client_HandleTrainsetPhysicsUpdate(ClientboundTrainsetPhysicsPacket packet)
     {
-        Trainset set = Trainset.allSets.Find(set => set.firstCar.GetNetId() == packet.NetId || set.lastCar.GetNetId() == packet.NetId);
+        Trainset set = Trainset.allSets.Find(set => set.firstCar.GetNetId() == packet.FirstNetId || set.lastCar.GetNetId() == packet.FirstNetId ||
+                                                    set.firstCar.GetNetId() == packet.LastNetId || set.lastCar.GetNetId() == packet.LastNetId);
+
         if (set == null)
         {
-            Multiplayer.LogDebug(() => $"Received {nameof(ClientboundTrainsetPhysicsPacket)} for unknown trainset with netId {packet.NetId}");
+            Multiplayer.LogWarning($"Received {nameof(ClientboundTrainsetPhysicsPacket)} for unknown trainset with FirstNetId: {packet.FirstNetId} and LastNetId: {packet.LastNetId}");
             return;
         }
 
         if (set.cars.Count != packet.TrainsetParts.Length)
         {
-            Multiplayer.LogDebug(() =>
-                $"Received {nameof(ClientboundTrainsetPhysicsPacket)} for trainset with netId {packet.NetId} with {packet.TrainsetParts.Length} parts, but trainset has {set.cars.Count} parts");
+            //log the discrepancies
+            Multiplayer.LogWarning(
+                $"Received {nameof(ClientboundTrainsetPhysicsPacket)} for trainset with FirstNetId: {packet.FirstNetId} and LastNetId: {packet.LastNetId} with {packet.TrainsetParts.Length} parts, but trainset has {set.cars.Count} parts");
             return;
         }
+
+        //Check direction of trainset vs packet
+        if(set.firstCar.GetNetId() == packet.LastNetId)
+            packet.TrainsetParts = packet.TrainsetParts.Reverse().ToArray();
 
         //Multiplayer.Log($"Client_HandleTrainsetPhysicsUpdate({set.firstCar.ID}):, tick: {packet.Tick}");
 
