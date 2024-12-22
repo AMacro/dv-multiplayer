@@ -10,7 +10,6 @@ namespace Multiplayer.Components.Networking.Train;
 
 public static class NetworkedCarSpawner
 {
-    //static Coroutine ignoreStress;
     public static void SpawnCars(TrainsetSpawnPart[] parts, bool autoCouple)
     {
         NetworkedTrainCar[] cars = new NetworkedTrainCar[parts.Length];
@@ -21,7 +20,7 @@ public static class NetworkedCarSpawner
 
         //Set brake params
         for (int i = 0; i < cars.Length; i++)
-            SetBrakeParams(parts[i], cars[i].TrainCar);
+            SetBrakeParams(parts[i].BrakeData, cars[i].TrainCar);
 
         //couple them if marked as coupled
         for (int i = 0; i < cars.Length; i++)
@@ -93,8 +92,8 @@ public static class NetworkedCarSpawner
     {
         if (autoCouple)
         {
-            trainCar.frontCoupler.preventAutoCouple = spawnPart.PreventFrontAutoCouple;
-            trainCar.rearCoupler.preventAutoCouple = spawnPart.PreventRearAutoCouple;
+            trainCar.frontCoupler.preventAutoCouple = spawnPart.FrontCoupling.PreventAutoCouple;
+            trainCar.rearCoupler.preventAutoCouple = spawnPart.RearCoupling.PreventAutoCouple;
 
             trainCar.frontCoupler.AttemptAutoCouple();
             trainCar.rearCoupler.AttemptAutoCouple();
@@ -103,57 +102,34 @@ public static class NetworkedCarSpawner
         }
 
         //Handle coupling at front of car
-        HandleCoupling(
-            spawnPart.IsFrontCoupled,
-            spawnPart.FrontHoseConnected,
-            spawnPart.FrontConnectionNetId,
-            spawnPart.FrontConnectionToFront,
-            spawnPart.FrontState,
-            spawnPart.FrontCockOpen,
-            trainCar.frontCoupler
-        );
+        HandleCoupling(spawnPart.FrontCoupling, trainCar.frontCoupler);
 
         //Handle coupling at rear of car
-        HandleCoupling(
-            spawnPart.IsRearCoupled,
-            spawnPart.RearHoseConnected,
-            spawnPart.RearConnectionNetId,
-            spawnPart.RearConnectionToFront,
-            spawnPart.RearState,
-            spawnPart.RearCockOpen,
-            trainCar.rearCoupler
-        );
+        HandleCoupling(spawnPart.RearCoupling, trainCar.rearCoupler);
     }
 
-    private static void HandleCoupling(
-    bool isCoupled,
-    bool isHoseConnected,
-    ushort connectionNetId,
-    bool connectionToFront,
-    ChainCouplerInteraction.State couplingState,
-    bool cockOpen,
-    Coupler currentCoupler)
+    private static void HandleCoupling(CouplingData couplingData,  Coupler currentCoupler)
     {
-        if (!isCoupled && !isHoseConnected)
+        if (!couplingData.IsCoupled && !couplingData.HoseConnected)
             return;
 
-        if (!NetworkedTrainCar.GetTrainCar(connectionNetId, out TrainCar otherCar))
+        if (!NetworkedTrainCar.GetTrainCar(couplingData.ConnectionNetId, out TrainCar otherCar))
         {
-            Multiplayer.LogWarning($"AutoCouple([{currentCoupler?.train?.GetNetId()}, {currentCoupler?.train?.ID}]) did not find car at {(currentCoupler.isFrontCoupler ? "Front" : "Rear")} car with netId: {connectionNetId}");
+            Multiplayer.LogWarning($"AutoCouple([{currentCoupler?.train?.GetNetId()}, {currentCoupler?.train?.ID}]) did not find car at {(currentCoupler.isFrontCoupler ? "Front" : "Rear")} car with netId: {couplingData.ConnectionNetId}");
             return;
         }
         
-        var otherCoupler = connectionToFront ? otherCar.frontCoupler : otherCar.rearCoupler;
+        var otherCoupler = couplingData.ConnectionToFront ? otherCar.frontCoupler : otherCar.rearCoupler;
 
-        if (isCoupled)
+        if (couplingData.IsCoupled)
         {
             //NetworkLifecycle.Instance.Client.LogDebug(() => $"AutoCouple() Coupling {(currentCoupler.isFrontCoupler? "Front" : "Rear")}: {currentCoupler?.train?.ID}, to {otherCar?.ID}, at: {(connectionToFront ? "Front" : "Rear")}");
-            SetCouplingState(currentCoupler, otherCoupler, couplingState);
+            SetCouplingState(currentCoupler, otherCoupler, couplingData.State);
         }
 
-        if (isHoseConnected)
+        if (couplingData.HoseConnected)
         {
-            CarsSaveManager.RestoreHoseAndCock(currentCoupler, isHoseConnected, cockOpen);
+            CarsSaveManager.RestoreHoseAndCock(currentCoupler, couplingData.HoseConnected, couplingData.CockOpen);
         }
     }
 
@@ -190,26 +166,26 @@ public static class NetworkedCarSpawner
 
     }
 
-    private static void SetBrakeParams(TrainsetSpawnPart spawnPart, TrainCar trainCar)
+    private static void SetBrakeParams(BrakeSystemData brakeSystemData, TrainCar trainCar)
     {
         BrakeSystem bs = trainCar.brakeSystem;
 
         if (bs == null)
         {
-            Multiplayer.LogWarning($"NetworkedCarSpawner.SetBrakeParams() Brake system is null! netId: {spawnPart.NetId}, trainCar: {spawnPart.CarId}");
+            Multiplayer.LogWarning($"NetworkedCarSpawner.SetBrakeParams() Brake system is null! netId: {trainCar?.GetNetId()}, trainCar: {trainCar?.ID}");
             return;
         }
 
         if(bs.hasHandbrake)
-            bs.SetHandbrakePosition(spawnPart.HandBrakePosition);
+            bs.SetHandbrakePosition(brakeSystemData.HandBrakePosition);
         if(bs.hasTrainBrake)
-            bs.trainBrakePosition = spawnPart.TrainBrakePosition;
+            bs.trainBrakePosition = brakeSystemData.TrainBrakePosition;
 
-        bs.SetBrakePipePressure(spawnPart.BrakePipePressure);
-        bs.SetAuxReservoirPressure(spawnPart.AuxResPressure);
-        bs.SetMainReservoirPressure(spawnPart.MainResPressure);
-        bs.SetControlReservoirPressure(spawnPart.ControlResPressure);
-        bs.ForceCylinderPressure(spawnPart.BrakeCylPressure);
+        bs.SetBrakePipePressure(brakeSystemData.BrakePipePressure);
+        bs.SetAuxReservoirPressure(brakeSystemData.AuxResPressure);
+        bs.SetMainReservoirPressure(brakeSystemData.MainResPressure);
+        bs.SetControlReservoirPressure(brakeSystemData.ControlResPressure);
+        bs.ForceCylinderPressure(brakeSystemData.BrakeCylPressure);
 
     }
 }
