@@ -1163,6 +1163,17 @@ public class NetworkClient : NetworkManager
         }, DeliveryMethod.ReliableUnordered);
     }
 
+    public void SendTrainSpawnRequest(string livery, ushort trackNetId, Vector3 absPosition, Vector3 forward)
+    {
+        SendPacketToServer(new ServerboundTrainSpawnRequestPacket
+        {
+            Livery = livery,
+            TrackNetId = trackNetId,
+            AbsolutePos = absPosition,
+            Forward = forward
+        }, DeliveryMethod.ReliableUnordered);
+    }
+
     public void SendTrainRerailRequest(ushort netId, ushort trackId, Vector3 position, Vector3 forward)
     {
         SendPacketToServer(new ServerboundTrainRerailRequestPacket

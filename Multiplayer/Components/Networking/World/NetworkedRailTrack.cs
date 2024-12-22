@@ -34,4 +34,9 @@ public class NetworkedRailTrack : IdMonoBehaviour<ushort, NetworkedRailTrack>
     {
         return railTracksToNetworkedRailTracks[railTrack];
     }
+
+    public static bool TryGetFromRailTrack(RailTrack railTrack, out NetworkedRailTrack networkedRailTrack)
+    {
+        return railTracksToNetworkedRailTracks.TryGetValue(railTrack, out networkedRailTrack);
+    }
 }
