@@ -164,12 +164,10 @@ public class ServerBrowserClient : NetworkManager, IDisposable
     {
         //Log($"OnUnconnectedDiscoveryPacket({packet.PacketType}, {endPoint?.Address})");
 
-        switch (packet.PacketType)
+        if (packet.IsResponse)
         {
-            case DiscoveryPacketType.Response:
-                //Log($"OnUnconnectedDiscoveryPacket({packet.PacketType}, {endPoint?.Address}) id: {packet.data.id}");
-                OnDiscovery?.Invoke(endPoint,packet.data);
-                break;
+            //Log($"OnUnconnectedDiscoveryPacket({packet.PacketType}, {endPoint?.Address}) id: {packet.data.id}");
+            OnDiscovery?.Invoke(endPoint,packet.Data);
         }
     }
 

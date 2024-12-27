@@ -434,14 +434,10 @@ public class LobbyServerManager : MonoBehaviour
     {
         //server.LogDebug(()=>$"OnUnconnectedDiscoveryPacket({packet.PacketType}, {endPoint.Address},{endPoint.Port})");
 
-        switch (packet.PacketType)
+        if (!packet.IsResponse)
         {
-            case DiscoveryPacketType.Discovery:
-                packet.PacketType = DiscoveryPacketType.Response;
-                packet.data = server.serverData;
-                break;
-            default:
-                return;
+            packet.IsResponse = true;
+            packet.Data = server.serverData;
         }
 
         SendUnconnectedPacket(packet, endPoint.Address.ToString(), endPoint.Port);
