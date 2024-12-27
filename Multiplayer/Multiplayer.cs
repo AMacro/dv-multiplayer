@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using DV;
 using DV.UIFramework;
 using HarmonyLib;
 using JetBrains.Annotations;
@@ -58,7 +59,7 @@ public static class Multiplayer
 
             Locale.Load(ModEntry.Path);
 
-            Log($"Multiplayer JSON Version: {ModEntry.Info.Version}, Internal Version: {Ver} ");
+            Log($"Multiplayer JSON Version: {ModEntry.Info.Version}, Internal Version: {Ver}\r\nGame version: {BuildInfo.BUILD_VERSION_MAJOR.ToString()}.{BuildInfo.BUILDBOT_INFO.ToString()}");
 
             Log("Patching...");
             harmony = new Harmony(ModEntry.Info.Id);

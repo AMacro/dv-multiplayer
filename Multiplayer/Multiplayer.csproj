@@ -3,7 +3,7 @@
         <TargetFramework>net48</TargetFramework>
         <LangVersion>latest</LangVersion>
         <RootNamespace>Multiplayer</RootNamespace>
-        <InformationalVersion>0.1.9.2</InformationalVersion>
+        <InformationalVersion>0.1.9.5</InformationalVersion>
     </PropertyGroup>
 
     <ItemGroup>
@@ -41,6 +41,8 @@
         <Reference Include="DV.UserManagement" />
         <Reference Include="DV.Utils" />
         <Reference Include="DV.WeatherSystem" />
+        <Reference Include="Stateless" />
+        <Reference Include="RootMotion" />
     </ItemGroup>
 
     <!-- Mod Loader -->

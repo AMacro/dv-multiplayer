@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -63,6 +64,8 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
     #endregion
 
+    private const int MAX_COUPLER_ITERATIONS = 10;
+
     public TrainCar TrainCar;
     public uint TicksSinceSync = uint.MaxValue;
     public bool HasPlayers => PlayerManager.Car == TrainCar || GetComponentInChildren<NetworkedPlayer>() != null;
@@ -99,6 +102,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     public TickedQueue<BogieData> client_bogie1Queue;
     public TickedQueue<BogieData> client_bogie2Queue;
 
+    private Coupler couplerInteraction;
     #endregion
 
     protected override bool IsIdServerAuthoritative => true;
@@ -132,7 +136,20 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         brakeSystem = TrainCar.brakeSystem;
 
         foreach (Coupler coupler in TrainCar.couplers)
+        {
             hoseToCoupler[coupler.hoseAndCock] = coupler;
+
+            Multiplayer.LogDebug(() => $"TrainCar.Start() [{TrainCar?.ID}, {NetId}], Coupler exists: {coupler != null}, ChainScript exists: {coupler.ChainScript != null}");
+            try
+            {
+
+                coupler.ChainScript.StateChanged += (state) => { Client_CouplerStateChange(state, coupler); };
+            }
+            catch (Exception ex)
+            {
+                Multiplayer.LogError($"Error subscribing to coupler state changes [{TrainCar?.ID}, {NetId}]\r\n{ex.Message}\r\n{ex.StackTrace}");
+            }
+        }
 
         SimController simController = GetComponent<SimController>();
         if (simController != null)
@@ -625,6 +642,178 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             simulationFlow.fullFuseIdToFuse[packet.FuseIds[i]].ChangeState(packet.FuseValues[i]);
     }
 
+    public void Common_ReceiveCouplerInteraction(CommonCouplerInteractionPacket packet)
+    {
+
+        Coupler coupler = packet.IsFrontCoupler ? TrainCar.frontCoupler : TrainCar.rearCoupler;
+
+        if (coupler == null)
+        {
+            Multiplayer.LogWarning($"Common_ReceiveCouplerInteraction() did not find coupler for [{TrainCar?.ID}, {NetId}], coupler is front: {packet.IsFrontCoupler}");
+            return;
+        }
+
+        CouplerInteractionType flags = (CouplerInteractionType)packet.Flags;
+
+        Multiplayer.LogDebug(() => $"Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], coupler is front: {packet.IsFrontCoupler}, flags: {flags}, otherCouplerNetId: {packet.OtherNetId}");
+
+        if (flags.HasFlag(CouplerInteractionType.CouplerCouple) && packet.OtherNetId != 0)
+        {
+            Multiplayer.LogDebug(() => $"1 Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], coupler is front: {packet.IsFrontCoupler}, flags: {flags} ");
+            if (GetTrainCar(packet.OtherNetId, out TrainCar otherCar))
+            {
+                Multiplayer.LogDebug(() => $"2 Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], coupler is front: {packet.IsFrontCoupler}, flags: {flags}");
+                Coupler otherCoupler = packet.IsFrontOtherCoupler ? otherCar.frontCoupler : otherCar.rearCoupler;
+
+                StartCoroutine(LooseAttachCoupler(coupler, otherCoupler));
+            }
+        }
+
+        if (flags.HasFlag(CouplerInteractionType.CouplerPark))
+        {
+            Multiplayer.LogDebug(() => $"3 Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], coupler is front: {packet.IsFrontCoupler}, flags: {flags}, current state: {coupler.state}, Chain state:{coupler.ChainScript.state}, isCoupled: {coupler.IsCoupled()}");
+
+            if (coupler.ChainScript.state != ChainCouplerInteraction.State.Attached_Tight)
+                StartCoroutine(ParkCoupler(coupler));
+            else
+                Multiplayer.LogWarning(() => $"Received Park interaction for [{TrainCar?.ID}, {NetId}], coupler is front: {packet.IsFrontCoupler}, but coupler is in the wrong state: {coupler.state}, Chain state:{coupler.ChainScript.state}, isCoupled: {coupler.IsCoupled()}");
+
+            Multiplayer.LogDebug(() => $"4 Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], coupler is front: {packet.IsFrontCoupler}, flags: {flags} restorestate: {coupler.state}, current state: {coupler.state}, Chain state:{coupler.ChainScript.state}, isCoupled: {coupler.IsCoupled()}");
+        }
+
+        if (flags.HasFlag(CouplerInteractionType.CouplerDrop))
+        {
+            Multiplayer.LogDebug(() => $"5 Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], coupler is front: {packet.IsFrontCoupler}, flags: {flags} restorestate: {coupler.state}, current state: {coupler.state}, Chain state:{coupler.ChainScript.state}, isCoupled: {coupler.IsCoupled()}");
+
+            if (coupler.ChainScript.state != ChainCouplerInteraction.State.Attached_Tight)
+            {
+                Multiplayer.LogDebug(() => $"5A Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], coupler is front: {packet.IsFrontCoupler}, flags: {flags} restorestate: {coupler.state}, current state: {coupler.state}, Chain state:{coupler.ChainScript.state}, isCoupled: {coupler.IsCoupled()}");
+                StartCoroutine(DangleCoupler(coupler));
+            }
+            else
+                Multiplayer.LogWarning(() => $"Received Dangle interaction for [{TrainCar?.ID}, {NetId}], coupler is front: {packet.IsFrontCoupler}, but coupler is in the wrong state: {coupler.state}, Chain state:{coupler.ChainScript.state}, isCoupled: {coupler.IsCoupled()}");
+        }
+
+        if (flags.HasFlag(CouplerInteractionType.CouplerLoosen))
+        {
+            Multiplayer.LogDebug(() => $"6 Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], flags: {flags} current state: {coupler.ChainScript.state}");
+            if (coupler.ChainScript.state == ChainCouplerInteraction.State.Attached_Tight)
+            {
+                Multiplayer.LogDebug(() => $"7 Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], coupler is front: {packet.IsFrontCoupler}, flags: {flags}");
+                coupler.ChainScript.fsm.Fire(ChainCouplerInteraction.Trigger.Screw_Used);
+            }
+        }
+
+        if (flags.HasFlag(CouplerInteractionType.CouplerTighten))
+        {
+            Multiplayer.LogDebug(() => $"8 Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], flags: {flags} current state: {coupler.ChainScript.state}");
+            if (coupler.ChainScript.state == ChainCouplerInteraction.State.Attached_Loose)
+            {
+                Multiplayer.LogDebug(() => $"9 Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], coupler is front: {packet.IsFrontCoupler}, flags: {flags}");
+                coupler.ChainScript.fsm.Fire(ChainCouplerInteraction.Trigger.Screw_Used);
+            }
+        }
+    }
+
+    private IEnumerator LooseAttachCoupler(Coupler coupler, Coupler otherCoupler)
+    {
+        if (coupler == null || coupler.ChainScript == null ||
+            otherCoupler == null || otherCoupler.ChainScript == null ||
+            otherCoupler.ChainScript.ownAttachPoint == null)
+        {
+            Multiplayer.LogDebug(() => $"LooseAttachCoupler() [{TrainCar?.ID}], Null reference! Coupler: {coupler != null}, chainscript: {coupler?.ChainScript != null}, other coupler: {otherCoupler != null}, other chainscript: {otherCoupler?.ChainScript != null}, other attach point: {otherCoupler?.ChainScript?.ownAttachPoint}");
+            yield break;
+        }
+        ChainCouplerInteraction ccInteraction = coupler.ChainScript;
+
+        //Simulate player pickup
+        coupler.ChainScript.fsm.Fire(ChainCouplerInteraction.Trigger.Picked_Up_By_Player);
+
+        //Set the knob position to the other coupler's hook
+        Vector3 targetHookPos = otherCoupler.ChainScript.ownAttachPoint.transform.position;
+        coupler.ChainScript.knob.transform.position = targetHookPos;
+
+        //allow the follower and IK solver to update
+        coupler.ChainScript.Update_Being_Dragged();
+
+        //we need to allow the IK solver to calculate the chain ring anchor's position, over a number of iterations
+        int x = 0;
+        float distance = float.MaxValue;
+        //game checks for Vector3.Distance(this.chainRingAnchor.position, this.closestAttachPoint.transform.position) < attachDistanceThreshold;
+        while (distance >= ChainCouplerInteraction.attachDistanceThreshold && x < MAX_COUPLER_ITERATIONS)
+        {
+            distance = Vector3.Distance(ccInteraction.chainRingAnchor.position, targetHookPos);
+
+            x++;
+            yield return new WaitForSeconds(ccInteraction.ROTATION_SMOOTH_DURATION);
+        }
+
+        //Drop the chain
+        coupler.ChainScript.fsm.Fire(ChainCouplerInteraction.Trigger.Dropped_By_Player);
+    }
+
+    private IEnumerator ParkCoupler(Coupler coupler)
+    {
+        ChainCouplerInteraction ccInteraction = coupler.ChainScript;
+
+        //Simulate player pickup
+        coupler.ChainScript.fsm.Fire(ChainCouplerInteraction.Trigger.Picked_Up_By_Player);
+
+        //Set the knob position
+        Vector3 parkPos = coupler.ChainScript.parkedAnchor.position;
+
+        coupler.ChainScript.knob.transform.position = parkPos;
+
+        //allow the follower and IK solver to update
+        coupler.ChainScript.Update_Being_Dragged();
+
+        //we need to allow the IK solver to calculate the chain ring anchor's position, over a number of iterations
+        int x = 0;
+        float distance = float.MaxValue;
+        //game checks for Vector3.Distance(this.chainRingAnchor.position, this.parkedAnchor.position) < parkDistanceThreshold;
+        //need to make sure we are closer than the threshold before dropping
+        while (distance > ChainCouplerInteraction.parkDistanceThreshold && x < MAX_COUPLER_ITERATIONS)
+        {
+            distance = Vector3.Distance(ccInteraction.chainRingAnchor.position, ccInteraction.parkedAnchor.position);
+
+            x++;
+            yield return new WaitForSeconds(ccInteraction.ROTATION_SMOOTH_DURATION);
+        }
+
+        //Drop the chain
+        coupler.ChainScript.fsm.Fire(ChainCouplerInteraction.Trigger.Dropped_By_Player);
+    }
+    private IEnumerator DangleCoupler(Coupler coupler)
+    {
+        ChainCouplerInteraction ccInteraction = coupler.ChainScript;
+
+        //Simulate player pickup
+        coupler.ChainScript.fsm.Fire(ChainCouplerInteraction.Trigger.Picked_Up_By_Player);
+
+        Vector3 parkPos = coupler.ChainScript.parkedAnchor.position;
+
+        //Set the knob position
+        coupler.ChainScript.knob.transform.position = parkPos + Vector3.down; //ensure we are not near the park anchor or other car's anchor
+
+        //allow the follower and IK solver to update
+        coupler.ChainScript.Update_Being_Dragged();
+
+        //we need to allow the IK solver to calculate the chain ring anchor's position, over a number of iterations
+        int x = 0;
+        float distance = float.MinValue;
+        //game checks for Vector3.Distance(this.chainRingAnchor.position, this.parkedAnchor.position) < parkDistanceThreshold;
+        //to determine if it should be parked or dangled, need to make sure we are at least at the threshold before dropping
+        while (distance <= ChainCouplerInteraction.parkDistanceThreshold && x < MAX_COUPLER_ITERATIONS)
+        {
+            distance = Vector3.Distance(ccInteraction.chainRingAnchor.position, ccInteraction.parkedAnchor.position);
+
+            x++;
+            yield return new WaitForSeconds(ccInteraction.ROTATION_SMOOTH_DURATION);
+        }
+
+        //Drop the chain
+        coupler.ChainScript.fsm.Fire(ChainCouplerInteraction.Trigger.Dropped_By_Player);
+    }
     #endregion
 
     #region Client
@@ -729,6 +918,67 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
         firebox.fireboxContentsPort.Value = fireboxContents;
         firebox.fireOnPort.Value = isOn ? 1f : 0f;
+    }
+
+    public void Client_CouplerStateChange(ChainCouplerInteraction.State state, Coupler coupler)
+    {
+        Multiplayer.LogDebug(() => $"1 Client_CouplerStateChange({state}) trainCar: [{TrainCar?.ID}, {NetId}], coupler is front: {coupler?.isFrontCoupler}");
+
+        //if we are processing a packet, then these state changes are likely triggered by a received update, not player interaction
+        //in future, maybe patch OnGrab() or add logic to add/remove action subscriptions
+        if (NetworkLifecycle.Instance.IsProcessingPacket)
+            return;
+
+        CouplerInteractionType interactionFlags = CouplerInteractionType.NoAction;
+        Coupler otherCoupler = null;
+
+        switch (state)
+        {
+            case ChainCouplerInteraction.State.Being_Dragged:
+                couplerInteraction = coupler;
+                Multiplayer.LogDebug(() => $"3 Client_CouplerStateChange({state}) trainCar: [{TrainCar?.ID}, {NetId}]");
+                break;
+
+            case ChainCouplerInteraction.State.Attached_Loose:
+                if (couplerInteraction != null)
+                {
+                    //couldn't find an appropriate constant in the game code, other than the default value
+                    //at B99.3 this distance is 1.5f for both default and constant/magic number
+                    otherCoupler = coupler.GetFirstCouplerInRange();
+                    Multiplayer.LogDebug(() => $"4 Client_CouplerStateChange({state}) trainCar: [{TrainCar?.ID}, {NetId}] coupledTo: {coupler?.coupledTo?.train?.ID}, first Coupler: {otherCoupler?.train?.ID}");
+                    interactionFlags = CouplerInteractionType.CouplerCouple;
+                }
+                break;
+
+            case ChainCouplerInteraction.State.Parked:
+                if (couplerInteraction != null)
+                {
+                    Multiplayer.LogDebug(() => $"6 Client_CouplerStateChange({state}) trainCar: [{TrainCar?.ID}, {NetId}]");
+                    interactionFlags = CouplerInteractionType.CouplerPark;
+                }
+                break;
+
+            case ChainCouplerInteraction.State.Dangling:
+                if (couplerInteraction != null)
+                {
+                    Multiplayer.LogDebug(() => $"7 Client_CouplerStateChange({state}) trainCar: [{TrainCar?.ID}, {NetId}]");
+                    interactionFlags = CouplerInteractionType.CouplerDrop;
+                }
+                break;
+
+            default:
+                //nothing to do
+                break;
+        }
+
+        if (interactionFlags != CouplerInteractionType.NoAction)
+        {
+            Multiplayer.LogDebug(() => $"8 Client_CouplerStateChange({state}) trainCar: [{TrainCar?.ID}, {NetId}], coupler is front: {coupler?.isFrontCoupler}, Sending: {interactionFlags}");
+            couplerInteraction = null;
+            NetworkLifecycle.Instance.Client.SendCouplerInteraction(interactionFlags, coupler, otherCoupler);
+            return;
+        }
+        Multiplayer.LogDebug(() => $"9 Client_CouplerStateChange({state}) trainCar: [{TrainCar?.ID}, {NetId}]");
     }
     #endregion
 }

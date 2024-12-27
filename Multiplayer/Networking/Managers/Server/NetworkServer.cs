@@ -120,6 +120,7 @@ public class NetworkServer : NetworkManager
         netPacketProcessor.SubscribeReusable<ServerboundLicensePurchaseRequestPacket, NetPeer>(OnServerboundLicensePurchaseRequestPacket);
         netPacketProcessor.SubscribeReusable<CommonChangeJunctionPacket, NetPeer>(OnCommonChangeJunctionPacket);
         netPacketProcessor.SubscribeReusable<CommonRotateTurntablePacket, NetPeer>(OnCommonRotateTurntablePacket);
+        netPacketProcessor.SubscribeReusable<CommonCouplerInteractionPacket, NetPeer>(OnCommonCouplerInteractionPacket);
         netPacketProcessor.SubscribeReusable<CommonTrainCouplePacket, NetPeer>(OnCommonTrainCouplePacket);
         netPacketProcessor.SubscribeReusable<CommonTrainUncouplePacket, NetPeer>(OnCommonTrainUncouplePacket);
         netPacketProcessor.SubscribeReusable<CommonHoseConnectedPacket, NetPeer>(OnCommonHoseConnectedPacket);
@@ -757,6 +758,11 @@ public class NetworkServer : NetworkManager
         SendPacketToAll(packet, DeliveryMethod.ReliableOrdered, peer);
     }
 
+    private void OnCommonCouplerInteractionPacket(CommonCouplerInteractionPacket packet, NetPeer peer)
+    {
+        //todo: add validation that to ensure the client is near the coupler - this packet may also be used for remote operations and may need to factor that in in the future
+        SendPacketToAll(packet, DeliveryMethod.ReliableUnordered, peer);
+    }
     private void OnCommonTrainCouplePacket(CommonTrainCouplePacket packet, NetPeer peer)
     {
         SendPacketToAll(packet, DeliveryMethod.ReliableUnordered, peer);
@@ -934,7 +940,7 @@ public class NetworkServer : NetworkManager
 
         trainCar.Rerail(networkedRailTrack.RailTrack, position, packet.Forward);
     }
-
+ 
     private void OnServerboundLicensePurchaseRequestPacket(ServerboundLicensePurchaseRequestPacket packet, NetPeer peer)
     {
         if (!TryGetServerPlayer(peer, out ServerPlayer player))
