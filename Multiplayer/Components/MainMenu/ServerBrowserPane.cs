@@ -66,14 +66,6 @@ namespace Multiplayer.Components.MainMenu
             Aborted
         }
 
-        // Regular expressions for IP and port validation
-        // @formatter:off
-        // Patterns from https://ihateregex.io/
-        private static readonly Regex IPv4Regex = new Regex(@"(\b25[0-5]|\b2[0-4][0-9]|\b[01]?[0-9][0-9]?)(\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}");
-        private static readonly Regex IPv6Regex = new Regex(@"(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))");
-        private static readonly Regex PortRegex = new Regex(@"^((6553[0-5])|(655[0-2][0-9])|(65[0-4][0-9]{2})|(6[0-4][0-9]{3})|([1-5][0-9]{4})|([0-5]{0,5})|([0-9]{1,4}))$");
-        // @formatter:on
-
         private const int MAX_PORT_LEN = 5;
         private const int MIN_PORT = 1024;
         private const int MAX_PORT = 49151;
@@ -569,7 +561,7 @@ namespace Multiplayer.Components.MainMenu
                     return;
                 }
 
-                if (!IPv4Regex.IsMatch(result.data) && !IPv6Regex.IsMatch(result.data))
+                if (!IPAddress.TryParse(result.data, out IPAddress parsedAddress))
                 {
                     string inputUrl = result.data;
 
@@ -610,8 +602,7 @@ namespace Multiplayer.Components.MainMenu
                 }
                 else
                 {
-                    if (IPv4Regex.IsMatch(result.data))
-                    {
+                    if (parsedAddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
                         connectionState = ConnectionState.AttemptingIPv4;
                     }
                     else
@@ -648,7 +639,7 @@ namespace Multiplayer.Components.MainMenu
                     return;
                 }
 
-                if (!PortRegex.IsMatch(result.data))
+                if (!int.TryParse(result.data, out portNumber) || portNumber < MIN_PORT || portNumber > MAX_PORT)
                 {
                     MainMenuThingsAndStuff.Instance.ShowOkPopup(Locale.SERVER_BROWSER__PORT_INVALID, ShowIpPopup);
                 }
@@ -656,7 +647,8 @@ namespace Multiplayer.Components.MainMenu
                 {
                     portNumber = ushort.Parse(result.data);
                     ShowPasswordPopup();
-                } 
+                }
+
             }; 
 
         }
