@@ -225,16 +225,6 @@ public class NetworkClient : NetworkManager
 
     #endregion
 
-    #region NAT Punch Events
-    public override void OnNatIntroductionRequest(IPEndPoint localEndPoint, IPEndPoint remoteEndPoint, string token)
-    {
-        //do some stuff here
-    }
-    public override void OnNatIntroductionSuccess(IPEndPoint targetEndPoint, NatAddressType type, string token)
-    {
-        //do other stuff here
-    }
-    #endregion
 
     #region Listeners 
 

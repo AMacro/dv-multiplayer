@@ -38,6 +38,8 @@ public class LobbyServerManager : MonoBehaviour
     private string server_id { get; set; }
     private string private_key { get; set; }
 
+    private Lobby lobby;
+
     private bool initialised = false;
     private bool sendUpdates = false;
     private float timePassed = 0f;
