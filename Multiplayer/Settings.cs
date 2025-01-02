@@ -15,7 +15,7 @@ public class Settings : UnityModManager.ModSettings, IDrawable
 
     public static Action<Settings> OnSettingsUpdated;
 
-    public int SettingsVer = 1;
+    public int SettingsVer = 2;
 
     [Header("Player")]
     [Draw("Use Steam Name", Tooltip = "Use your Steam name as your username in-game")]
@@ -159,7 +159,7 @@ public class Settings : UnityModManager.ModSettings, IDrawable
 
     private static int GetCurrentVersion()
     {
-        return 1;
+        return 2;
     }
 
     // Function to handle migrations based on the current version
@@ -178,11 +178,14 @@ public class Settings : UnityModManager.ModSettings, IDrawable
 
                 MigrateSettings(ref data);
                 break;
-            case 1:
+            case 1: 
                 if (data.Ipv4AddressCheck == "http://checkip.dyndns.org")
                     data.Ipv4AddressCheck = new Settings().Ipv4AddressCheck;
-                break;
 
+                data.ShowAdvancedSettings = true;
+                data.DebugLogging = true;
+                data.ShowPingInNameTags = true;
+                break;
             default:
                 break;
         }
