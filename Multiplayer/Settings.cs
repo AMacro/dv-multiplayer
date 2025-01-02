@@ -1,5 +1,6 @@
 using System;
 using Humanizer;
+using Steamworks;
 using UnityEngine;
 using UnityModManagerNet;
 using Console = DV.Console;
@@ -17,7 +18,10 @@ public class Settings : UnityModManager.ModSettings, IDrawable
     public int SettingsVer = 1;
 
     [Header("Player")]
-    [Draw("Username", Tooltip = "Your username in-game")]
+    [Draw("Use Steam Name", Tooltip = "Use your Steam name as your username in-game")]
+    public bool UseSteamName = true;
+    public string LastSteamName = string.Empty;
+    [Draw("Username", Tooltip = "Your username in-game", VisibleOn = "UseSteamName|false")]
     public string Username = "Player";
     public string Guid = System.Guid.NewGuid().ToString();
 
@@ -98,6 +102,7 @@ public class Settings : UnityModManager.ModSettings, IDrawable
 
     public override void Save(UnityModManager.ModEntry modEntry)
     {
+        LastSteamName = LastSteamName.Trim().Truncate(MAX_USERNAME_LENGTH);
         Username = Username.Trim().Truncate(MAX_USERNAME_LENGTH);
         Port = Mathf.Clamp(Port, 1024, 49151);
         MaxPlayers = Mathf.Clamp(MaxPlayers, 1, byte.MaxValue);
@@ -119,6 +124,24 @@ public class Settings : UnityModManager.ModSettings, IDrawable
         guid = System.Guid.NewGuid();
         Guid = guid.ToString();
         return guid;
+    }
+
+    public string GetUserName()
+    {
+        string username = Username;
+
+        if (Multiplayer.Settings.UseSteamName)
+        {
+            if (DVSteamworks.Success)
+            {
+                Multiplayer.Settings.LastSteamName = SteamClient.Name;
+            }
+
+            if (Multiplayer.Settings.LastSteamName != string.Empty)
+                username = Multiplayer.Settings.LastSteamName;
+        }
+
+        return username;
     }
 
     public static Settings Load(UnityModManager.ModEntry modEntry)

@@ -68,13 +68,14 @@ public class NetworkClient : NetworkManager
         ClientPlayerManager = new ClientPlayerManager();
     }
 
-    public void Start(string address, int port, string password, bool isSinglePlayer, Action<DisconnectReason,string> onDisconnect)
+    public void Start(string address, int port, string password, bool isSinglePlayer, Action<DisconnectReason, string> onDisconnect)
     {
         this.onDisconnect = onDisconnect;
         netManager.Start();
+
         ServerboundClientLoginPacket serverboundClientLoginPacket = new()
         {
-            Username = Multiplayer.Settings.Username,
+            Username = Multiplayer.Settings.GetUserName(),
             Guid = Multiplayer.Settings.GetGuid().ToByteArray(),
             Password = password,
             BuildMajorVersion = (ushort)BuildInfo.BUILD_VERSION_MAJOR,

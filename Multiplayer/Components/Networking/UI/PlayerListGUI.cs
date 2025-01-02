@@ -48,7 +48,7 @@ public class PlayerListGUI : MonoBehaviour
         }
 
         // The Player of the Client is not in the PlayerManager, so we need to add it separately
-        playerList[playerList.Length - 1] = $"{Multiplayer.Settings.Username} ({NetworkLifecycle.Instance.Client.Ping.ToString()}ms)";
+        playerList[playerList.Length - 1] = $"{Multiplayer.Settings.GetUserName()} ({NetworkLifecycle.Instance.Client.Ping}ms)";
         return playerList;
     }
 }
