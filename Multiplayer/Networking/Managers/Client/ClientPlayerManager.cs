@@ -5,7 +5,7 @@ using Multiplayer.Components.Networking.Player;
 using UnityEngine;
 using Object = UnityEngine.Object;
 
-namespace Multiplayer.Networking.Listeners;
+namespace Multiplayer.Networking.Managers.Client;
 
 public class ClientPlayerManager
 {

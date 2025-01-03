@@ -1,11 +1,8 @@
-using DV.CabControls;
 using HarmonyLib;
 using Multiplayer.Components.Networking;
 using Multiplayer.Networking.Data.Train;
-using UnityEngine;
 
-namespace Multiplayer.Patches.World;
-
+namespace Multiplayer.Patches.Train;
 
 [HarmonyPatch(typeof(ChainCouplerInteraction))]
 public static class ChainCouplerInteractionPatch
@@ -14,7 +11,7 @@ public static class ChainCouplerInteractionPatch
     [HarmonyPostfix]
     private static void OnScrewButtonUsed(ChainCouplerInteraction __instance)
     {
-    
+
         Multiplayer.LogDebug(() => $"OnScrewButtonUsed({__instance?.couplerAdapter?.coupler?.train?.ID}) state: {__instance.state}");
 
         CouplerInteractionType flag = default;

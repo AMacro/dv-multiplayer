@@ -17,8 +17,9 @@ using Multiplayer.Networking.Data;
 using DV;
 using System.Net;
 using LiteNetLib;
-using Multiplayer.Networking.Listeners;
 using System.Collections.Generic;
+using Multiplayer.Networking.Managers.Client;
+using JetBrains.Annotations;
 
 namespace Multiplayer.Components.MainMenu
 {
@@ -71,15 +72,15 @@ namespace Multiplayer.Components.MainMenu
         private const int MAX_PORT = 49151;
 
         //Gridview variables
-        private ObservableCollectionExt<IServerBrowserGameDetails> gridViewModel = new ObservableCollectionExt<IServerBrowserGameDetails>();
+        private readonly ObservableCollectionExt<IServerBrowserGameDetails> gridViewModel = [];
         private ServerBrowserGridView gridView;
         private ScrollRect parentScroller;
         private string serverIDOnRefresh;
         private IServerBrowserGameDetails selectedServer;
 
         //ping tracking
-        private List<IServerBrowserGameDetails> serversToPing = new List<IServerBrowserGameDetails>();
-        private Dictionary<string, (PingRecord IPv4Ping, PingRecord IPv6Ping)> serverPings = new Dictionary<string, (PingRecord, PingRecord)>();
+        private readonly List<IServerBrowserGameDetails> serversToPing = [];
+        private readonly Dictionary<string, (PingRecord IPv4Ping, PingRecord IPv6Ping)> serverPings = [];
 
         private float pingTimer = 0f;
         private const float PING_INTERVAL = 2f; // base interval to refresh all pings
@@ -87,7 +88,7 @@ namespace Multiplayer.Components.MainMenu
         private const int SERVERS_PER_BATCH = 10;
 
         //LAN tracking
-        private List<IServerBrowserGameDetails> localServers = new List<IServerBrowserGameDetails>();
+        private readonly List<IServerBrowserGameDetails> localServers = [];
         private const int LAN_TIMEOUT = 60;         //How long to hold a LAN server without a response
         private const int DISCOVERY_TIMEOUT = 1;    //how long to wait for servers to respond
         private bool localRefreshComplete;
@@ -103,7 +104,7 @@ namespace Multiplayer.Components.MainMenu
         private TextMeshProUGUI detailsPane;
 
         //Remote server tracking
-        private List<IServerBrowserGameDetails> remoteServers = new List<IServerBrowserGameDetails>();
+        private readonly List<IServerBrowserGameDetails> remoteServers = [];
         private bool serverRefreshing = false;
         private float timePassed = 0f; //time since last refresh
         private const int AUTO_REFRESH_TIME = 30; //how often to refresh in auto
@@ -126,7 +127,7 @@ namespace Multiplayer.Components.MainMenu
 
         #region setup
 
-        private void Awake()
+        public void Awake()
         {
             //Multiplayer.Log("MultiplayerPane Awake()");
             CleanUI();
@@ -136,7 +137,7 @@ namespace Multiplayer.Components.MainMenu
             RefreshGridView();
         }
 
-        private void OnEnable()
+        public void OnEnable()
         {
             //Multiplayer.Log("MultiplayerPane OnEnable()");
             if (!this.parentScroller)
@@ -161,7 +162,7 @@ namespace Multiplayer.Components.MainMenu
         }
 
         // Disable listeners
-        private void OnDisable()
+        public void OnDisable()
         {
             this.SetupListeners(false);
 
@@ -173,7 +174,7 @@ namespace Multiplayer.Components.MainMenu
             }
         }
 
-        private void OnDestroy()
+        public void OnDestroy()
         {
             if (serverBrowserClient == null)
                 return;
@@ -182,11 +183,10 @@ namespace Multiplayer.Components.MainMenu
             serverBrowserClient.Stop();
         }
 
-        private void Update()
+        public void Update()
         {
             //Poll for any LAN discovery or ping packets
-            if (serverBrowserClient != null)
-                serverBrowserClient.PollEvents();
+            serverBrowserClient?.PollEvents();
 
             //Handle server refresh interval
             timePassed += Time.deltaTime;
@@ -307,7 +307,7 @@ namespace Multiplayer.Components.MainMenu
 
             // Create Content
             GameObject.Destroy(serverScroll.FindChildByName("GRID VIEW").gameObject);
-            GameObject content = new GameObject("Content", typeof(RectTransform), typeof(ContentSizeFitter), typeof(VerticalLayoutGroup));
+            GameObject content = new("Content", typeof(RectTransform), typeof(ContentSizeFitter), typeof(VerticalLayoutGroup));
             content.transform.SetParent(viewport.transform, false);
             ContentSizeFitter contentSF = content.GetComponent<ContentSizeFitter>();
             contentSF.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
@@ -323,12 +323,12 @@ namespace Multiplayer.Components.MainMenu
             scrollRect.content = contentRT;
 
             // Create TextMeshProUGUI object
-            GameObject textContainerGO = new GameObject("Details Container", typeof(HorizontalLayoutGroup));
+            GameObject textContainerGO = new ("Details Container", typeof(HorizontalLayoutGroup));
             textContainerGO.transform.SetParent(content.transform, false);
             contentRT.localPosition = new Vector3(contentRT.localPosition.x + 10, contentRT.localPosition.y, contentRT.localPosition.z);
 
 
-            GameObject textGO = new GameObject("Details Text", typeof(TextMeshProUGUI));
+            GameObject textGO = new("Details Text", typeof(TextMeshProUGUI));
             textGO.transform.SetParent(textContainerGO.transform, false);
             HorizontalLayoutGroup textHLG = textGO.GetComponent<HorizontalLayoutGroup>();
             detailsPane = textGO.GetComponent<TextMeshProUGUI>();
@@ -483,7 +483,7 @@ namespace Multiplayer.Components.MainMenu
 
                 //Check if we can connect to this server
                 Multiplayer.Log($"Server: \"{selectedServer.GameVersion}\" \"{selectedServer.MultiplayerVersion}\"");
-                Multiplayer.Log($"Client: \"{BuildInfo.BUILD_VERSION_MAJOR.ToString()}\" \"{Multiplayer.Ver}\"");
+                Multiplayer.Log($"Client: \"{BuildInfo.BUILD_VERSION_MAJOR}\" \"{Multiplayer.Ver}\"");
                 Multiplayer.Log($"Result: \"{selectedServer.GameVersion == BuildInfo.BUILD_VERSION_MAJOR.ToString()}\" \"{selectedServer.MultiplayerVersion == Multiplayer.Ver}\"");
 
                 bool canConnect = selectedServer.GameVersion == BuildInfo.BUILD_VERSION_MAJOR.ToString() &&
@@ -504,17 +504,14 @@ namespace Multiplayer.Components.MainMenu
             if (index >= 0)
             {
                 var viewElement = gridView.GetElementAt(index);
-                if (viewElement != null)
-                {
-                    viewElement.UpdateView();
-                }
+                viewElement?.UpdateView();
             }
         }
         #endregion
 
         private void UpdateDetailsPane()
         {
-            string details="";
+            string details;
 
             if (selectedServer != null)
             {
@@ -523,9 +520,9 @@ namespace Multiplayer.Components.MainMenu
 
                 //note: built-in localisations have a trailing colon e.g. 'Game mode:'
 
-                details  = "<alpha=#50>" + LocalizationAPI.L("launcher/game_mode", Array.Empty<string>()) + "</color> " + LobbyServerData.GetGameModeFromInt(selectedServer.GameMode) + "<br>";
-                details += "<alpha=#50>" + LocalizationAPI.L("launcher/difficulty", Array.Empty<string>()) + "</color> " + LobbyServerData.GetDifficultyFromInt(selectedServer.Difficulty) + "<br>";
-                details += "<alpha=#50>" + LocalizationAPI.L("launcher/in_game_time_passed", Array.Empty<string>()) + "</color> " + selectedServer.TimePassed + "<br>";
+                details  = "<alpha=#50>" + LocalizationAPI.L("launcher/game_mode", []) + "</color> " + LobbyServerData.GetGameModeFromInt(selectedServer.GameMode) + "<br>";
+                details += "<alpha=#50>" + LocalizationAPI.L("launcher/difficulty", []) + "</color> " + LobbyServerData.GetDifficultyFromInt(selectedServer.Difficulty) + "<br>";
+                details += "<alpha=#50>" + LocalizationAPI.L("launcher/in_game_time_passed", []) + "</color> " + selectedServer.TimePassed + "<br>";
                 details += "<alpha=#50>" + Locale.SERVER_BROWSER__PLAYERS + ":</color> " + selectedServer.CurrentPlayers + '/' + selectedServer.MaxPlayers + "<br>";
                 details += "<alpha=#50>" + Locale.SERVER_BROWSER__PASSWORD_REQUIRED + ":</color> " + (selectedServer.HasPassword ? Locale.SERVER_BROWSER__YES : Locale.SERVER_BROWSER__NO) + "<br>";
                 details += "<alpha=#50>" + Locale.SERVER_BROWSER__MODS_REQUIRED + ":</color> " + (string.IsNullOrEmpty(selectedServer.RequiredMods) ? Locale.SERVER_BROWSER__NO : Locale.SERVER_BROWSER__YES) + "<br>";
@@ -604,11 +601,8 @@ namespace Multiplayer.Components.MainMenu
                 {
                     if (parsedAddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
                         connectionState = ConnectionState.AttemptingIPv4;
-                    }
                     else
-                    {
                         connectionState = ConnectionState.AttemptingIPv6;
-                    }
 
                     address = result.data;
                     ShowPortPopup();
@@ -645,7 +639,6 @@ namespace Multiplayer.Components.MainMenu
                 }
                 else
                 {
-                    portNumber = ushort.Parse(result.data);
                     ShowPasswordPopup();
                 }
 
@@ -860,16 +853,12 @@ namespace Multiplayer.Components.MainMenu
         {
             connectionState = ConnectionState.Failed;
 
-            if (connectingPopup != null)
-            {
-                connectingPopup.RequestClose(PopupClosedByAction.Abortion, null);
-            }
+            connectingPopup?.RequestClose(PopupClosedByAction.Abortion, null);
 
             if(this.gridView != null)
                 IndexChanged(this.gridView);
 
-            if(buttonDirectIP != null)
-                buttonDirectIP.ToggleInteractable(true);
+            buttonDirectIP?.ToggleInteractable(true);
         }
 
         private void OnDisconnect(DisconnectReason reason, string message)
@@ -955,39 +944,37 @@ namespace Multiplayer.Components.MainMenu
 
         IEnumerator GetRequest(string uri)
         {
-            using (UnityWebRequest webRequest = UnityWebRequest.Get(uri))
+            using UnityWebRequest webRequest = UnityWebRequest.Get(uri);
+            // Request and wait for the desired page.
+            yield return webRequest.SendWebRequest();
+
+            string[] pages = uri.Split('/');
+            int page = pages.Length - 1;
+
+            if (webRequest.isNetworkError)
             {
-                // Request and wait for the desired page.
-                yield return webRequest.SendWebRequest();
-
-                string[] pages = uri.Split('/');
-                int page = pages.Length - 1;
-
-                if (webRequest.isNetworkError)
-                {
-                    Multiplayer.LogError(pages[page] + ": Error: " + webRequest.error);
-                }
-                else
-                {
-                    Multiplayer.Log(pages[page] + ":\nReceived: " + webRequest.downloadHandler.text);
-
-                    LobbyServerData[] response;
-
-                    response = Newtonsoft.Json.JsonConvert.DeserializeObject<LobbyServerData[]>(webRequest.downloadHandler.text);
-
-                    Multiplayer.Log($"Serverbrowser servers: {response.Length}");
-
-                    foreach (LobbyServerData server in response)
-                    {
-                        Multiplayer.Log($"Server name: \"{server.Name}\", IPv4: {server.ipv4}, IPv6: {server.ipv6}, Port: {server.port}");
-                    }
-
-                    remoteServers.AddRange(response);
-
-                }
-
-                remoteRefreshComplete = true;
+                Multiplayer.LogError(pages[page] + ": Error: " + webRequest.error);
             }
+            else
+            {
+                Multiplayer.Log(pages[page] + ":\nReceived: " + webRequest.downloadHandler.text);
+
+                LobbyServerData[] response;
+
+                response = Newtonsoft.Json.JsonConvert.DeserializeObject<LobbyServerData[]>(webRequest.downloadHandler.text);
+
+                Multiplayer.Log($"Serverbrowser servers: {response.Length}");
+
+                foreach (LobbyServerData server in response)
+                {
+                    Multiplayer.Log($"Server name: \"{server.Name}\", IPv4: {server.ipv4}, IPv6: {server.ipv6}, Port: {server.port}");
+                }
+
+                remoteServers.AddRange(response);
+
+            }
+
+            remoteRefreshComplete = true;
         }
 
         private void RefreshGridView()

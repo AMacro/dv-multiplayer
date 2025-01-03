@@ -1,6 +1,5 @@
 using System;
 using Multiplayer.Networking.Data;
-using Multiplayer.Networking.Listeners;
 using Newtonsoft.Json;
 using System.Collections;
 using UnityEngine;
@@ -14,8 +13,8 @@ using LiteNetLib;
 using LiteNetLib.Utils;
 using Multiplayer.Networking.Packets.Unconnected;
 using System.Net;
-using LocoSim.Implementations;
 using System.Linq;
+using JetBrains.Annotations;
 
 namespace Multiplayer.Networking.Managers.Server;
 public class LobbyServerManager : MonoBehaviour
@@ -26,7 +25,7 @@ public class LobbyServerManager : MonoBehaviour
     private const string ENDPOINT_REMOVE_SERVER = "remove_game_server";
 
     //RegEx
-    private readonly Regex IPv4Match = new Regex(@"(\b25[0-5]|\b2[0-4][0-9]|\b[01]?[0-9][0-9]?)(\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}");
+    private readonly Regex IPv4Match = new(@"(\b25[0-5]|\b2[0-4][0-9]|\b[01]?[0-9][0-9]?)(\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}");
 
     private const int REDIRECT_MAX = 5;
 
@@ -35,8 +34,8 @@ public class LobbyServerManager : MonoBehaviour
     private const int PLAYER_CHANGE_TIME = 5;                   //Update server early if the number of players has changed in this time frame
 
     private NetworkServer server;
-    private string server_id { get; set; }
-    private string private_key { get; set; }
+    private string server_id;
+    private string private_key;
 
     private bool initialised = false;
     private bool sendUpdates = false;
@@ -46,18 +45,18 @@ public class LobbyServerManager : MonoBehaviour
     private NetManager discoveryManager;
     private NetPacketProcessor packetProcessor;
     private EventBasedNetListener discoveryListener;
-    private NetDataWriter cachedWriter = new();
-    public static int[] discoveryPorts = { 8888, 8889, 8890 };
+    private readonly NetDataWriter cachedWriter = new();
+    public static int[] discoveryPorts = [8888, 8889, 8890];
 
-    #region MonoBehavior
-    private void Awake()
+    #region
+    public void Awake()
     {
         server = NetworkLifecycle.Instance.Server;
 
         Multiplayer.Log($"LobbyServerManager New({server != null})");
     }
 
-    private IEnumerator Start()
+    public IEnumerator Start()
     {
         server.serverData.ipv6 = GetStaticIPv6Address();
         server.serverData.LocalIPv4 = GetLocalIPv4Address();
@@ -94,7 +93,7 @@ public class LobbyServerManager : MonoBehaviour
         StartDiscoveryServer();
     }
 
-    private void OnDestroy()
+    public void OnDestroy()
     {
         Multiplayer.Log($"LobbyServerManager OnDestroy()");
         sendUpdates = false;
@@ -104,7 +103,7 @@ public class LobbyServerManager : MonoBehaviour
         discoveryManager?.Stop();
     }
 
-    private void Update()
+    public void Update()
     {
         if (sendUpdates)
         {
@@ -138,7 +137,7 @@ public class LobbyServerManager : MonoBehaviour
 
     private IEnumerator RegisterWithLobbyServer(string uri)
     {
-        JsonSerializerSettings jsonSettings = new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore };
+        JsonSerializerSettings jsonSettings = new() { NullValueHandling = NullValueHandling.Ignore };
         string json = JsonConvert.SerializeObject(server.serverData, jsonSettings);
         Multiplayer.LogDebug(()=>$"JsonRequest: {json}");
 
@@ -162,7 +161,7 @@ public class LobbyServerManager : MonoBehaviour
 
     private IEnumerator RemoveFromLobbyServer(string uri)
     {
-        JsonSerializerSettings jsonSettings = new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore };
+        JsonSerializerSettings jsonSettings = new() { NullValueHandling = NullValueHandling.Ignore };
         string json = JsonConvert.SerializeObject(new LobbyServerResponseData(server_id, private_key), jsonSettings);
         Multiplayer.LogDebug(() => $"JsonRequest: {json}");
 
@@ -176,18 +175,18 @@ public class LobbyServerManager : MonoBehaviour
 
     private IEnumerator UpdateLobbyServer(string uri)
     {
-        JsonSerializerSettings jsonSettings = new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore };
+        JsonSerializerSettings jsonSettings = new() { NullValueHandling = NullValueHandling.Ignore };
 
         DateTime start = AStartGameData.BaseTimeAndDate;
         DateTime current = WeatherDriver.Instance.manager.DateTime;
         TimeSpan inGame = current - start;
 
-        LobbyServerUpdateData reqData = new LobbyServerUpdateData(
-                                                                    server_id,
-                                                                    private_key,
-                                                                    inGame.ToString("d\\d\\ hh\\h\\ mm\\m\\ ss\\s"),
-                                                                    server.serverData.CurrentPlayers
-                                                                  );
+        LobbyServerUpdateData reqData = new(
+                                                server_id,
+                                                private_key,
+                                                inGame.ToString("d\\d\\ hh\\h\\ mm\\m\\ ss\\s"),
+                                                server.serverData.CurrentPlayers
+                                            );
 
         string json = JsonConvert.SerializeObject(reqData, jsonSettings);
         Multiplayer.LogDebug(() => $"UpdateLobbyServer JsonRequest: {json}");
@@ -250,41 +249,39 @@ public class LobbyServerManager : MonoBehaviour
             yield break;
         }
 
-        using (UnityWebRequest webRequest = UnityWebRequest.Post(uri, json))
+        using UnityWebRequest webRequest = UnityWebRequest.Post(uri, json);
+        webRequest.redirectLimit = 0;
+
+        if (json != null && json.Length > 0)
         {
-            webRequest.redirectLimit = 0;
+            webRequest.uploadHandler = new UploadHandlerRaw(System.Text.Encoding.UTF8.GetBytes(json)) { contentType = "application/json" };
+        }
+        webRequest.downloadHandler = new DownloadHandlerBuffer();
 
-            if (json != null && json.Length > 0)
+        yield return webRequest.SendWebRequest();
+
+        //check for redirect
+        if (webRequest.responseCode >= 300 && webRequest.responseCode < 400)
+        {
+            string redirectUrl = webRequest.GetResponseHeader("Location");
+            Multiplayer.LogWarning($"Lobby Server redirected, check address is up to date: '{redirectUrl}'");
+
+            if (redirectUrl != null && redirectUrl.StartsWith("https://") && redirectUrl.Replace("https://", "http://") == uri)
             {
-                webRequest.uploadHandler = new UploadHandlerRaw(System.Text.Encoding.UTF8.GetBytes(json)) { contentType = "application/json" };
+                yield return SendWebRequest(redirectUrl, json, onSuccess, onError, ++depth);
             }
-            webRequest.downloadHandler = new DownloadHandlerBuffer();
-
-            yield return webRequest.SendWebRequest();
-
-            //check for redirect
-            if (webRequest.responseCode >= 300 && webRequest.responseCode < 400)
+        }
+        else
+        {
+            if (webRequest.isNetworkError || webRequest.isHttpError)
             {
-                string redirectUrl = webRequest.GetResponseHeader("Location");
-                Multiplayer.LogWarning($"Lobby Server redirected, check address is up to date: '{redirectUrl}'");
-
-                if (redirectUrl != null && redirectUrl.StartsWith("https://") && redirectUrl.Replace("https://", "http://") == uri)
-                {
-                    yield return SendWebRequest(redirectUrl, json, onSuccess, onError, ++depth);
-                }
+                Multiplayer.LogError($"Error: {webRequest.error}\r\n{webRequest.downloadHandler.text}");
+                onError?.Invoke(webRequest);
             }
             else
             {
-                if (webRequest.isNetworkError || webRequest.isHttpError)
-                {
-                    Multiplayer.LogError($"Error: {webRequest.error}\r\n{webRequest.downloadHandler.text}");
-                    onError?.Invoke(webRequest);
-                }
-                else
-                {
-                    Multiplayer.Log($"Received: {webRequest.downloadHandler.text}");
-                    onSuccess?.Invoke(webRequest);
-                }
+                Multiplayer.Log($"Received: {webRequest.downloadHandler.text}");
+                onSuccess?.Invoke(webRequest);
             }
         }
     }
@@ -297,36 +294,34 @@ public class LobbyServerManager : MonoBehaviour
             yield break;
         }
 
-        using (UnityWebRequest webRequest = UnityWebRequest.Get(uri))
+        using UnityWebRequest webRequest = UnityWebRequest.Get(uri);
+        webRequest.redirectLimit = 0;
+        webRequest.downloadHandler = new DownloadHandlerBuffer();
+
+        yield return webRequest.SendWebRequest();
+
+        //check for redirect
+        if (webRequest.responseCode >= 300 && webRequest.responseCode < 400)
         {
-            webRequest.redirectLimit = 0;
-            webRequest.downloadHandler = new DownloadHandlerBuffer();
+            string redirectUrl = webRequest.GetResponseHeader("Location");
+            Multiplayer.LogWarning($"Lobby Server redirected, check address is up to date: '{redirectUrl}'");
 
-            yield return webRequest.SendWebRequest();
-
-            //check for redirect
-            if (webRequest.responseCode >= 300 && webRequest.responseCode < 400)
+            if (redirectUrl != null && redirectUrl.StartsWith("https://") && redirectUrl.Replace("https://", "http://") == uri)
             {
-                string redirectUrl = webRequest.GetResponseHeader("Location");
-                Multiplayer.LogWarning($"Lobby Server redirected, check address is up to date: '{redirectUrl}'");
-
-                if (redirectUrl != null && redirectUrl.StartsWith("https://") && redirectUrl.Replace("https://", "http://") == uri)
-                {
-                    yield return SendWebRequestGET(redirectUrl, onSuccess, onError, ++depth);
-                }
+                yield return SendWebRequestGET(redirectUrl, onSuccess, onError, ++depth);
+            }
+        }
+        else
+        {
+            if (webRequest.isNetworkError || webRequest.isHttpError)
+            {
+                Multiplayer.LogError($"Error: {webRequest.error}\r\n{webRequest.downloadHandler.text}");
+                onError?.Invoke(webRequest);
             }
             else
             {
-                if (webRequest.isNetworkError || webRequest.isHttpError)
-                {
-                    Multiplayer.LogError($"Error: {webRequest.error}\r\n{webRequest.downloadHandler.text}");
-                    onError?.Invoke(webRequest);
-                }
-                else
-                {
-                    Multiplayer.Log($"Received: {webRequest.downloadHandler.text}");
-                    onSuccess?.Invoke(webRequest);
-                }
+                Multiplayer.Log($"Received: {webRequest.downloadHandler.text}");
+                onSuccess?.Invoke(webRequest);
             }
         }
     }

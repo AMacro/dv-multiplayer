@@ -64,8 +64,8 @@ public abstract class TaskNetworkData<T> : TaskNetworkData where T : TaskNetwork
 #region Extension of TaskTypes
 public static class TaskNetworkDataFactory
 {
-    private static readonly Dictionary<Type, Func<Task, TaskNetworkData>> TypeToTaskNetworkData = new();
-    private static readonly Dictionary<TaskType, Func<TaskType, TaskNetworkData>> EnumToEmptyTaskNetworkData = new();
+    private static readonly Dictionary<Type, Func<Task, TaskNetworkData>> TypeToTaskNetworkData = [];
+    private static readonly Dictionary<TaskType, Func<TaskType, TaskNetworkData>> EnumToEmptyTaskNetworkData = [];
 
     public static void RegisterTaskType<TGameTask>(TaskType taskType, Func<TGameTask, TaskNetworkData> converter, Func<TaskType, TaskNetworkData> emptyCreator)
         where TGameTask : Task

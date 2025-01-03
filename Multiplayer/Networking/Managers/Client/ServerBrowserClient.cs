@@ -6,11 +6,10 @@ using Multiplayer.Networking.Packets.Unconnected;
 using System.Threading.Tasks;
 using System.Diagnostics;
 using System.Linq;
-using Multiplayer.Networking.Managers.Server;
 using Multiplayer.Networking.Data;
 
 
-namespace Multiplayer.Networking.Listeners;
+namespace Multiplayer.Networking.Managers.Client;
 
 public class ServerBrowserClient : NetworkManager, IDisposable
 {
@@ -31,11 +30,11 @@ public class ServerBrowserClient : NetworkManager, IDisposable
         }
     }
 
-    private Dictionary<string, PingInfo> pingInfos = new Dictionary<string, PingInfo>();
+    private readonly Dictionary<string, PingInfo> pingInfos = [];
     public Action<string, int, bool> OnPing; // serverId, pingTime, isIPv4
     public Action<IPEndPoint, LobbyServerData> OnDiscovery; // endPoint, serverId, serverData
 
-    private int[] discoveryPorts = { 8888, 8889, 8890 };
+    private readonly int[] discoveryPorts = [8888, 8889, 8890];
 
     private const int PingTimeoutMs = 5000; // 5 seconds timeout
 
@@ -167,7 +166,7 @@ public class ServerBrowserClient : NetworkManager, IDisposable
         if (packet.IsResponse)
         {
             //Log($"OnUnconnectedDiscoveryPacket({packet.PacketType}, {endPoint?.Address}) id: {packet.data.id}");
-            OnDiscovery?.Invoke(endPoint,packet.Data);
+            OnDiscovery?.Invoke(endPoint, packet.Data);
         }
     }
 
@@ -182,7 +181,7 @@ public class ServerBrowserClient : NetworkManager, IDisposable
             return;
         }
 
-        PingInfo pingInfo = new PingInfo();
+        PingInfo pingInfo = new();
         pingInfos[serverId] = pingInfo;
 
         //LogDebug(()=>$"Sending ping to {serverId} at IPv4: {ipv4}, IPv6: {ipv6}, Port: {port}");

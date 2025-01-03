@@ -29,6 +29,7 @@ using Multiplayer.Networking.Packets.Clientbound.World;
 using Multiplayer.Networking.Packets.Common;
 using Multiplayer.Networking.Packets.Common.Train;
 using Multiplayer.Networking.Packets.Serverbound;
+using Multiplayer.Networking.Data.Train;
 using Multiplayer.Patches.SaveGame;
 using Multiplayer.Utils;
 using Newtonsoft.Json.Linq;
@@ -40,17 +41,16 @@ using System.Linq;
 using LiteNetLib.Utils;
 using DV.UserManagement;
 using DV.Common;
-using Multiplayer.Networking.Data.Train;
 
-namespace Multiplayer.Networking.Listeners;
+namespace Multiplayer.Networking.Managers.Client;
 
 public class NetworkClient : NetworkManager
 {
     protected override string LogPrefix => "[Client]";
 
-    private Action<DisconnectReason,string> onDisconnect;
+    private Action<DisconnectReason, string> onDisconnect;
 
-    public NetPeer selfPeer { get; private set; }
+    public NetPeer SelfPeer { get; private set; }
     public readonly ClientPlayerManager ClientPlayerManager;
 
     // One way ping in milliseconds
@@ -82,7 +82,7 @@ public class NetworkClient : NetworkManager
             Mods = ModInfo.FromModEntries(UnityModManager.modEntries)
         };
         netPacketProcessor.Write(cachedWriter, serverboundClientLoginPacket);
-        selfPeer = netManager.Connect(address, port, cachedWriter);
+        SelfPeer = netManager.Connect(address, port, cachedWriter);
 
         isAlsoHost = NetworkLifecycle.Instance.IsServerRunning;
         originalSession = UserManager.Instance.CurrentUser.CurrentSession;
@@ -182,8 +182,8 @@ public class NetworkClient : NetworkManager
             MainMenu.GoBackToMainMenu();
         }
 
-        
-        if( disconnectInfo.Reason == DisconnectReason.ConnectionRejected ||
+
+        if (disconnectInfo.Reason == DisconnectReason.ConnectionRejected ||
             disconnectInfo.Reason == DisconnectReason.RemoteConnectionClose)
         {
             netPacketProcessor.ReadAllPackets(disconnectInfo.AdditionalData);
@@ -242,7 +242,7 @@ public class NetworkClient : NetworkManager
 
     private void OnClientboundServerDenyPacket(ClientboundServerDenyPacket packet)
     {
-        
+
         /*
         NetworkLifecycle.Instance.QueueMainMenuEvent(() =>
         {
@@ -250,21 +250,21 @@ public class NetworkClient : NetworkManager
             if (popup == null)
                 return;
         */
-            string text = Locale.Get(packet.ReasonKey, packet.ReasonArgs);
+        string text = Locale.Get(packet.ReasonKey, packet.ReasonArgs);
 
-            if (packet.Missing.Length != 0 || packet.Extra.Length != 0)
+        if (packet.Missing.Length != 0 || packet.Extra.Length != 0)
+        {
+            text += "\n\n";
+            if (packet.Missing.Length != 0)
             {
-                text += "\n\n";
-                if (packet.Missing.Length != 0)
-                {
-                    text += Locale.Get(Locale.DISCONN_REASON__MODS_MISSING_KEY, placeholders: string.Join("\n - ", packet.Missing));
-                    if (packet.Extra.Length != 0)
-                        text += "\n";
-                }
-
+                text += Locale.Get(Locale.DISCONN_REASON__MODS_MISSING_KEY, placeholders: string.Join("\n - ", packet.Missing));
                 if (packet.Extra.Length != 0)
-                    text += Locale.Get(Locale.DISCONN_REASON__MODS_EXTRA_KEY, placeholders: string.Join("\n - ", packet.Extra));
+                    text += "\n";
             }
+
+            if (packet.Extra.Length != 0)
+                text += Locale.Get(Locale.DISCONN_REASON__MODS_EXTRA_KEY, placeholders: string.Join("\n - ", packet.Extra));
+        }
 
         //popup.labelTMPro.text = text;
         //});
@@ -404,7 +404,7 @@ public class NetworkClient : NetworkManager
             if (common != null)
             {
                 //
-                GameObject chat = new GameObject("Chat GUI", typeof(ChatGUI));
+                GameObject chat = new("Chat GUI", typeof(ChatGUI));
                 chat.transform.SetParent(common.transform, false);
                 chatGUI = chat.GetComponent<ChatGUI>();
             }
@@ -451,7 +451,7 @@ public class NetworkClient : NetworkManager
     }
 
 
-        private void OnClientboundRailwayStatePacket(ClientboundRailwayStatePacket packet)
+    private void OnClientboundRailwayStatePacket(ClientboundRailwayStatePacket packet)
     {
         for (int i = 0; i < packet.SelectedJunctionBranches.Length; i++)
         {
@@ -499,10 +499,10 @@ public class NetworkClient : NetworkManager
 
         foreach (var part in packet.SpawnParts)
         {
-            if(NetworkedTrainCar.GetTrainCarFromTrainId(part.CarId, out TrainCar car))
+            if (NetworkedTrainCar.GetTrainCarFromTrainId(part.CarId, out TrainCar car))
             {
                 LogError($"ClientboundSpawnTrainSetPacket() Tried to spawn trainset with carId: {part.CarId}, but car already exists!");
-                return; 
+                return;
             }
         }
 
@@ -585,10 +585,9 @@ public class NetworkClient : NetworkManager
 
     private void OnCommonHoseConnectedPacket(CommonHoseConnectedPacket packet)
     {
-        TrainCar trainCar = null;
         TrainCar otherTrainCar = null;
 
-        if (!NetworkedTrainCar.GetTrainCar(packet.NetId, out trainCar) || !NetworkedTrainCar.GetTrainCar(packet.OtherNetId, out otherTrainCar))
+        if (!NetworkedTrainCar.GetTrainCar(packet.NetId, out TrainCar trainCar) || !NetworkedTrainCar.GetTrainCar(packet.OtherNetId, out otherTrainCar))
         {
             LogDebug(() => $"OnCommonHoseConnectedPacket() netId: {packet.NetId}, trainCar found?: {trainCar != null}, otherNetId: {packet.OtherNetId}, otherTrainCar found?: {otherTrainCar != null}");
             return;
@@ -856,7 +855,7 @@ public class NetworkClient : NetworkManager
         if (NetworkLifecycle.Instance.IsHost())
             return;
 
-        if(!NetworkedStationController.Get(packet.StationNetId, out NetworkedStationController networkedStationController))
+        if (!NetworkedStationController.Get(packet.StationNetId, out NetworkedStationController networkedStationController))
         {
             LogError($"OnClientboundJobsCreatePacket() {packet.StationNetId} does not exist!");
             return;
@@ -882,15 +881,15 @@ public class NetworkClient : NetworkManager
         networkedStationController.UpdateJobs(packet.JobUpdates);
     }
 
- 
+
     private void OnClientboundJobValidateResponsePacket(ClientboundJobValidateResponsePacket packet)
     {
         Log($"OnClientboundJobValidateResponsePacket() JobNetId: {packet.JobNetId}, Status: {packet.Invalid}");
 
-        if(!NetworkedJob.Get(packet.JobNetId, out NetworkedJob networkedJob))
+        if (!NetworkedJob.Get(packet.JobNetId, out NetworkedJob networkedJob))
             return;
 
-        GameObject.Destroy(networkedJob.gameObject);
+        Object.Destroy(networkedJob.gameObject);
     }
 
     private void OnCommonItemChangePacket(CommonItemChangePacket packet)

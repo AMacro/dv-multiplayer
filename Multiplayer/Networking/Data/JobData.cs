@@ -5,6 +5,7 @@ using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.Jobs;
 using Multiplayer.Components.Networking.World;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
@@ -31,7 +32,7 @@ public class JobData
         Job job = networkedJob.Job;
 
         ushort itemNetId = 0;
-        ItemPositionData itemPos = new ItemPositionData();
+        ItemPositionData itemPos = new();
 
         //Multiplayer.Log($"JobData.FromJob({netStation.name}, {job.ID}, {networkedJob.Job.State})");
 
@@ -87,8 +88,8 @@ public class JobData
         writer.Put(data.ID);
 
         //task data - add compression
-        using (MemoryStream ms = new MemoryStream())
-        using (BinaryWriter bw = new BinaryWriter(ms))
+        using (MemoryStream ms = new())
+        using (BinaryWriter bw = new(ms))
         {
             bw.Write((byte)data.Tasks.Length);
             foreach (var task in data.Tasks)

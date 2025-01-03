@@ -4,7 +4,7 @@ using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Utils;
 
-namespace Multiplayer.Patches.World;
+namespace Multiplayer.Patches.Train;
 
 [HarmonyPatch(typeof(HoseAndCock), nameof(HoseAndCock.SetCock))]
 public static class HoseAndCock_SetCock_Patch

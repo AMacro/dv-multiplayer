@@ -52,7 +52,9 @@ public readonly struct TrainsetMovementPart
         RigidbodySnapshot = rigidbodySnapshot;
     }
 
+#pragma warning disable EPS05 // Use in-modifier for a readonly struct
     public static void Serialize(NetDataWriter writer, TrainsetMovementPart data)
+#pragma warning restore EPS05 // Use in-modifier for a readonly struct
     {
         writer.Put((byte)data.typeFlag);
 

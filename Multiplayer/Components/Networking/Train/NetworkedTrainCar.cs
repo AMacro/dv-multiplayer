@@ -2,9 +2,11 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using DV.MultipleUnit;
 using DV.Simulation.Brake;
 using DV.Simulation.Cars;
 using DV.ThingTypes;
+using JetBrains.Annotations;
 using LocoSim.Definitions;
 using LocoSim.Implementations;
 using Multiplayer.Components.Networking.Player;
@@ -20,10 +22,10 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 {
     #region Lookup Cache
 
-    private static readonly Dictionary<TrainCar, NetworkedTrainCar> trainCarsToNetworkedTrainCars = new();
-    private static readonly Dictionary<string, NetworkedTrainCar> trainCarIdToNetworkedTrainCars = new();
-    private static readonly Dictionary<string, TrainCar> trainCarIdToTrainCars = new();
-    private static readonly Dictionary<HoseAndCock, Coupler> hoseToCoupler = new();
+    private static readonly Dictionary<TrainCar, NetworkedTrainCar> trainCarsToNetworkedTrainCars = [];
+    private static readonly Dictionary<string, NetworkedTrainCar> trainCarIdToNetworkedTrainCars = [];
+    private static readonly Dictionary<string, TrainCar> trainCarIdToTrainCars = [];
+    private static readonly Dictionary<HoseAndCock, Coupler> hoseToCoupler = [];
 
     public static bool Get(ushort netId, out NetworkedTrainCar obj)
     {
@@ -131,7 +133,8 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         }
     }
 
-    private void Start()
+    [UsedImplicitly]
+    public void Start()
     {
         brakeSystem = TrainCar.brakeSystem;
 
@@ -198,8 +201,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             StartCoroutine(Server_WaitForLogicCar());
         }
     }
-
-    private void OnDisable()
+    public void OnDisable()
     {
         if (UnloadWatcher.isQuitting)
             return;

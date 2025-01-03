@@ -3,7 +3,7 @@ using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Utils;
 
-namespace Multiplayer.Patches.World;
+namespace Multiplayer.Patches.Train;
 
 [HarmonyPatch(typeof(Bogie), nameof(Bogie.SetupPhysics))]
 public static class Bogie_SetupPhysics_Patch

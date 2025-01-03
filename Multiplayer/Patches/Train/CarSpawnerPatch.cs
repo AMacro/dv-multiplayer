@@ -4,7 +4,7 @@ using Multiplayer.Components.Networking.Train;
 using Multiplayer.Utils;
 using System.Collections.Generic;
 
-namespace Multiplayer.Patches.World;
+namespace Multiplayer.Patches.Train;
 
 [HarmonyPatch(typeof(CarSpawner))]
 public static class CarSpawner_Patch
@@ -15,9 +15,12 @@ public static class CarSpawner_Patch
     {
         if (UnloadWatcher.isUnloading)
             return;
-        if (!trainCar.TryNetworked(out NetworkedTrainCar networkedTrainCar))
+
+        if (trainCar == null || !trainCar.TryNetworked(out NetworkedTrainCar networkedTrainCar))
             return;
+
         networkedTrainCar.IsDestroying = true;
+
         NetworkLifecycle.Instance.Server?.SendDestroyTrainCar(networkedTrainCar.NetId);
     }
 
@@ -36,7 +39,7 @@ public static class CarSpawner_Patch
 
         //Coupling is delayed by AutoCouple(), so a true trainset for the entire consist doesn't exist yet
         Multiplayer.LogDebug(() => $"SpawnCars() {__result?.Count} cars spawned, adding to queue");
-        NetworkLifecycle.Instance.Server.SendSpawnTrainset(__result, true,true);
+        NetworkLifecycle.Instance.Server.SendSpawnTrainset(__result, true, true);
 
     }
 }

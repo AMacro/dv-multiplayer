@@ -8,7 +8,9 @@ using LiteNetLib;
 using LiteNetLib.Utils;
 using Multiplayer.Components.Networking.UI;
 using Multiplayer.Networking.Data;
-using Multiplayer.Networking.Listeners;
+using Multiplayer.Networking.Managers;
+using Multiplayer.Networking.Managers.Client;
+using Multiplayer.Networking.Managers.Server;
 using Multiplayer.Utils;
 using Newtonsoft.Json;
 using UnityEngine;
@@ -23,8 +25,8 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
     private const float TICK_INTERVAL = 1.0f / TICK_RATE;
 
     public LobbyServerData serverData;
-    public bool isPublicGame { get; set; } = false;
-    public bool isSinglePlayer { get; set; } = true;
+    public bool IsPublicGame { get; set; } = false;
+    public bool IsSinglePlayer { get; set; } = true;
 
 
     public NetworkServer Server { get; private set; }
@@ -49,7 +51,7 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
     /// </summary>
     public bool IsHost(NetPeer peer)
     {
-        return Server?.IsRunning == true && Client?.IsRunning == true && Client?.selfPeer?.Id == peer?.Id;
+        return Server?.IsRunning == true && Client?.IsRunning == true && Client?.SelfPeer?.Id == peer?.Id;
     }
 
     /// <summary>
@@ -58,7 +60,7 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
     /// </summary>
     public bool IsHost()
     {
-        return IsHost(Client?.selfPeer);
+        return IsHost(Client?.SelfPeer);
     }
 
     private readonly Queue<Action> mainMenuLoadedQueue = new();
@@ -126,7 +128,7 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
         if (Server != null)
             throw new InvalidOperationException("NetworkManager already exists!");
 
-        if (!isSinglePlayer)
+        if (!IsSinglePlayer)
         {
             if(serverData != null)
             {
@@ -135,16 +137,16 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
         }
 
         Multiplayer.Log($"Starting server on port {port}");
-        NetworkServer server = new(difficulty, Multiplayer.Settings, isSinglePlayer, serverData);
+        NetworkServer server = new(difficulty, Multiplayer.Settings, IsSinglePlayer, serverData);
 
         //reset for next game
-        isSinglePlayer = true;
+        IsSinglePlayer = true;
         serverData = null;
 
         if (!server.Start(port))
             return false;
         Server = server;
-        StartClient("localhost", port, Multiplayer.Settings.Password, isSinglePlayer, null/* (DisconnectReason dr,string msg) =>{ }*/);
+        StartClient("localhost", port, Multiplayer.Settings.Password, IsSinglePlayer, null/* (DisconnectReason dr,string msg) =>{ }*/);
         return true;
     }
     public void StartClient(string address, int port, string password, bool isSinglePlayer, Action<DisconnectReason,string> onDisconnect )
@@ -209,7 +211,7 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
 
     public void Stop()
     {
-        if (Stats != null) Stats.Hide();
+        Stats?.Hide();
         Server?.Stop();
         Client?.Stop();
         Server = null;
