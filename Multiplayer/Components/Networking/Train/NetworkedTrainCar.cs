@@ -212,11 +212,15 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             return;
 
         trainCarsToNetworkedTrainCars.Remove(TrainCar);
-        if (TrainCar.logicCar != null)
-        {
-            trainCarIdToNetworkedTrainCars.Remove(TrainCar.ID);
-            trainCarIdToTrainCars.Remove(TrainCar.ID);
-        }
+
+        string id = "";
+        if (TrainCar.logicCar == null)
+            id = trainCarIdToNetworkedTrainCars.FirstOrDefault(x => x.Value == this).Key;
+        else
+            id = TrainCar.ID; 
+
+        trainCarIdToNetworkedTrainCars.Remove(id);
+        trainCarIdToTrainCars.Remove(id);
 
         foreach (Coupler coupler in TrainCar.couplers)
             hoseToCoupler.Remove(coupler.hoseAndCock);
