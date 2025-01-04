@@ -16,7 +16,7 @@ public static class JobValidator_Patch
     [HarmonyPostfix]
     private static void Start(JobValidator __instance)
     {
-        Multiplayer.Log($"JobValidator Awake!");
+        //Multiplayer.Log($"JobValidator Awake!");
         NetworkedStationController.QueueJobValidator(__instance);
     }
 

@@ -877,7 +877,7 @@ public class NetworkClient : NetworkManager
             return;
         }
 
-        networkedStationController.AddJobs(packet.Jobs);
+        Log($"Received {packet.Jobs.Length} jobs for station {networkedStationController.StationController.logicStation.ID}");
 
     }
     
@@ -893,6 +893,8 @@ public class NetworkClient : NetworkManager
             LogError($"OnClientboundJobsUpdatePacket() {packet.StationNetId} does not exist!");
             return;
         }
+
+        Log($"Received {packet.JobUpdates.Length} job updates for station {networkedStationController.StationController.logicStation.ID}");
 
         networkedStationController.UpdateJobs(packet.JobUpdates);
     }

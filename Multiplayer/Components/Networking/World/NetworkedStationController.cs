@@ -3,8 +3,6 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using DV.Booklets;
-using DV.CabControls;
-using DV.CabControls.Spec;
 using DV.Logic.Job;
 using DV.ServicePenalty;
 using DV.Utils;
@@ -39,7 +37,7 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
 
         foreach (var kvp in stationIdToNetworkedStationController )
         {
-            Multiplayer.Log($"GetAll() adding {kvp.Value.NetId}, {kvp.Key}");
+            //Multiplayer.Log($"GetAll() adding {kvp.Value.NetId}, {kvp.Key}");
             result.Add(kvp.Value.NetId, kvp.Key);
         }
         return result;
