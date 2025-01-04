@@ -407,7 +407,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             return;
 
         mainResPressureDirty = false;
-        //B99 review need / mod NetworkLifecycle.Instance.Server.SendBrakePressures(NetId, brakeSystem.mainReservoirPressure, brakeSystem.independentPipePressure, brakeSystem.brakePipePressure, brakeSystem.brakeCylinderPressure);
+        NetworkLifecycle.Instance.Server.SendBrakePressures(NetId, brakeSystem.mainReservoirPressure, brakeSystem.brakePipePressure, brakeSystem.brakeCylinderPressure);
     }
 
     private void Server_SendFireBoxState()
@@ -875,7 +875,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         }
     }
 
-    public void Client_ReceiveBrakePressureUpdate(float mainReservoirPressure, float independentPipePressure, float brakePipePressure, float brakeCylinderPressure)
+    public void Client_ReceiveBrakePressureUpdate(float mainReservoirPressure, float brakePipePressure, float brakeCylinderPressure)
     {
         if (brakeSystem == null)
             return;
@@ -887,9 +887,13 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         //B99 review need / mod brakeSystem.ForceTargetIndBrakeCylinderPressure(brakeCylinderPressure);
         brakeSystem.SetMainReservoirPressure(mainReservoirPressure);
 
+        //brakeSystem.SetBrakePipePressure(brakePipePressure);
         brakeSystem.brakePipePressure = brakePipePressure;
+        brakeSystem.brakeset.pipePressure = brakePipePressure;
+
         brakeSystem.brakeCylinderPressure = brakeCylinderPressure;
     }
+
     private void Client_OnAddCoal(float coalMassDelta)
     {
         if (NetworkLifecycle.Instance.IsProcessingPacket)

@@ -333,7 +333,7 @@ public class NetworkServer : NetworkManager
         SendPacketToAll(packet, reliable ? DeliveryMethod.ReliableOrdered : DeliveryMethod.Unreliable, SelfPeer);
     }
 
-    public void SendBrakePressures(ushort netId, float mainReservoirPressure, float independentPipePressure, float brakePipePressure, float brakeCylinderPressure)
+    public void SendBrakePressures(ushort netId, float mainReservoirPressure, float brakePipePressure, float brakeCylinderPressure)
     {
         SendPacketToAll(new ClientboundBrakePressureUpdatePacket
         {
