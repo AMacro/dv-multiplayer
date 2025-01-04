@@ -80,6 +80,9 @@ public class NetworkServer : NetworkManager
 
     public bool Start(int port)
     {
+        //setup paint theme lookup cache
+        PaintThemeLookup.Instance.CheckInstance();
+
         WorldStreamingInit.LoadingFinished += OnLoaded;
 
         Multiplayer.Log($"Starting server...");
