@@ -327,15 +327,18 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         // Only allow control ports to be updated by clients
         if (hasSimFlow)
             foreach (string portId in packet.PortIds)
-                if (simulationFlow.TryGetPort(portId, out Port port) && port.valueType != PortValueType.CONTROL)
+                if (simulationFlow.TryGetPort(portId, out Port port))
                 {
-                    NetworkLifecycle.Instance.Server.LogWarning($"Player {player.Username} tried to send a non-control port!");
-                    Common_DirtyPorts(packet.PortIds);
-                    return false;
+                    if (port.valueType != PortValueType.CONTROL)
+                    {
+                        NetworkLifecycle.Instance.Server.LogWarning($"Player {player.Username} tried to send a non-control port! ({portId} on [{TrainCar?.ID}, {NetId}])");
+                        Common_DirtyPorts(packet.PortIds);
+                        return false;
+                    }
                 }
                 else
                 {
-                    NetworkLifecycle.Instance.Server.LogWarning($"Player {player.Username} sent portId: {portId}, value type: {port.valueType}");
+                    NetworkLifecycle.Instance.Server.LogWarning($"Player {player.Username} sent portId: {portId}, value type: {port.valueType}, but the port was not found");
                 }
 
         // Only allow the player to update ports on the car they are in/near
@@ -623,7 +626,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         {
             Port port = simulationFlow.fullPortIdToPort[packet.PortIds[i]];
             float value = packet.PortValues[i];
-            float before = port.value;
+            // before = port.value;
 
             if (port.type == PortType.EXTERNAL_IN)
                 port.ExternalValueUpdate(value);
