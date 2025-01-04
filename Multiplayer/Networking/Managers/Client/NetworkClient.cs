@@ -736,6 +736,7 @@ public class NetworkClient : NetworkManager
                 cargoAmount = cargoAmount - logicCar.LoadedCargoAmount;
 
             if(cargoAmount > 0)
+            if (cargoAmount > 0)
                 logicCar.LoadCargo(cargoAmount, (CargoType)packet.CargoType, warehouse);
         }
         else

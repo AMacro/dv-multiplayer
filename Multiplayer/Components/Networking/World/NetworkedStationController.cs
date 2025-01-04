@@ -19,12 +19,12 @@ namespace Multiplayer.Components.Networking.World;
 public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStationController>
 {
     #region Lookup Cache
-    private static readonly Dictionary<StationController, NetworkedStationController> stationControllerToNetworkedStationController = new();
-    private static readonly Dictionary<string, NetworkedStationController> stationIdToNetworkedStationController = new();
-    private static readonly Dictionary<string, StationController> stationIdToStationController = new();
-    private static readonly Dictionary<Station, NetworkedStationController> stationToNetworkedStationController = new();
-    private static readonly Dictionary<JobValidator, NetworkedStationController> jobValidatorToNetworkedStation = new();
-    private static readonly List<JobValidator> jobValidators = new List<JobValidator>();
+    private static readonly Dictionary<StationController, NetworkedStationController> stationControllerToNetworkedStationController = [];
+    private static readonly Dictionary<string, NetworkedStationController> stationIdToNetworkedStationController = [];
+    private static readonly Dictionary<string, StationController> stationIdToStationController = [];
+    private static readonly Dictionary<Station, NetworkedStationController> stationToNetworkedStationController = [];
+    private static readonly Dictionary<JobValidator, NetworkedStationController> jobValidatorToNetworkedStation = [];
+    private static readonly List<JobValidator> jobValidators = [];
 
     public static bool Get(ushort netId, out NetworkedStationController obj)
     {
@@ -35,7 +35,7 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
 
     public static Dictionary<ushort, string>GetAll()
     {
-        Dictionary<ushort, string> result = new Dictionary<ushort, string>();
+        Dictionary<ushort, string> result = [];
 
         foreach (var kvp in stationIdToNetworkedStationController )
         {
@@ -113,9 +113,9 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
 
     public JobValidator JobValidator;
 
-    public HashSet<NetworkedJob> NetworkedJobs { get; } = new HashSet<NetworkedJob>();
-    private List<NetworkedJob> NewJobs = new List<NetworkedJob>();
-    private List<NetworkedJob> DirtyJobs = new List<NetworkedJob>();
+    public HashSet<NetworkedJob> NetworkedJobs { get; } = [];
+    private readonly List<NetworkedJob> NewJobs = [];
+    private readonly List<NetworkedJob> DirtyJobs = [];
 
     private List<Job> availableJobs;
     private List<Job> takenJobs;
@@ -130,7 +130,7 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
         StartCoroutine(WaitForLogicStation());
     }
 
-    private void Start()
+    protected void Start()
     {
         if (NetworkLifecycle.Instance.IsHost())
         {

@@ -374,7 +374,7 @@ public class SequentialTasksData : TaskNetworkData<SequentialTasksData>
 
     public override Task ToTask()
     {
-        List<Task> tasks = new List<Task>();
+        List<Task> tasks = [];
 
         foreach (var task in Tasks)
         {
