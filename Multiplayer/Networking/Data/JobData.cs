@@ -191,6 +191,19 @@ public class JobData
         }
     }
 
+    public List<ushort> GetCars()
+    {
+        List<ushort> result = [];
+
+        foreach (var task in Tasks)
+        {
+            var cars = task.GetCars();
+            result.AddRange(cars);
+        }
+
+        return result;
+    }
+
 }
 
 public struct StationsChainNetworkData

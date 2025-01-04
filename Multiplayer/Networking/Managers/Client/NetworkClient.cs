@@ -866,8 +866,6 @@ public class NetworkClient : NetworkManager
 
     private void OnClientboundJobsCreatePacket(ClientboundJobsCreatePacket packet)
     {
-        Log($"OnClientboundJobsCreatePacket() for station {packet.StationNetId}, containing {packet.Jobs.Length}");
-
         if (NetworkLifecycle.Instance.IsHost())
             return;
 
@@ -879,12 +877,11 @@ public class NetworkClient : NetworkManager
 
         Log($"Received {packet.Jobs.Length} jobs for station {networkedStationController.StationController.logicStation.ID}");
 
+        networkedStationController.AddJobs(packet.Jobs);
     }
-    
+
     private void OnClientboundJobsUpdatePacket(ClientboundJobsUpdatePacket packet)
     {
-        Log($"OnClientboundJobsUpdatePacket() for station {packet.StationNetId}, containing {packet.JobUpdates.Length}");
-
         if (NetworkLifecycle.Instance.IsHost())
             return;
 

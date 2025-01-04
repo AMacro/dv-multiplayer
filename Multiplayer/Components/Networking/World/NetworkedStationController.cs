@@ -104,6 +104,7 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
     }
     #endregion
 
+     const int MAX_FRAMES = 120;
 
     protected override bool IsIdServerAuthoritative => true;
 
@@ -134,6 +135,26 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
         {
             NetworkLifecycle.Instance.OnTick += Server_OnTick;
         }
+    }
+
+    protected void OnDisable()
+    {
+
+        if (UnloadWatcher.isQuitting)
+            return;
+
+        NetworkLifecycle.Instance.OnTick -= Server_OnTick;
+
+        string stationId = StationController.logicStation.ID;
+
+        stationControllerToNetworkedStationController.Remove(StationController);
+        stationIdToNetworkedStationController.Remove(stationId);
+        stationIdToStationController.Remove(stationId);
+        stationToNetworkedStationController.Remove(StationController.logicStation);
+        jobValidatorToNetworkedStation.Remove(JobValidator);
+        jobValidators.Remove(this.JobValidator);
+
+        Destroy(this);
     }
 
     private IEnumerator WaitForLogicStation()
@@ -207,41 +228,101 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
     #region Client
     public void AddJobs(JobData[] jobs)
     {
+
         foreach (JobData jobData in jobs)
         {
-            Job newJob = CreateJobFromJobData(jobData);
-            NetworkedJob networkedJob = CreateNetworkedJob(newJob, jobData.NetID);
-
-            NetworkedJobs.Add(networkedJob);
-
-            if (networkedJob.Job.State == DV.ThingTypes.JobState.Available)
+            //Cars may still be loading, we shouldn't spawn the job until they are ready
+            if (CheckCarsLoaded(jobData))
             {
-                StationController.logicStation.AddJobToStation(newJob);
-                StationController.processedNewJobs.Add(newJob);
-
-                if (jobData.ItemNetID != 0)
-                {
-                    GenerateOverview(networkedJob, jobData.ItemNetID, jobData.ItemPosition);
-                }
+                Multiplayer.LogDebug(() => $"AddJobs() calling AddJob({jobData.ID})");
+                AddJob(jobData);
             }
-
-            StartCoroutine(UpdateCarPlates(newJob.tasks, newJob.ID));
-
-            Multiplayer.Log($"Added NetworkedJob {newJob.ID} to NetworkedStationController {StationController.logicStation.ID}");
+            else
+            {
+                Multiplayer.LogDebug(() => $"AddJobs() Delaying({jobData.ID})");
+                StartCoroutine(DelayCreateJob(jobData));
+            }
         }
+    }
+
+    private void AddJob(JobData jobData)
+    {
+        Job newJob = CreateJobFromJobData(jobData);
+
+        NetworkedJob networkedJob = CreateNetworkedJob(newJob, jobData.NetID);
+
+        NetworkedJobs.Add(networkedJob);
+
+        if (networkedJob.Job.State == DV.ThingTypes.JobState.Available)
+        {
+            StationController.logicStation.AddJobToStation(newJob);
+            StationController.processedNewJobs.Add(newJob);
+
+            if (jobData.ItemNetID != 0)
+            {
+                GenerateOverview(networkedJob, jobData.ItemNetID, jobData.ItemPosition);
+            }
+        }
+
+        Multiplayer.LogDebug(() => $"AddJob({jobData.ID}) Starting plate update {newJob.ID} count: {jobData.GetCars().Count}");
+        StartCoroutine(UpdateCarPlates(jobData.GetCars(), newJob.ID));
+
+        Multiplayer.Log($"Added NetworkedJob {newJob.ID} to NetworkedStationController {StationController.logicStation.ID}");
     }
 
     private Job CreateJobFromJobData(JobData jobData)
     {
-        List<Task> tasks = jobData.Tasks.Select(taskData => taskData.ToTask()).ToList();
-        StationsChainData chainData = new StationsChainData(jobData.ChainData.ChainOriginYardId, jobData.ChainData.ChainDestinationYardId);
 
-        Job newJob = new Job(tasks, jobData.JobType, jobData.TimeLimit, jobData.InitialWage, chainData, jobData.ID, jobData.RequiredLicenses);
-        newJob.startTime = jobData.StartTime;
-        newJob.finishTime = jobData.FinishTime;
-        newJob.State = jobData.State;
+        List<Task> tasks = jobData.Tasks.Select(taskData => taskData.ToTask()).ToList();
+        StationsChainData chainData = new(jobData.ChainData.ChainOriginYardId, jobData.ChainData.ChainDestinationYardId);
+
+        Job newJob = new(tasks, jobData.JobType, jobData.TimeLimit, jobData.InitialWage, chainData, jobData.ID, jobData.RequiredLicenses)
+        {
+            startTime = jobData.StartTime,
+            finishTime = jobData.FinishTime,
+            State = jobData.State
+        };
 
         return newJob;
+    }
+
+    private IEnumerator DelayCreateJob(JobData jobData)
+    {
+        int frameCounter = 0;
+
+        Multiplayer.LogDebug(()=>$"DelayCreateJob({jobData.NetID}) job type: {jobData.JobType}");
+
+        yield return new WaitForEndOfFrame();
+
+        while (frameCounter < MAX_FRAMES)
+        {
+            if (CheckCarsLoaded(jobData))
+            {
+                Multiplayer.LogDebug(() => $"DelayCreateJob({jobData.NetID}) job type: {jobData.JobType}. Successfully created cars!");
+                AddJob(jobData);
+                yield break;
+            }
+
+            frameCounter++;
+            yield return new WaitForEndOfFrame();
+        }
+
+        Multiplayer.LogWarning($"Timeout waiting for cars to load for job {jobData.NetID}");
+    }
+
+    private bool CheckCarsLoaded(JobData jobData)
+    {
+        //extract all cars from the job and verify they have been initialised
+        foreach (var carNetId in jobData.GetCars())
+        {
+            if (!NetworkedTrainCar.Get(carNetId, out NetworkedTrainCar car) || !car.Client_Initialized)
+            {
+                //car not spawned or not yet initialised
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private NetworkedJob CreateNetworkedJob(Job job, ushort netId)
@@ -291,7 +372,7 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
         }
     }
 
-  private void HandleJobStateChange(NetworkedJob netJob, JobUpdateStruct job)
+    private void HandleJobStateChange(NetworkedJob netJob, JobUpdateStruct job)
     {
         JobValidator validator = null;
         NetworkedItem netItem;
@@ -365,7 +446,7 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
             Multiplayer.Log($"NetworkedStation.UpdateJobs() jobNetId: {job.JobNetID}, Playing sounds");
             netJob.ValidatorResponseReceived = true;
             netJob.ValidationAccepted = true;
-            validator.jobValidatedSound.Play(validator.bookletPrinter.spawnAnchor.position, 1f, 1f, 0f, 1f, 500f, default(AudioSourceCurves), null, validator.transform, false, 0f, null);
+            validator.jobValidatedSound.Play(validator.bookletPrinter.spawnAnchor.position, 1f, 1f, 0f, 1f, 500f, default, null, validator.transform, false, 0f, null);
             validator.bookletPrinter.Print(false);
         }
     }
@@ -392,59 +473,41 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
         GameObject.Destroy(job);
     }
 
-    public static IEnumerator UpdateCarPlates(List<DV.Logic.Job.Task> tasks, string jobId)
+    public static IEnumerator UpdateCarPlates(List<ushort> carNetIds, string jobId)
     {
 
-       List<Car> cars = new List<Car>();
-       UpdateCarPlatesRecursive(tasks, jobId, ref cars);
+        Multiplayer.LogDebug(() => $"UpdateCarPlates({jobId}) carNetIds: {carNetIds?.Count}");
 
-
-        if (cars == null)
+        if (carNetIds == null || string.IsNullOrEmpty(jobId))
             yield break;
 
-        foreach (Car car in cars)
+        foreach (ushort carNetId in carNetIds)
         {
-
+            int frameCounter = 0;
             TrainCar trainCar = null;
-            int loopCtr = 0;
-            while (!NetworkedTrainCar.GetTrainCarFromTrainId(car.ID, out trainCar))
+
+            while (frameCounter < MAX_FRAMES)
             {
-                loopCtr++;
-                if (loopCtr > 5000)
+
+                if (NetworkedTrainCar.GetTrainCar(carNetId, out trainCar) &&
+                    trainCar != null &&
+                    trainCar.trainPlatesCtrl?.trainCarPlates != null &&
+                    trainCar.trainPlatesCtrl.trainCarPlates.Count > 0)
                 {
+                    Multiplayer.LogDebug(() => $"UpdateCarPlates({jobId}) car: {carNetId}, frameCount: {frameCounter}. Calling Update");
+                    trainCar.UpdateJobIdOnCarPlates(jobId);
                     break;
-                }        
-
-                yield return null;
-            }
-
-            trainCar?.UpdateJobIdOnCarPlates(jobId);
-        }
-    }
-    private static void UpdateCarPlatesRecursive(List<DV.Logic.Job.Task> tasks, string jobId, ref List<Car> cars)
-    {
-
-        foreach (Task task in tasks)
-        {
-            if (task is WarehouseTask)
-                cars = cars.Union(((WarehouseTask)task).cars).ToList();
-            else if (task is TransportTask)
-                cars = cars.Union(((TransportTask)task).cars).ToList();
-            else if (task is SequentialTasks)
-            {
-                List<Task> seqTask = new();
-
-                for (LinkedListNode<Task> node = ((SequentialTasks)task).tasks.First; node != null; node = node.Next)
-                {
-                    seqTask.Add(node.Value);
                 }
-                //drill down
-                UpdateCarPlatesRecursive(seqTask, jobId, ref cars);
+
+                Multiplayer.LogDebug(() => $"UpdateCarPlates({jobId}) car: {carNetId}, frameCount: {frameCounter}. Incrementing frames");
+                frameCounter++;
+                yield return new WaitForEndOfFrame();
             }
-            else if (task is ParallelTasks)
-                UpdateCarPlatesRecursive(((ParallelTasks)task).tasks, jobId, ref cars);
-            else
-                throw new ArgumentException("NetworkedStation.UpdateCarPlatesRecursive() Unknown task type: " + task.GetType());
+
+            if (frameCounter >= MAX_FRAMES)
+            {
+                Multiplayer.LogError($"Failed to update plates for car [{trainCar?.ID}, {carNetId}] (Job: {jobId}) after {frameCounter} frames");
+            }
         }
     }
 
@@ -457,27 +520,6 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
         netItem.Initialize(jobOverview, itemNetId, false);
         networkedJob.JobOverview = netItem;
         StationController.spawnedJobOverviews.Add(jobOverview);
-    }
-
-    private void OnDisable()
-    {
-
-        if (UnloadWatcher.isQuitting)
-            return;
-
-        NetworkLifecycle.Instance.OnTick -= Server_OnTick;
-
-        string stationId = StationController.logicStation.ID;
- 
-        stationControllerToNetworkedStationController.Remove(StationController);
-        stationIdToNetworkedStationController.Remove(stationId);
-        stationIdToStationController.Remove(stationId);
-        stationToNetworkedStationController.Remove(StationController.logicStation);
-        jobValidatorToNetworkedStation.Remove(JobValidator);
-        jobValidators.Remove(this.JobValidator);
-
-        Destroy(this);
-
     }
     #endregion
 }
