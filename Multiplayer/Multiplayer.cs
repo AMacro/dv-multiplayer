@@ -59,7 +59,7 @@ public static class Multiplayer
 
             Locale.Load(ModEntry.Path);
 
-            Log($"Multiplayer JSON Version: {ModEntry.Info.Version}, Internal Version: {Ver}\r\nGame version: {BuildInfo.BUILD_VERSION_MAJOR.ToString()}.{BuildInfo.BUILDBOT_INFO.ToString()}");
+            Log($"Multiplayer JSON Version: {ModEntry.Info.Version}, Internal Version: {Ver}\r\nGame version: {BuildInfo.BUILD_VERSION_MAJOR.ToString()}\r\nBuilbot version: {BuildInfo.BUILDBOT_INFO.ToString()}");
 
             Log("Patching...");
             harmony = new Harmony(ModEntry.Info.Id);
