@@ -2,7 +2,6 @@ using DV.HUD;
 using HarmonyLib;
 using Multiplayer.Components.Networking;
 using Multiplayer.Networking.Data.Train;
-using Newtonsoft.Json.Linq;
 using System;
 
 
@@ -78,7 +77,7 @@ public static class CouplerInterfacerPatch
             interaction = CouplerInteractionType.CoupleViaUI;
             otherCoupler = coupler.GetFirstCouplerInRange();
 
-            Multiplayer.LogDebug(() => $"CouplerInterfacer.SendCouple({couplerInterfacer?.train?.ID}, {value}, {front}) coupler: {coupler?.train?.ID}, otherCoupler: {otherCoupler?.train?.ID}, action: {interaction}");
+            Multiplayer.LogDebug(() => $"CouplerInterfacer.SendCouple({couplerInterfacer?.train?.ID}, {value}, {front}) coupler: {coupler?.train?.ID}, coupler is front: {coupler?.isFrontCoupler}, otherCoupler: {otherCoupler?.train?.ID}, otherCoupler is front: {otherCoupler?.isFrontCoupler}, action: {interaction}");
             if (otherCoupler == null)
                 return;
         }

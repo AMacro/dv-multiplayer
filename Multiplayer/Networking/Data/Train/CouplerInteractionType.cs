@@ -21,4 +21,7 @@ public enum CouplerInteractionType : ushort
 
     CoupleViaUI = 512,
     UncoupleViaUI = 1024,
+
+    CoupleViaRemote = 2048,
+    UncoupleViaRemote = 4096,
 }

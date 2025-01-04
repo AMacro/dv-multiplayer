@@ -20,12 +20,22 @@ public static class RemoteControllerModulePatch
     }
 
     [HarmonyPatch(nameof(RemoteControllerModule.Uncouple))]
-    [HarmonyPostfix]
+    [HarmonyPrefix]
     static void Uncouple(RemoteControllerModule __instance, int selectedCoupler)
     {
+        Multiplayer.LogDebug(() => $"RemoteControllerModule.Uncouple({selectedCoupler})");
+
         TrainCar startCar = __instance.car;
+
+        if (startCar == null)
+        {
+            Multiplayer.LogWarning($"Trying to Uncouple from Remote with no paired loco");
+            return;
+        }
+
         Coupler nthCouplerFrom = CouplerLogic.GetNthCouplerFrom((selectedCoupler > 0) ? startCar.frontCoupler : startCar.rearCoupler, Mathf.Abs(selectedCoupler) - 1);
 
+        Multiplayer.LogDebug(() => $"RemoteControllerModule.Uncouple({startCar?.ID}, {selectedCoupler}) nthCouplerFrom: [{nthCouplerFrom?.train?.ID}, {nthCouplerFrom?.train?.GetNetId()}]");
         if (nthCouplerFrom != null)
         {
             NetworkLifecycle.Instance.Client.SendCouplerInteraction(CouplerInteractionType.UncoupleViaRemote, nthCouplerFrom);

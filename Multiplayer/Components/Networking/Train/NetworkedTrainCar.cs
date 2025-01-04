@@ -653,8 +653,9 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
     public void Common_ReceiveCouplerInteraction(CommonCouplerInteractionPacket packet)
     {
-
-        Coupler coupler = packet.IsFrontCoupler ? TrainCar.frontCoupler : TrainCar.rearCoupler;
+        Coupler coupler = packet.IsFrontCoupler ? TrainCar?.frontCoupler : TrainCar?.rearCoupler;
+        TrainCar otherCar = null;
+        Coupler otherCoupler = null;
 
         if (coupler == null)
         {
@@ -664,16 +665,20 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
         CouplerInteractionType flags = (CouplerInteractionType)packet.Flags;
 
+        if (packet.OtherNetId != 0)
+        {
+            if (GetTrainCar(packet.OtherNetId, out otherCar))
+                otherCoupler = packet.IsFrontOtherCoupler ? otherCar?.frontCoupler : otherCar?.rearCoupler;
+        }
+
         Multiplayer.LogDebug(() => $"Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], coupler is front: {packet.IsFrontCoupler}, flags: {flags}, otherCouplerNetId: {packet.OtherNetId}");
 
         if (flags.HasFlag(CouplerInteractionType.CouplerCouple) && packet.OtherNetId != 0)
         {
             Multiplayer.LogDebug(() => $"1 Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], coupler is front: {packet.IsFrontCoupler}, flags: {flags} ");
-            if (GetTrainCar(packet.OtherNetId, out TrainCar otherCar))
+            if (otherCar != null)
             {
                 Multiplayer.LogDebug(() => $"2 Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], coupler is front: {packet.IsFrontCoupler}, flags: {flags}");
-                Coupler otherCoupler = packet.IsFrontOtherCoupler ? otherCar.frontCoupler : otherCar.rearCoupler;
-
                 StartCoroutine(LooseAttachCoupler(coupler, otherCoupler));
             }
         }
@@ -722,6 +727,43 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
                 coupler.ChainScript.fsm.Fire(ChainCouplerInteraction.Trigger.Screw_Used);
             }
         }
+
+        if (flags.HasFlag(CouplerInteractionType.CoupleViaUI))
+        {
+            Multiplayer.LogDebug(() => $"10 Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], coupler is front: {packet.IsFrontCoupler}, flags: {flags}, other coupler: {otherCoupler != null}");
+            if(otherCoupler != null)
+            {
+                Multiplayer.LogDebug(() => $"10A Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], coupler state: {coupler.state}, other coupler state: {otherCoupler.state}, coupler coupledTo: {coupler?.coupledTo?.train?.ID}, other coupledTo: {otherCoupler?.coupledTo?.train?.ID}");
+                var car = coupler.CoupleTo(otherCoupler, true);
+                Multiplayer.LogDebug(() => $"10B Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], result: {car != null}");
+                //todo: rework hose and MU interactions
+            }
+        }
+
+        if (flags.HasFlag(CouplerInteractionType.UncoupleViaUI))
+        {
+            Multiplayer.LogDebug(() => $"11 Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], coupler is front: {packet.IsFrontCoupler}, flags: {flags}");
+            CouplerLogic.Uncouple(coupler);
+            //todo: rework hose and MU interactions
+        }
+
+        if (flags.HasFlag(CouplerInteractionType.CoupleViaRemote))
+        {
+            Multiplayer.LogDebug(() => $"12 Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], coupler is front: {packet.IsFrontCoupler}, flags: {flags}, other coupler: {otherCoupler != null}");
+
+            if (TryGetComponent<ExternalCouplingHandler>(out var couplingHandler))
+                couplingHandler.Couple();
+        }
+
+        if (flags.HasFlag(CouplerInteractionType.UncoupleViaRemote))
+        {
+            Multiplayer.LogDebug(() => $"13 Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], coupler is front: {packet.IsFrontCoupler}, flags: {flags}");
+            if (coupler != null)
+            {
+                coupler.Uncouple(true, false, false, false);
+                MultipleUnitModule.DisconnectCablesIfMultipleUnitSupported(coupler.train, coupler.isFrontCoupler, !coupler.isFrontCoupler);
+            }
+        }
     }
 
     private IEnumerator LooseAttachCoupler(Coupler coupler, Coupler otherCoupler)
@@ -745,7 +787,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         //allow the follower and IK solver to update
         coupler.ChainScript.Update_Being_Dragged();
 
-        //we need to allow the IK solver to calculate the chain ring anchor's position, over a number of iterations
+        //we need to allow the IK solver to calculate the chain ring anchor's position over a number of iterations
         int x = 0;
         float distance = float.MaxValue;
         //game checks for Vector3.Distance(this.chainRingAnchor.position, this.closestAttachPoint.transform.position) < attachDistanceThreshold;
@@ -776,7 +818,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         //allow the follower and IK solver to update
         coupler.ChainScript.Update_Being_Dragged();
 
-        //we need to allow the IK solver to calculate the chain ring anchor's position, over a number of iterations
+        //we need to allow the IK solver to calculate the chain ring anchor's position over a number of iterations
         int x = 0;
         float distance = float.MaxValue;
         //game checks for Vector3.Distance(this.chainRingAnchor.position, this.parkedAnchor.position) < parkDistanceThreshold;
@@ -807,7 +849,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         //allow the follower and IK solver to update
         coupler.ChainScript.Update_Being_Dragged();
 
-        //we need to allow the IK solver to calculate the chain ring anchor's position, over a number of iterations
+        //we need to allow the IK solver to calculate the chain ring anchor's position over a number of iterations
         int x = 0;
         float distance = float.MinValue;
         //game checks for Vector3.Distance(this.chainRingAnchor.position, this.parkedAnchor.position) < parkDistanceThreshold;
