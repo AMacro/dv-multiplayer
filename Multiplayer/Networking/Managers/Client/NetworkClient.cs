@@ -748,9 +748,8 @@ public class NetworkClient : NetworkManager
 
             //We have the correct cargo, but not the right amount, calculate the delta
             if (logicCar.CurrentCargoTypeInCar == (CargoType)packet.CargoType)
-                cargoAmount = cargoAmount - logicCar.LoadedCargoAmount;
+                cargoAmount -= logicCar.LoadedCargoAmount;
 
-            if(cargoAmount > 0)
             if (cargoAmount > 0)
                 logicCar.LoadCargo(cargoAmount, (CargoType)packet.CargoType, warehouse);
         }
