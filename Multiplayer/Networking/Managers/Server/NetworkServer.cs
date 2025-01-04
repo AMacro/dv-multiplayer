@@ -342,7 +342,6 @@ public class NetworkServer : NetworkManager
         {
             NetId = netId,
             MainReservoirPressure = mainReservoirPressure,
-            IndependentPipePressure = independentPipePressure,
             BrakePipePressure = brakePipePressure,
             BrakeCylinderPressure = brakeCylinderPressure
         }, DeliveryMethod.ReliableOrdered, SelfPeer);
