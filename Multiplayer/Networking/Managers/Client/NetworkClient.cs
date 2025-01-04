@@ -86,16 +86,18 @@ public class NetworkClient : NetworkManager
 
         isAlsoHost = NetworkLifecycle.Instance.IsServerRunning;
         originalSession = UserManager.Instance.CurrentUser.CurrentSession;
+
+        LogDebug(() => $"NetworkClient.Start() isAlsoHost: {isAlsoHost}, Original session is Null: {originalSession == null}");
     }
 
     public override void Stop()
     {
         if (!isAlsoHost && originalSession != null)
         {
-            LogDebug(() => $"NetworkClient.Stop() destroying session...");
-            IGameSession session = UserManager.Instance.CurrentUser.CurrentSession;
+            LogDebug(() => $"NetworkClient.Stop() destroying session... Original session is Null: {originalSession == null}");
+            //IGameSession session = UserManager.Instance.CurrentUser.CurrentSession;
             Client_GameSession.SetCurrent(originalSession);
-            session?.Dispose(); 
+            //session?.Dispose();
         }
 
         base.Stop();
