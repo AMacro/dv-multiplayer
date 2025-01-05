@@ -68,6 +68,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
     private const int MAX_COUPLER_ITERATIONS = 10;
 
+    private string currentID;
     public TrainCar TrainCar;
     public uint TicksSinceSync = uint.MaxValue;
     public bool HasPlayers => PlayerManager.Car == TrainCar || GetComponentInChildren<NetworkedPlayer>() != null;
@@ -208,19 +209,13 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
         NetworkLifecycle.Instance.OnTick -= Common_OnTick;
         NetworkLifecycle.Instance.OnTick -= Server_OnTick;
-        if (UnloadWatcher.isUnloading)
-            return;
+        //if (UnloadWatcher.isUnloading)
+        //    return;
 
         trainCarsToNetworkedTrainCars.Remove(TrainCar);
 
-        string id = "";
-        if (TrainCar.logicCar == null)
-            id = trainCarIdToNetworkedTrainCars.FirstOrDefault(x => x.Value == this).Key;
-        else
-            id = TrainCar.ID; 
-
-        trainCarIdToNetworkedTrainCars.Remove(id);
-        trainCarIdToTrainCars.Remove(id);
+        trainCarIdToNetworkedTrainCars.Remove(currentID);
+        trainCarIdToTrainCars.Remove(currentID);
 
         foreach (Coupler coupler in TrainCar.couplers)
             hoseToCoupler.Remove(coupler.hoseAndCock);
@@ -260,6 +255,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             }
         }
 
+        currentID = string.Empty;
         Destroy(this);
     }
 
@@ -270,8 +266,9 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         //Multiplayer.LogWarning("OnLogicCarInitialised");
         if (TrainCar.logicCar != null)
         {
-            trainCarIdToNetworkedTrainCars[TrainCar.ID] = this;
-            trainCarIdToTrainCars[TrainCar.ID] = TrainCar;
+            currentID = TrainCar.ID;
+            trainCarIdToNetworkedTrainCars[currentID] = this;
+            trainCarIdToTrainCars[currentID] = TrainCar;
 
             TrainCar.LogicCarInitialized -= OnLogicCarInitialised;
         }
