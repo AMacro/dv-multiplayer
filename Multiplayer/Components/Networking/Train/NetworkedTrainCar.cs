@@ -69,7 +69,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
     private const int MAX_COUPLER_ITERATIONS = 10;
 
-    private string currentID;
+    public string CurrentID {  get; private set; }
     public TrainCar TrainCar;
     public uint TicksSinceSync = uint.MaxValue;
     public bool HasPlayers => PlayerManager.Car == TrainCar || GetComponentInChildren<NetworkedPlayer>() != null;
@@ -226,8 +226,8 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
         trainCarsToNetworkedTrainCars.Remove(TrainCar);
 
-        trainCarIdToNetworkedTrainCars.Remove(currentID);
-        trainCarIdToTrainCars.Remove(currentID);
+        trainCarIdToNetworkedTrainCars.Remove(CurrentID);
+        trainCarIdToTrainCars.Remove(CurrentID);
 
         foreach (Coupler coupler in TrainCar.couplers)
             hoseToCoupler.Remove(coupler.hoseAndCock);
@@ -267,7 +267,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             }
         }
 
-        currentID = string.Empty;
+        CurrentID = string.Empty;
         Destroy(this);
     }
 
@@ -278,9 +278,9 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         //Multiplayer.LogWarning("OnLogicCarInitialised");
         if (TrainCar.logicCar != null)
         {
-            currentID = TrainCar.ID;
-            trainCarIdToNetworkedTrainCars[currentID] = this;
-            trainCarIdToTrainCars[currentID] = TrainCar;
+            CurrentID = TrainCar.ID;
+            trainCarIdToNetworkedTrainCars[CurrentID] = this;
+            trainCarIdToTrainCars[CurrentID] = TrainCar;
 
             TrainCar.LogicCarInitialized -= OnLogicCarInitialised;
         }
