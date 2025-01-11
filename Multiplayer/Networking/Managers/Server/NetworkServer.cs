@@ -446,16 +446,22 @@ public class NetworkServer : NetworkManager
         }, DeliveryMethod.ReliableUnordered, SelfPeer);
     }
 
-    public void SendJobsCreatePacket(NetworkedStationController networkedStation, NetworkedJob[] jobs, DeliveryMethod method = DeliveryMethod.ReliableSequenced)
+    public void SendJobsCreatePacket(NetworkedStationController networkedStation, NetworkedJob[] jobs, NetPeer peer = null)
     {
         Multiplayer.Log($"Sending JobsCreatePacket for stationNetId {networkedStation.NetId} with {jobs.Count()} jobs");
-        SendPacketToAll(ClientboundJobsCreatePacket.FromNetworkedJobs(networkedStation, jobs), method, SelfPeer);
+
+        var packet = ClientboundJobsCreatePacket.FromNetworkedJobs(networkedStation, jobs);
+
+        if (peer ==null)
+            SendPacketToAll(packet, DeliveryMethod.ReliableOrdered, SelfPeer);
+        else
+            SendPacket(peer, packet, DeliveryMethod.ReliableOrdered);
     }
 
-    public void SendJobsUpdatePacket(ushort stationNetId, NetworkedJob[] jobs, NetPeer peer = null)
+    public void SendJobsUpdatePacket(ushort stationNetId, NetworkedJob[] jobs)
     {
         Multiplayer.Log($"Sending JobsUpdatePacket for stationNetId {stationNetId} with {jobs.Count()} jobs");
-        SendPacketToAll(ClientboundJobsUpdatePacket.FromNetworkedJobs(stationNetId, jobs), DeliveryMethod.ReliableUnordered, SelfPeer);
+        SendPacketToAll(ClientboundJobsUpdatePacket.FromNetworkedJobs(stationNetId, jobs), DeliveryMethod.ReliableOrdered, SelfPeer);
     }
 
     public void SendItemsChangePacket(List<ItemUpdateData> items, ServerPlayer player)
@@ -465,7 +471,7 @@ public class NetworkServer : NetworkManager
         if (TryGetNetPeer(player.Id, out NetPeer peer) && peer != SelfPeer)
         {
             SendNetSerializablePacket(peer, new CommonItemChangePacket { Items = items },
-                DeliveryMethod.ReliableUnordered);
+                DeliveryMethod.ReliableOrdered);
         }
     }
 
@@ -684,10 +690,14 @@ public class NetworkServer : NetworkManager
         {
             if (NetworkedStationController.GetFromStationController(station, out NetworkedStationController netStation))
             {
-                NetworkedJob[] jobs = netStation.NetworkedJobs.ToArray();
+                //only send active jobs (available or in progress) - new clients don't need to know about old jobs
+                NetworkedJob[] jobs = netStation.NetworkedJobs
+                    .Where(j => j.Job.State == JobState.Available || j.Job.State == JobState.InProgress)
+                    .ToArray();
+
                 for (int i = 0; i < jobs.Length; i++)
                 {
-                    SendJobsCreatePacket(netStation, [jobs[i]], DeliveryMethod.ReliableOrdered);
+                    SendJobsCreatePacket(netStation, [jobs[i]]);
                 }
             }
             else
@@ -988,7 +998,7 @@ public class NetworkServer : NetworkManager
         {
             LogWarning($"OnServerboundJobValidateRequestPacket() NetworkedJob not found: {packet.JobNetId}");
 
-            SendPacket(peer, new ClientboundJobValidateResponsePacket { JobNetId = packet.JobNetId, Invalid = true }, DeliveryMethod.ReliableUnordered);
+            SendPacket(peer, new ClientboundJobValidateResponsePacket { JobNetId = packet.JobNetId, Invalid = true }, DeliveryMethod.ReliableOrdered);
             return;
         }
 

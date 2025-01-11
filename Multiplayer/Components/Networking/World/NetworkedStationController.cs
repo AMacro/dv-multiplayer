@@ -248,8 +248,9 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
     private void AddJob(JobData jobData)
     {
         Job newJob = CreateJobFromJobData(jobData);
+        var carNetIds = jobData.GetCars();
 
-        NetworkedJob networkedJob = CreateNetworkedJob(newJob, jobData.NetID);
+        NetworkedJob networkedJob = CreateNetworkedJob(newJob, jobData.NetID, carNetIds);
 
         NetworkedJobs.Add(networkedJob);
 
@@ -263,9 +264,20 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
                 GenerateOverview(networkedJob, jobData.ItemNetID, jobData.ItemPosition);
             }
         }
+        else if (networkedJob.Job.State == DV.ThingTypes.JobState.InProgress)
+        {
+            takenJobs.Add(newJob); 
+        }
+        else
+        {
+            //we don't need to update anything, so we'll return
+            //Maybe item sync will require knowledge of the job for expired/failed/completed reports, but we currently only sync these for connected players
+            return;
+        }
 
+       
         Multiplayer.LogDebug(() => $"AddJob({jobData.ID}) Starting plate update {newJob.ID} count: {jobData.GetCars().Count}");
-        StartCoroutine(UpdateCarPlates(jobData.GetCars(), newJob.ID));
+        StartCoroutine(UpdateCarPlates(carNetIds, newJob.ID));
 
         Multiplayer.Log($"Added NetworkedJob {newJob.ID} to NetworkedStationController {StationController.logicStation.ID}");
     }
@@ -325,12 +337,13 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
         return true;
     }
 
-    private NetworkedJob CreateNetworkedJob(Job job, ushort netId)
+    private NetworkedJob CreateNetworkedJob(Job job, ushort netId, List<ushort> carNetIds)
     {
         NetworkedJob networkedJob = new GameObject($"NetworkedJob {job.ID}").AddComponent<NetworkedJob>();
         networkedJob.NetId = netId;
         networkedJob.Initialize(job, this);
         networkedJob.OnJobDirty += OnJobDirty;
+        networkedJob.JobCars = carNetIds;
         return networkedJob;
     }
 
@@ -376,6 +389,7 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
     {
         JobValidator validator = null;
         NetworkedItem netItem;
+        NetworkLifecycle.Instance.Client.LogDebug(()=> $"NetworkedStation.HandleJobStateChange() {job.JobNetID}, {job.ValidationStationId}");
 
         if (job.ItemNetID != 0 && job.ValidationStationId != 0)
             if (Get(job.ValidationStationId, out var netStation))
@@ -385,7 +399,7 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
             netJob.Job.State == DV.ThingTypes.JobState.Completed) &&
             validator == null)
         {
-            NetworkLifecycle.Instance.Client.LogError($"NetworkedStation.UpdateJobs() jobNetId: {job.JobNetID}, Validator required and not found!");
+            NetworkLifecycle.Instance.Client.LogError($"NetworkedStation.HandleJobStateChange() jobNetId: {job.JobNetID}, Validator required and not found!");
             return;
         }
 
@@ -419,6 +433,7 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
                 netJob.AddReport(netItem);
                 printed = true;
 
+                StartCoroutine(UpdateCarPlates(netJob.JobCars, string.Empty));
                 netJob.JobBooklet?.GetTrackedItem<JobBooklet>()?.DestroyJobBooklet();
 
                 break;
@@ -426,6 +441,7 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
             case DV.ThingTypes.JobState.Abandoned:
                 takenJobs.Remove(netJob.Job);
                 abandonedJobs.Add(netJob.Job);
+                StartCoroutine(UpdateCarPlates(netJob.JobCars, string.Empty));
                 break;
 
             case DV.ThingTypes.JobState.Expired:
@@ -434,6 +450,7 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
 
                 netJob.Job.ExpireJob();
                 StationController.ClearAvailableJobOverviewGOs();   //todo: better logic when players can hold items
+                StartCoroutine(UpdateCarPlates(netJob.JobCars, string.Empty));
                 break;
 
             default:

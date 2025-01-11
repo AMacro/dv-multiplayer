@@ -23,7 +23,7 @@ public static class JobValidator_Patch
 
     [HarmonyPatch(nameof(JobValidator.ProcessJobOverview))]
     [HarmonyPrefix]
-    private static bool ProcessJobOverview_Prefix(JobValidator __instance, JobOverview jobOverview)
+    private static bool ProcessJobOverview(JobValidator __instance, JobOverview jobOverview)
     {
 
         if(__instance.bookletPrinter.IsOnCooldown)
@@ -34,7 +34,7 @@ public static class JobValidator_Patch
 
         if(!NetworkedJob.TryGetFromJob(jobOverview.job, out NetworkedJob networkedJob) || jobOverview.job.State != JobState.Available)
         {
-            NetworkLifecycle.Instance.Client.LogWarning($"ProcessJobOverview_Prefix({jobOverview?.job?.ID}) NetworkedJob found: {networkedJob != null}, Job state: {jobOverview?.job?.State}");
+            NetworkLifecycle.Instance.Client.LogWarning($"Processing JobOverview {jobOverview?.job?.ID} {(networkedJob == null ? "NetworkedJob not found!, " : "")}Job state: {jobOverview?.job?.State}");
             __instance.bookletPrinter.PlayErrorSound();
             jobOverview.DestroyJobOverview();
             return false;
@@ -42,14 +42,12 @@ public static class JobValidator_Patch
 
         if (NetworkLifecycle.Instance.IsHost())
         {
-            Multiplayer.Log($"ProcessJobOverview_Prefix({jobOverview?.job?.ID}) IsHost");
+            NetworkLifecycle.Instance.Server.Log($"Processing JobOverview {jobOverview?.job?.ID}");
             networkedJob.JobValidator = __instance;
             return true;
         }
 
         if (!networkedJob.ValidatorRequestSent)
-        //    return (networkedJob.ValidatorResponseReceived && networkedJob.ValidationAccepted);         
-        //else
             SendValidationRequest(__instance, networkedJob, ValidationType.JobOverview);
 
         return false;
@@ -68,7 +66,7 @@ public static class JobValidator_Patch
 
         if (!NetworkedJob.TryGetFromJob(jobBooklet.job, out NetworkedJob networkedJob) || jobBooklet.job.State != JobState.InProgress)
         {
-            NetworkLifecycle.Instance.Client.LogWarning($"ValidateJob({jobBooklet?.job?.ID}) NetworkedJob found: {networkedJob != null}, Job state: {jobBooklet?.job?.State}");
+            NetworkLifecycle.Instance.Client.LogWarning($"Validating Job {jobBooklet?.job?.ID} {(networkedJob == null ? "NetworkedJob not found!, " : "")}Job state: {jobBooklet?.job?.State}");
             __instance.bookletPrinter.PlayErrorSound();
             jobBooklet.DestroyJobBooklet();
             return false;
@@ -76,13 +74,12 @@ public static class JobValidator_Patch
 
         if (NetworkLifecycle.Instance.IsHost())
         {
+            NetworkLifecycle.Instance.Server.Log($"Validating Job {jobBooklet?.job?.ID}");
             networkedJob.JobValidator = __instance;
             return true;
         }
 
-        if (networkedJob.ValidatorRequestSent)
-            return (networkedJob.ValidatorResponseReceived && networkedJob.ValidationAccepted);
-        else
+        if (!networkedJob.ValidatorRequestSent)
             SendValidationRequest(__instance, networkedJob, ValidationType.JobBooklet);
 
         return false;
@@ -105,7 +102,7 @@ public static class JobValidator_Patch
         }
         else
         {
-            NetworkLifecycle.Instance.Client.LogError($"SendValidation({netJob?.Job?.ID}, {type}) Failed to find NetworkedStation");
+            NetworkLifecycle.Instance.Client.LogError($"Failed to validate {type} for {netJob?.Job?.ID}. NetworkedStation not found!");
             validator.bookletPrinter.PlayErrorSound();
         }
     }
@@ -113,12 +110,27 @@ public static class JobValidator_Patch
     {
         yield return new WaitForSecondsRealtime((NetworkLifecycle.Instance.Client.Ping * 3f)/1000);
 
-        NetworkLifecycle.Instance.Client.Log($"JobValidator_Patch.AwaitResponse() ResponseReceived: {networkedJob?.ValidatorResponseReceived}, Accepted: {networkedJob?.ValidationAccepted}");
+        bool received = networkedJob.ValidatorResponseReceived;
+        bool accepted = networkedJob.ValidationAccepted;
 
-        if (networkedJob == null || (!networkedJob.ValidatorResponseReceived || !networkedJob.ValidationAccepted))
+        var receivedStr = received ? "received" : "timed out";
+        var acceptedStr = accepted ? " Accepted" : " Rejected";
+
+        NetworkLifecycle.Instance.Client.Log($"Job Validation Response {receivedStr} for {networkedJob?.Job?.ID}.{acceptedStr}");
+
+        if (networkedJob == null)
         {
             validator.bookletPrinter.PlayErrorSound();
             yield break;
         }
+
+        if(!received || !accepted)
+        {
+            validator.bookletPrinter.PlayErrorSound();
+        }
+
+        networkedJob.ValidatorResponseReceived = false;
+        networkedJob.ValidationAccepted = false;
+
     }
 }

@@ -540,6 +540,7 @@ public class NetworkClient : NetworkManager
                 networkedPlayer.UpdateCar(0);
             }
 
+            networkedTrainCar.TrainCar.UpdateJobIdOnCarPlates(string.Empty);
             CarSpawner.Instance.DeleteCar(networkedTrainCar.TrainCar);
         }
     }
