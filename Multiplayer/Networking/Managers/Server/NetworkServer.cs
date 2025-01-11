@@ -88,12 +88,12 @@ public class NetworkServer : NetworkManager
 
         Multiplayer.Log($"Starting server...");
         //Try to get our static IPv6 Address we will need this for IPv6 NAT punching to be reliable
-        //if (IPAddress.TryParse(LobbyServerManager.GetStaticIPv6Address(), out IPAddress ipv6Address))
-        //{
-        //    //start the connection, IPv4 messages can come from anywhere, IPv6 messages need to specifically come from the static IPv6
-        //    //return netManager.Start(IPAddress.Any, ipv6Address,port);
-        //    return netManager.Start(IPAddress.Any, IPAddress.IPv6Any, port);
-        //}
+        if (IPAddress.TryParse(LobbyServerManager.GetStaticIPv6Address(), out IPAddress ipv6Address))
+        {
+            //start the connection, IPv4 messages can come from anywhere, IPv6 messages need to specifically come from the static IPv6
+            return netManager.Start(IPAddress.Any, ipv6Address,port);
+            //return netManager.Start(IPAddress.Any, IPAddress.IPv6Any, port);
+        }
 
         //we're not running IPv6, start as normal
         return netManager.Start(port);

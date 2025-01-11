@@ -26,7 +26,7 @@ public abstract class NetworkManager : INetEventListener, INatPunchListener
         netManager = new NetManager(this)
         {
             DisconnectTimeout = 10000,
-            ReconnectDelay = 1000, 
+            //ReconnectDelay = 1000, 
             UnconnectedMessagesEnabled = true,
             BroadcastReceiveEnabled = true,
 
