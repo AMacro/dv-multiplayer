@@ -1,4 +1,5 @@
 using System.Collections;
+using DV.LocoRestoration;
 using DV.Simulation.Brake;
 using DV.ThingTypes;
 using Multiplayer.Components.Networking.World;
@@ -57,6 +58,25 @@ public static class NetworkedCarSpawner
         trainCar.playerSpawnedCar = spawnPart.PlayerSpawnedCar;
         trainCar.uniqueCar = false;
         trainCar.InitializeExistingLogicCar(spawnPart.CarId, spawnPart.CarGuid);
+
+        //Restoration vehicle hack
+        //todo: make it work properly
+        if (spawnPart.IsRestorationLoco)
+            switch(spawnPart.RestorationState)
+            {
+                case LocoRestorationController.RestorationState.S0_Initialized:
+                case LocoRestorationController.RestorationState.S1_UnlockedRestorationLicense:
+                case LocoRestorationController.RestorationState.S2_LocoUnblocked:
+                    BlockLoco(trainCar);
+
+                    break;
+            }
+
+        if (trainCar.PaintExterior != null && spawnPart.PaintExterior != null)
+            trainCar.PaintExterior.currentTheme = spawnPart.PaintExterior;
+
+        if (trainCar.PaintInterior != null && spawnPart.PaintInterior != null)
+            trainCar.PaintInterior.currentTheme = spawnPart.PaintInterior;
 
         //Add networked components
         NetworkedTrainCar networkedTrainCar = trainCar.gameObject.GetOrAddComponent<NetworkedTrainCar>();
@@ -187,5 +207,24 @@ public static class NetworkedCarSpawner
         bs.SetControlReservoirPressure(brakeSystemData.ControlResPressure);
         bs.ForceCylinderPressure(brakeSystemData.BrakeCylPressure);
 
+    }
+
+    private static void BlockLoco(TrainCar trainCar)
+    {
+        trainCar.blockInteriorLoading = true;
+        trainCar.preventFastTravelWithCar = true;
+        trainCar.preventFastTravelDestination = true;
+
+        if (trainCar.FastTravelDestination != null)
+        {
+            trainCar.FastTravelDestination.showOnMap = false;
+            trainCar.FastTravelDestination.RefreshMarkerVisibility();
+        }
+
+        trainCar.preventDebtDisplay = true;
+        trainCar.preventRerail = true;
+        trainCar.preventDelete = true;
+        trainCar.preventService = true;
+        trainCar.preventCouple = true;
     }
 }

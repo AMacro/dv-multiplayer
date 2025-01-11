@@ -1,5 +1,5 @@
 using DV.Customization.Paint;
-using DV.ThingTypes;
+using DV.LocoRestoration;
 using LiteNetLib.Utils;
 using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.Train;
@@ -7,8 +7,6 @@ using Multiplayer.Networking.Serialization;
 using Multiplayer.Utils;
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using UnityEngine;
 
 namespace Multiplayer.Networking.Data.Train;
@@ -26,8 +24,10 @@ public readonly struct TrainsetSpawnPart
 
     // Customisation details
     public readonly bool PlayerSpawnedCar;
-    public readonly TrainCarPaint PaintExterior;
-    public readonly TrainCarPaint PaintInterior;
+    public readonly bool IsRestorationLoco;
+    public readonly LocoRestorationController.RestorationState RestorationState;
+    public readonly PaintTheme PaintExterior;
+    public readonly PaintTheme PaintInterior;
 
     // Coupling data
     public readonly CouplingData FrontCoupling;
@@ -46,7 +46,7 @@ public readonly struct TrainsetSpawnPart
     public readonly BrakeSystemData BrakeData;
 
     public TrainsetSpawnPart(
-          ushort netId, string liveryId, string carId, string carGuid, bool playerSpawnedCar,
+          ushort netId, string liveryId, string carId, string carGuid, bool playerSpawnedCar, bool isRestoration, LocoRestorationController.RestorationState restorationState, PaintTheme paintExterior, PaintTheme paintInterior,
           CouplingData frontCoupling, CouplingData rearCoupling,
           float speed, Vector3 position, Quaternion rotation,
           BogieData bogie1, BogieData bogie2, BrakeSystemData brakeData)
@@ -55,9 +55,17 @@ public readonly struct TrainsetSpawnPart
         LiveryId = liveryId;
         CarId = carId;
         CarGuid = carGuid;
+
         PlayerSpawnedCar = playerSpawnedCar;
+        IsRestorationLoco = isRestoration;
+        RestorationState = restorationState;
+
+        PaintExterior = paintExterior;
+        PaintInterior = paintInterior;
+
         FrontCoupling = frontCoupling;
         RearCoupling = rearCoupling;
+
         Speed = speed;
         Position = position;
         Rotation = rotation;
@@ -81,6 +89,14 @@ public readonly struct TrainsetSpawnPart
         }
 
         writer.Put(data.PlayerSpawnedCar);
+        writer.Put(data.IsRestorationLoco);
+
+        if(data.IsRestorationLoco)
+            writer.Put((byte) data.RestorationState);
+
+        writer.Put(PaintThemeLookup.Instance.GetThemeIndex(data.PaintExterior));
+        writer.Put(PaintThemeLookup.Instance.GetThemeIndex(data.PaintInterior));
+
 
         CouplingData.Serialize(writer, data.FrontCoupling);
         CouplingData.Serialize(writer, data.RearCoupling);
@@ -102,6 +118,18 @@ public readonly struct TrainsetSpawnPart
         string carGuid = new Guid(reader.GetBytesWithLength()).ToString();
         bool playerSpawnedCar = reader.GetBool();
 
+        bool isRestoration = reader.GetBool();
+        LocoRestorationController.RestorationState restorationState = default;
+        if (isRestoration)
+            restorationState = (LocoRestorationController.RestorationState)reader.GetByte();
+
+        sbyte extThemeIndex = reader.GetSByte();
+        sbyte intThemeIndex = reader.GetSByte();
+
+
+        PaintTheme exteriorPaint = PaintThemeLookup.Instance.GetPaintTheme(extThemeIndex);
+        PaintTheme interiorPaint = PaintThemeLookup.Instance.GetPaintTheme(intThemeIndex);
+
         var frontCoupling = CouplingData.Deserialize(reader);
         var rearCoupling = CouplingData.Deserialize(reader);
 
@@ -114,7 +142,7 @@ public readonly struct TrainsetSpawnPart
         var brakeSet = BrakeSystemData.Deserialize(reader);
 
         return new TrainsetSpawnPart(
-            netId, liveryId, carId, carGuid, playerSpawnedCar,
+            netId, liveryId, carId, carGuid, playerSpawnedCar, isRestoration, restorationState, exteriorPaint, interiorPaint,
             frontCoupling, rearCoupling,
             speed, position, rotation,
             bogie1, bogie2, brakeSet);
@@ -125,20 +153,31 @@ public readonly struct TrainsetSpawnPart
         TrainCar trainCar = networkedTrainCar.TrainCar;
         Transform transform = networkedTrainCar.transform;
 
+
+        LocoRestorationController restorationController = LocoRestorationController.GetForTrainCar(trainCar);
+        var restorationState = restorationController?.State ?? default;
+
         return new TrainsetSpawnPart(
-            netId: networkedTrainCar.NetId,
-            liveryId: trainCar.carLivery.id,
-            carId: trainCar.ID,
-            carGuid: trainCar.CarGUID,
-            playerSpawnedCar: trainCar.playerSpawnedCar,
+            networkedTrainCar.NetId,
+            trainCar.carLivery.id,
+            trainCar.ID,
+            trainCar.CarGUID,
+
+            trainCar.playerSpawnedCar,
+            restorationController != null,
+            restorationState,
+            
+            trainCar?.PaintExterior?.currentTheme,
+            trainCar?.PaintInterior?.currentTheme,
+
             frontCoupling: CouplingData.From(trainCar.frontCoupler),
             rearCoupling: CouplingData.From(trainCar.rearCoupler),
-            speed: trainCar.GetForwardSpeed(),
-            position: transform.position - WorldMover.currentMove,
-            rotation: transform.rotation,
-            bogie1: BogieData.FromBogie(trainCar.Bogies[0], true),
-            bogie2: BogieData.FromBogie(trainCar.Bogies[1], true),
-            brakeData: BrakeSystemData.From(trainCar.brakeSystem)
+            trainCar.GetForwardSpeed(),
+            transform.position - WorldMover.currentMove,
+            transform.rotation,
+            BogieData.FromBogie(trainCar.Bogies[0], true),
+            BogieData.FromBogie(trainCar.Bogies[1], true),
+            BrakeSystemData.From(trainCar.brakeSystem)
         );
     }
 

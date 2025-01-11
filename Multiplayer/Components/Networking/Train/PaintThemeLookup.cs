@@ -10,7 +10,7 @@ namespace Multiplayer.Components.Networking.Train;
 
 public class PaintThemeLookup : SingletonBehaviour<PaintThemeLookup>
 {
-    private readonly Dictionary<string, int> themeIndices = [];
+    private readonly Dictionary<string, sbyte> themeIndices = [];
     private string[] themeNames;
 
     protected override void Awake()
@@ -20,7 +20,7 @@ public class PaintThemeLookup : SingletonBehaviour<PaintThemeLookup>
             .Select(x => x.name.ToLower())
             .ToArray();
 
-        for (int i = 0; i < themeNames.Length; i++)
+        for (sbyte i = 0; i < themeNames.Length; i++)
         {
             themeIndices.Add(themeNames[i], i);
         }
@@ -31,14 +31,34 @@ public class PaintThemeLookup : SingletonBehaviour<PaintThemeLookup>
         });
     }
 
-    public string GetThemeName(int index)
+    public PaintTheme GetPaintTheme(sbyte index)
+    {
+        PaintTheme theme = null;
+
+        var themeName = GetThemeName(index);
+
+        if (themeName != null)
+            PaintTheme.TryLoad(GetThemeName(index), out theme);
+
+        return theme;
+    }
+
+    public string GetThemeName(sbyte index)
     {
         return (index >= 0 && index < themeNames.Length) ? themeNames[index] : null;
     }
 
-    public int GetThemeIndex(string themeName)
+    public sbyte GetThemeIndex(PaintTheme theme)
     {
-        return themeIndices.TryGetValue(themeName.ToLower(), out int index) ? index : -1;
+        if(theme == null)
+            return -1;
+
+        return GetThemeIndex(theme.assetName);
+    }
+
+    public sbyte GetThemeIndex(string themeName)
+    {
+        return themeIndices.TryGetValue(themeName.ToLower(), out sbyte index) ? index : (sbyte)-1;
     }
 
     /*
