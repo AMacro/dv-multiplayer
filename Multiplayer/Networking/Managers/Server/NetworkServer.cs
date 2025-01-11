@@ -31,6 +31,7 @@ using System.Net;
 using Multiplayer.Networking.Packets.Serverbound.Train;
 using Multiplayer.Networking.Packets.Unconnected;
 using System.Text;
+using Multiplayer.Networking.Data.Train;
 
 namespace Multiplayer.Networking.Managers.Server;
 
@@ -314,7 +315,7 @@ public class NetworkServer : NetworkManager
         SendPacketToAll(ClientboundSpawnTrainCarPacket.FromTrainCar(networkedTrainCar), DeliveryMethod.ReliableOrdered, SelfPeer);
     }
 
-    public void SendDestroyTrainCar(ushort netId)
+    public void SendDestroyTrainCar(ushort netId, NetPeer peer = null)
     {
         //ushort netID = trainCar.GetNetId();
         LogDebug(() => $"SendDestroyTrainCar({netId})");
@@ -325,10 +326,12 @@ public class NetworkServer : NetworkManager
             return;
         }
 
-        SendPacketToAll(new ClientboundDestroyTrainCarPacket
-        {
-            NetId = netId,
-        }, DeliveryMethod.ReliableOrdered, SelfPeer);
+        var packet = new ClientboundDestroyTrainCarPacket{ NetId = netId };
+
+        if (peer == null)
+            SendPacketToAll(packet, DeliveryMethod.ReliableOrdered, SelfPeer);
+        else
+            SendPacket(peer, packet, DeliveryMethod.ReliableOrdered);
     }
 
     public void SendTrainsetPhysicsUpdate(ClientboundTrainsetPhysicsPacket packet, bool reliable)
