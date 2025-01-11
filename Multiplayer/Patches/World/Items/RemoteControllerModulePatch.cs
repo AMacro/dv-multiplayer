@@ -16,7 +16,7 @@ public static class RemoteControllerModulePatch
     [HarmonyPostfix]
     static void RemoteControllerCouple(RemoteControllerModule __instance)
     {
-        NetworkLifecycle.Instance.Client.SendCouplerInteraction(CouplerInteractionType.CoupleViaRemote, __instance.car.frontCoupler);
+        NetworkLifecycle.Instance.Client.SendCouplerInteraction((CouplerInteractionType.Start | CouplerInteractionType.CoupleViaRemote), __instance.car.frontCoupler);
     }
 
     [HarmonyPatch(nameof(RemoteControllerModule.Uncouple))]
@@ -38,7 +38,7 @@ public static class RemoteControllerModulePatch
         Multiplayer.LogDebug(() => $"RemoteControllerModule.Uncouple({startCar?.ID}, {selectedCoupler}) nthCouplerFrom: [{nthCouplerFrom?.train?.ID}, {nthCouplerFrom?.train?.GetNetId()}]");
         if (nthCouplerFrom != null)
         {
-            NetworkLifecycle.Instance.Client.SendCouplerInteraction(CouplerInteractionType.UncoupleViaRemote, nthCouplerFrom);
+            NetworkLifecycle.Instance.Client.SendCouplerInteraction((CouplerInteractionType.Start | CouplerInteractionType.UncoupleViaRemote), nthCouplerFrom);
         }
     }
 }

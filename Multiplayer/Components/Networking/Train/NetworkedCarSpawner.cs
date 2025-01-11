@@ -110,6 +110,9 @@ public static class NetworkedCarSpawner
 
     private static void Couple(in TrainsetSpawnPart spawnPart, TrainCar trainCar, bool autoCouple)
     {
+        TrainsetSpawnPart sp = spawnPart;
+        Multiplayer.LogDebug(() =>$"Couple([{sp.CarId}, {sp.NetId}], trainCar, {autoCouple})");
+
         if (autoCouple)
         {
             trainCar.frontCoupler.preventAutoCouple = spawnPart.FrontCoupling.PreventAutoCouple;
@@ -130,27 +133,27 @@ public static class NetworkedCarSpawner
 
     private static void HandleCoupling(CouplingData couplingData,  Coupler currentCoupler)
     {
-        if (!couplingData.IsCoupled && !couplingData.HoseConnected)
-            return;
 
-        if (!NetworkedTrainCar.GetTrainCar(couplingData.ConnectionNetId, out TrainCar otherCar))
-        {
-            Multiplayer.LogWarning($"AutoCouple([{currentCoupler?.train?.GetNetId()}, {currentCoupler?.train?.ID}]) did not find car at {(currentCoupler.isFrontCoupler ? "Front" : "Rear")} car with netId: {couplingData.ConnectionNetId}");
-            return;
-        }
-        
-        var otherCoupler = couplingData.ConnectionToFront ? otherCar.frontCoupler : otherCar.rearCoupler;
+        CouplingData cd = couplingData;
+        TrainCar tc = currentCoupler.train;
+        var net = tc.GetNetId();
+
+        Multiplayer.LogDebug(() => $"HandleCoupling([{tc?.ID}, {net}]) couplingData: is front: {currentCoupler.isFrontCoupler}, {couplingData.HoseConnected}, {couplingData.CockOpen}");
 
         if (couplingData.IsCoupled)
         {
-            //NetworkLifecycle.Instance.Client.LogDebug(() => $"AutoCouple() Coupling {(currentCoupler.isFrontCoupler? "Front" : "Rear")}: {currentCoupler?.train?.ID}, to {otherCar?.ID}, at: {(connectionToFront ? "Front" : "Rear")}");
-            SetCouplingState(currentCoupler, otherCoupler, couplingData.State);
+            if (!NetworkedTrainCar.GetTrainCar(couplingData.ConnectionNetId, out TrainCar otherCar))
+            {
+                Multiplayer.LogWarning($"HandleCoupling([{currentCoupler?.train?.ID}, {currentCoupler?.train?.GetNetId()}]) did not find car at {(currentCoupler.isFrontCoupler ? "Front" : "Rear")} car with netId: {couplingData.ConnectionNetId}");
+            }
+            else
+            {
+                var otherCoupler = couplingData.ConnectionToFront ? otherCar.frontCoupler : otherCar.rearCoupler;      
+                SetCouplingState(currentCoupler, otherCoupler, couplingData.State);
+            }
         }
 
-        if (couplingData.HoseConnected)
-        {
-            CarsSaveManager.RestoreHoseAndCock(currentCoupler, couplingData.HoseConnected, couplingData.CockOpen);
-        }
+        CarsSaveManager.RestoreHoseAndCock(currentCoupler, couplingData.HoseConnected, couplingData.CockOpen);
     }
 
     public static void SetCouplingState(Coupler coupler, Coupler otherCoupler, ChainCouplerInteraction.State targetState)

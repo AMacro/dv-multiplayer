@@ -6,22 +6,23 @@ namespace Multiplayer.Networking.Data.Train;
 public enum CouplerInteractionType : ushort
 {
     NoAction = 0,
+    Start = 1,
 
-    CouplerCouple = 1,
-    CouplerPark = 2,
-    CouplerDrop = 4,
-    CouplerTighten = 8,
-    CouplerLoosen = 16,
+    CouplerCouple = 2,
+    CouplerPark = 4,
+    CouplerDrop = 8,
+    CouplerTighten = 16,
+    CouplerLoosen = 32,
 
-    HoseConnect = 32,
-    HoseDisconnect = 64,
+    HoseConnect = 64,
+    HoseDisconnect = 128,
 
-    CockOpen = 128,
-    CockClose = 256,
+    CockOpen = 256,
+    CockClose = 512,
 
-    CoupleViaUI = 512,
-    UncoupleViaUI = 1024,
+    CoupleViaUI = 1024,
+    UncoupleViaUI = 2048,
 
-    CoupleViaRemote = 2048,
-    UncoupleViaRemote = 4096,
+    CoupleViaRemote = 4096,
+    UncoupleViaRemote = 8192,
 }

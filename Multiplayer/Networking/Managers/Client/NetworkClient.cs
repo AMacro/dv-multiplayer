@@ -1033,7 +1033,7 @@ public class NetworkClient : NetworkManager
         }
 
         Log($"Sending coupler interaction {flags} for {coupler?.train?.ID}");
-        LogDebug(() => $"SendCouplerInteraction({flags}, {coupler?.train?.ID}, {otherCoupler?.train?.ID}) coupler isFront: {coupler?.isFrontCoupler}, otherCoupler isFront: {otherCoupler?.isFrontCoupler}");
+        LogDebug(() => $"SendCouplerInteraction({flags}, {coupler?.train?.ID}, {otherCoupler?.train?.ID}) coupler isFront: {coupler?.isFrontCoupler}, otherCoupler isFront: {otherCouplerIsFront}");
 
         SendPacketToServer(new CommonCouplerInteractionPacket
         {
@@ -1042,7 +1042,7 @@ public class NetworkClient : NetworkManager
             OtherNetId = otherCouplerNetId,
             IsFrontOtherCoupler = otherCouplerIsFront,
             Flags = (ushort)flags,
-        }, DeliveryMethod.ReliableUnordered);
+        }, DeliveryMethod.ReliableOrdered);
     }
 
 

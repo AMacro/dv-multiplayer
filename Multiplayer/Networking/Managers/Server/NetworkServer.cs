@@ -773,7 +773,36 @@ public class NetworkServer : NetworkManager
     private void OnCommonCouplerInteractionPacket(CommonCouplerInteractionPacket packet, NetPeer peer)
     {
         //todo: add validation that to ensure the client is near the coupler - this packet may also be used for remote operations and may need to factor that in in the future
-        SendPacketToAll(packet, DeliveryMethod.ReliableUnordered, peer);
+        if(NetworkedTrainCar.Get(packet.NetId, out var netTrainCar))
+        {
+            if(netTrainCar.Server_ValidateCouplerInteraction(packet, peer))
+            {
+                //passed validation, send to all but the originator
+                SendPacketToAll(packet, DeliveryMethod.ReliableOrdered, peer);
+            }
+            else
+            {
+                Multiplayer.LogDebug(() => $"OnCommonCouplerInteractionPacket([{packet.Flags}, {netTrainCar.CurrentID}, {packet.NetId}], {peer.Id}) Sending validation failure");
+                //failed validation notify client
+                SendPacket(
+                            peer,
+                            new CommonCouplerInteractionPacket
+                                {
+                                    NetId = packet.NetId,
+                                    Flags = (ushort)CouplerInteractionType.NoAction,
+                                    IsFrontCoupler = packet.IsFrontCoupler,
+                                }
+                            ,DeliveryMethod.ReliableOrdered
+                          );
+            }
+        }
+        else
+        {
+            Multiplayer.LogDebug(() => $"OnCommonCouplerInteractionPacket([{packet.Flags}, {netTrainCar.CurrentID}, {packet.NetId}], {peer.Id}) Sending destroy");
+            //Car doesn't exist, tell client to delete it
+            SendDestroyTrainCar(packet.NetId, peer);
+        }
+        
     }
     private void OnCommonTrainCouplePacket(CommonTrainCouplePacket packet, NetPeer peer)
     {

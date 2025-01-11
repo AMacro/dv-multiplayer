@@ -65,7 +65,7 @@ public static class CouplerInterfacerPatch
 
         Coupler coupler = couplerInterfacer.GetCoupler(front);
         Coupler otherCoupler = null;
-        CouplerInteractionType interaction = CouplerInteractionType.UncoupleViaUI;
+        CouplerInteractionType interaction = CouplerInteractionType.Start | CouplerInteractionType.UncoupleViaUI;
 
         Multiplayer.LogDebug(() => $"CouplerInterfacer.SendCouple({couplerInterfacer?.train?.ID}, {value}, {front}) coupler: {coupler?.train?.ID}, action: {interaction}");
 
@@ -74,7 +74,7 @@ public static class CouplerInterfacerPatch
 
         if (!coupler.IsCoupled())
         {
-            interaction = CouplerInteractionType.CoupleViaUI;
+            interaction = CouplerInteractionType.Start | CouplerInteractionType.CoupleViaUI;
             otherCoupler = coupler.GetFirstCouplerInRange();
 
             Multiplayer.LogDebug(() => $"CouplerInterfacer.SendCouple({couplerInterfacer?.train?.ID}, {value}, {front}) coupler: {coupler?.train?.ID}, coupler is front: {coupler?.isFrontCoupler}, otherCoupler: {otherCoupler?.train?.ID}, otherCoupler is front: {otherCoupler?.isFrontCoupler}, action: {interaction}");

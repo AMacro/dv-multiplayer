@@ -69,7 +69,7 @@ public readonly struct CouplingData
             hoseConnected: coupler.hoseAndCock.IsHoseConnected,
             state: coupler.state,
             connectionNetId: coupler.IsCoupled() ? coupler.coupledTo.train.GetNetId() : (ushort)0,
-            connectionToFront: coupler.IsCoupled() ? coupler.coupledTo.isFrontCoupler : false,
+            connectionToFront: coupler.IsCoupled() && coupler.coupledTo.isFrontCoupler,
             preventAutoCouple: coupler.preventAutoCouple,
             cockOpen: coupler.IsCockOpen
         );
