@@ -870,7 +870,7 @@ public class NetworkClient : NetworkManager
     }
     private void OnCommonChatPacket(CommonChatPacket packet)
     {
-        chatGUI.ReceiveMessage(packet.message);
+        chatGUI?.ReceiveMessage(packet.message);
     }
 
 
