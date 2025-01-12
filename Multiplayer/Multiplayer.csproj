@@ -3,7 +3,7 @@
         <TargetFramework>net48</TargetFramework>
         <LangVersion>latest</LangVersion>
         <RootNamespace>Multiplayer</RootNamespace>
-        <InformationalVersion>0.1.9.2</InformationalVersion>
+        <InformationalVersion>0.1.9.7</InformationalVersion>
     </PropertyGroup>
     <ItemGroup>
         <PackageReference Include="Krafs.Publicizer" Version="2.3.0">
@@ -42,6 +42,8 @@
         <Reference Include="DV.UserManagement" />
         <Reference Include="DV.Utils" />
         <Reference Include="DV.WeatherSystem" />
+        <Reference Include="Stateless" />
+        <Reference Include="RootMotion" />
     </ItemGroup>
     <!-- Mod Loader -->
     <ItemGroup>

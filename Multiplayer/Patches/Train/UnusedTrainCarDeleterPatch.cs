@@ -9,6 +9,7 @@ using Multiplayer.Networking.Data;
 using DV.ThingTypes;
 using DV.Logic.Job;
 using DV.Utils;
+using Multiplayer.Components.Networking;
 
 
 namespace Multiplayer.Patches.Train;
@@ -68,6 +69,15 @@ public static class UnusedTrainCarDeleterPatch
         }
     }
 
+    [HarmonyPatch("InstantConditionalDeleteOfUnusedCars")]
+    [HarmonyPrefix]
+    public static bool InstantConditionalDeleteOfUnusedCars(UnusedTrainCarDeleter __instance)
+    {
+        if(NetworkLifecycle.Instance.IsHost() && NetworkLifecycle.Instance.Server.PlayerCount == 1)
+            return true;
+
+        return false;
+    }
 /*
     [HarmonyPatch("AreDeleteConditionsFulfilled")]
     [HarmonyPrefix]

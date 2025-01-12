@@ -2,6 +2,7 @@ using Multiplayer.Networking.Data.Train;
 using System;
 using System.Collections;
 using UnityEngine;
+using static Multiplayer.Networking.Data.Train.RigidbodySnapshot;
 
 namespace Multiplayer.Components.Networking.Train;
 
@@ -49,7 +50,7 @@ public class NetworkedRigidbody : TickedQueue<RigidbodySnapshot>
 
         try
         {
-            Multiplayer.LogDebug(() => $"NetworkedRigidBody.Process() {snapshot.IncludedDataFlags}, {snapshot.Position.ToString() ?? "null"}, {snapshot.Rotation.ToString() ?? "null"}, {snapshot.Velocity.ToString() ?? "null"}, {snapshot.AngularVelocity.ToString() ?? "null"}");
+            Multiplayer.LogDebug(() => $"NetworkedRigidBody.Process() {(IncludedData)snapshot.IncludedDataFlags}, {snapshot.Position.ToString() ?? "null"}, {snapshot.Rotation.ToString() ?? "null"}, {snapshot.Velocity.ToString() ?? "null"}, {snapshot.AngularVelocity.ToString() ?? "null"}, tick: {snapshotTick}");
             snapshot.Apply(rigidbody);
         }
         catch (Exception ex)

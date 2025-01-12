@@ -14,9 +14,9 @@ using UnityEngine.Events;
 using Multiplayer.Networking.Data;
 using Multiplayer.Components.Networking;
 using Multiplayer.Components.Util;
-using Multiplayer.Networking.Listeners;
 using UnityModManagerNet;
 using System.Linq;
+using Multiplayer.Networking.Managers.Server;
 namespace Multiplayer.Components.MainMenu;
 
 public class HostGamePane : MonoBehaviour
@@ -39,12 +39,8 @@ public class HostGamePane : MonoBehaviour
     TextMeshProUGUI serverDetails;
 
     SliderDV maxPlayers;
-
     Toggle gamePublic;
-
     ButtonDV startButton;
-
-    //GameObject ViewPort;
 
     public ISaveGame saveGame;
     public UIStartGameData startGameData;
@@ -55,7 +51,7 @@ public class HostGamePane : MonoBehaviour
     public Action<ISaveGame> continueCareerRequested;
     #region setup
 
-    private void Awake()
+    public void Awake()
     {
         Multiplayer.Log("HostGamePane Awake()");
 
@@ -64,20 +60,20 @@ public class HostGamePane : MonoBehaviour
         ValidateInputs(null);
     }
 
-    private void Start()
+    public void Start()
     {
-        Multiplayer.Log("HostGamePane Start()");
+        Multiplayer.Log("HostGamePane Started");
         
     }
 
-    private void OnEnable()
+    public void OnEnable()
     {
         //Multiplayer.Log("HostGamePane OnEnable()");
         this.SetupListeners(true);
     }
 
     // Disable listeners
-    private void OnDisable()
+    public void OnDisable()
     {
         this.SetupListeners(false);
     }
@@ -178,7 +174,7 @@ public class HostGamePane : MonoBehaviour
         scrollerRT.sizeDelta = new Vector2(scrollerRT.sizeDelta.x, 504);
 
         // Create the content object
-        GameObject controls = new GameObject("Controls");
+        GameObject controls = new("Controls");
         controls.SetLayersRecursive(Layers.UI);
         controls.transform.SetParent(scroller.viewport.transform, false);
 
@@ -288,7 +284,7 @@ public class HostGamePane : MonoBehaviour
     private GameObject NewContentGroup(GameObject parent, Vector2 sizeDelta, int cellMaxHeight = 53)
     {
         // Create a content group
-        GameObject contentGroup = new GameObject("ContentGroup");
+        GameObject contentGroup = new("ContentGroup");
         contentGroup.SetLayersRecursive(Layers.UI);
         RectTransform groupRect = contentGroup.AddComponent<RectTransform>();
         contentGroup.transform.SetParent(parent.transform, false);
@@ -335,7 +331,7 @@ private void SetupListeners(bool on)
     private void ValidateInputs(string text)
     {
         bool valid = true;
-        int portNum=0;
+        int portNum;
 
         if (serverName.text.Trim() == "" || serverName.text.Length > MAX_SERVER_NAME_LEN)
             valid = false;
@@ -359,73 +355,74 @@ private void SetupListeners(bool on)
     private void StartClick()
     {
 
-        LobbyServerData serverData = new LobbyServerData();
-
-        serverData.port = (port.text == "") ? Multiplayer.Settings.Port : int.Parse(port.text); ;
-        serverData.Name = serverName.text.Trim();
-        serverData.HasPassword = password.text != "";
-        serverData.isPublic = gamePublic.isOn;
-
-        serverData.GameMode = 0; //replaced with details from save / new game
-        serverData.Difficulty = 0; //replaced with details from save / new game
-        serverData.TimePassed = "N/A"; //replaced with details from save, or persisted if new game (will be updated in lobby server update cycle)
-
-        serverData.CurrentPlayers = 0;
-        serverData.MaxPlayers = (int)maxPlayers.value;
-
-        ModInfo[] serverMods = ModInfo.FromModEntries(UnityModManager.modEntries)
-                            .Where(mod => !NetworkServer.modWhiteList.Contains(mod.Id) && mod.Id != Multiplayer.ModEntry.Info.Id).ToArray();
-
-        string requiredMods = "";
-        if( serverMods.Length > 0)
+        using (LobbyServerData serverData = new())
         {
-            requiredMods = string.Join(", ", serverMods.Select(mod => $"{{{mod.Id}, {mod.Version}}}"));
-        }
+            serverData.port = (port.text == "") ? Multiplayer.Settings.Port : int.Parse(port.text); ;
+            serverData.Name = serverName.text.Trim();
+            serverData.HasPassword = password.text != "";
+            serverData.isPublic = gamePublic.isOn;
 
-        serverData.RequiredMods = requiredMods; //FIX THIS - get the mods required
-        serverData.GameVersion = BuildInfo.BUILD_VERSION_MAJOR.ToString();
-        serverData.MultiplayerVersion = Multiplayer.Ver;
+            serverData.GameMode = 0; //replaced with details from save / new game
+            serverData.Difficulty = 0; //replaced with details from save / new game
+            serverData.TimePassed = "N/A"; //replaced with details from save, or persisted if new game (will be updated in lobby server update cycle)
 
-        serverData.ServerDetails = details.text.Trim();
+            serverData.CurrentPlayers = 0;
+            serverData.MaxPlayers = (int)maxPlayers.value;
 
-        if (saveGame != null)
-        {
-            ISaveGameplayInfo saveGameplayInfo = this.userProvider.GetSaveGameplayInfo(this.saveGame);
-            if (!saveGameplayInfo.IsCorrupt)
+            ModInfo[] serverMods = ModInfo.FromModEntries(UnityModManager.modEntries)
+                                .Where(mod => !NetworkServer.modWhiteList.Contains(mod.Id) && mod.Id != Multiplayer.ModEntry.Info.Id).ToArray();
+
+            string requiredMods = "";
+            if (serverMods.Length > 0)
             {
-                serverData.TimePassed = (saveGameplayInfo.InGameDate != DateTime.MinValue) ? saveGameplayInfo.InGameTimePassed.ToString("d\\d\\ hh\\h\\ mm\\m\\ ss\\s") : "N/A";
-                serverData.Difficulty = LobbyServerData.GetDifficultyFromString(this.userProvider.GetSessionDifficulty(saveGame.ParentSession).Name);
-                serverData.GameMode = LobbyServerData.GetGameModeFromString(saveGame.GameMode);
+                requiredMods = string.Join(", ", serverMods.Select(mod => $"{{{mod.Id}, {mod.Version}}}"));
             }
+
+            serverData.RequiredMods = requiredMods; //FIX THIS - get the mods required
+            serverData.GameVersion = BuildInfo.BUILD_VERSION_MAJOR.ToString();
+            serverData.MultiplayerVersion = Multiplayer.Ver;
+
+            serverData.ServerDetails = details.text.Trim();
+
+            if (saveGame != null)
+            {
+                ISaveGameplayInfo saveGameplayInfo = this.userProvider.GetSaveGameplayInfo(this.saveGame);
+                if (!saveGameplayInfo.IsCorrupt)
+                {
+                    serverData.TimePassed = (saveGameplayInfo.InGameDate != DateTime.MinValue) ? saveGameplayInfo.InGameTimePassed.ToString("d\\d\\ hh\\h\\ mm\\m\\ ss\\s") : "N/A";
+                    serverData.Difficulty = LobbyServerData.GetDifficultyFromString(this.userProvider.GetSessionDifficulty(saveGame.ParentSession).Name);
+                    serverData.GameMode = LobbyServerData.GetGameModeFromString(saveGame.GameMode);
+                }
+            }
+            else if (startGameData != null)
+            {
+                serverData.Difficulty = LobbyServerData.GetDifficultyFromString(this.startGameData.difficulty.Name);
+                serverData.GameMode = LobbyServerData.GetGameModeFromString(startGameData.session.GameMode);
+            }
+
+
+            Multiplayer.Settings.ServerName = serverData.Name;
+            Multiplayer.Settings.Password = password.text;
+            Multiplayer.Settings.PublicGame = serverData.isPublic;
+            Multiplayer.Settings.Port = serverData.port;
+            Multiplayer.Settings.MaxPlayers = serverData.MaxPlayers;
+            Multiplayer.Settings.Details = serverData.ServerDetails;
+
+
+            //Pass the server data to the NetworkLifecycle manager
+            NetworkLifecycle.Instance.serverData = serverData;
         }
-        else if(startGameData != null)
-        {
-            serverData.Difficulty = LobbyServerData.GetDifficultyFromString(this.startGameData.difficulty.Name);
-            serverData.GameMode = LobbyServerData.GetGameModeFromString(startGameData.session.GameMode);
-        }
-
-
-        Multiplayer.Settings.ServerName = serverData.Name;
-        Multiplayer.Settings.Password = password.text;
-        Multiplayer.Settings.PublicGame = serverData.isPublic;
-        Multiplayer.Settings.Port = serverData.port;
-        Multiplayer.Settings.MaxPlayers = serverData.MaxPlayers;
-        Multiplayer.Settings.Details = serverData.ServerDetails;
-
-
-        //Pass the server data to the NetworkLifecycle manager
-        NetworkLifecycle.Instance.serverData = serverData;
         //Mark it as a real multiplayer game
-        NetworkLifecycle.Instance.isSinglePlayer = false;
+        NetworkLifecycle.Instance.IsSinglePlayer = false;
 
 
-        var ContinueGameRequested  = lcInstance.GetType().GetMethod("OnRunClicked", BindingFlags.NonPublic | BindingFlags.Instance);
-        
+        var ContinueGameRequested = lcInstance.GetType().GetMethod("OnRunClicked", BindingFlags.NonPublic | BindingFlags.Instance);
+
         //Multiplayer.Log($"OnRunClicked exists: {ContinueGameRequested != null}");
         ContinueGameRequested?.Invoke(lcInstance, null);
     }
 
-    
+
 
     #endregion
 

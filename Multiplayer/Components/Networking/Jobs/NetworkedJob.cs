@@ -125,6 +125,8 @@ public class NetworkedJob : IdMonoBehaviour<ushort, NetworkedJob>
 
     public Action<NetworkedJob> OnJobDirty;
 
+    public List<ushort> JobCars = [];
+
     protected override void Awake()
     {
         base.Awake();

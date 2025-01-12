@@ -21,6 +21,7 @@ public abstract class TaskNetworkData
     public abstract void Serialize(NetDataWriter writer);
     public abstract void Deserialize(NetDataReader reader);
     public abstract Task ToTask();
+    public abstract List<ushort> GetCars();
 }
 public abstract class TaskNetworkData<T> : TaskNetworkData where T : TaskNetworkData<T>
 {
@@ -64,8 +65,8 @@ public abstract class TaskNetworkData<T> : TaskNetworkData where T : TaskNetwork
 #region Extension of TaskTypes
 public static class TaskNetworkDataFactory
 {
-    private static readonly Dictionary<Type, Func<Task, TaskNetworkData>> TypeToTaskNetworkData = new();
-    private static readonly Dictionary<TaskType, Func<TaskType, TaskNetworkData>> EnumToEmptyTaskNetworkData = new();
+    private static readonly Dictionary<Type, Func<Task, TaskNetworkData>> TypeToTaskNetworkData = [];
+    private static readonly Dictionary<TaskType, Func<TaskType, TaskNetworkData>> EnumToEmptyTaskNetworkData = [];
 
     public static void RegisterTaskType<TGameTask>(TaskType taskType, Func<TGameTask, TaskNetworkData> converter, Func<TaskType, TaskNetworkData> emptyCreator)
         where TGameTask : Task
@@ -196,6 +197,11 @@ public class WarehouseTaskData : TaskNetworkData<WarehouseTaskData>
 
         return newWareTask;
     }
+
+    public override List<ushort> GetCars()
+    {
+        return CarNetIDs.ToList();
+    }
 }
 
 public class TransportTaskData : TaskNetworkData<TransportTaskData>
@@ -302,6 +308,11 @@ public class TransportTaskData : TaskNetworkData<TransportTaskData>
             TransportedCargoPerCar?.ToList()
         );
     }
+
+    public override List<ushort> GetCars()
+    {
+        return CarNetIDs.ToList();
+    }
 }
 
 public class SequentialTasksData : TaskNetworkData<SequentialTasksData>
@@ -374,7 +385,7 @@ public class SequentialTasksData : TaskNetworkData<SequentialTasksData>
 
     public override Task ToTask()
     {
-        List<Task> tasks = new List<Task>();
+        List<Task> tasks = [];
 
         foreach (var task in Tasks)
         {
@@ -389,6 +400,19 @@ public class SequentialTasksData : TaskNetworkData<SequentialTasksData>
             newSeqTask.currentTask = new LinkedListNode<Task>(newSeqTask.tasks.ToArray()[CurrentTaskIndex]);
         
         return newSeqTask;
+    }
+
+    public override List<ushort> GetCars()
+    {
+        List<ushort> result = [];
+
+        foreach (var task in Tasks)
+        {
+            var cars = task.GetCars();
+            result.AddRange(cars);
+        }
+
+        return result;
     }
 }
 
@@ -433,5 +457,18 @@ public class ParallelTasksData : TaskNetworkData<ParallelTasksData>
     public override Task ToTask()
     {
         return new ParallelTasks(Tasks.Select(t => t.ToTask()).ToList());
+    }
+
+    public override List<ushort> GetCars()
+    {
+        List<ushort> result = [];
+
+        foreach(var task in Tasks)
+        {
+            var cars = task.GetCars();
+            result.AddRange(cars);
+        }
+
+        return result;
     }
 }

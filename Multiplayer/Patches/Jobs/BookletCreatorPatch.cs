@@ -11,7 +11,7 @@ using UnityEngine;
 namespace Multiplayer.Patches.Jobs;
 
 [HarmonyPatch(typeof(BookletCreator))]
-public static class BookletCreatorJob_Patch
+public static class BookletCreator_Patch
 {
     [HarmonyPatch(nameof(BookletCreator.CreateJobOverview))]
     [HarmonyPostfix]
@@ -41,13 +41,32 @@ public static class BookletCreatorJob_Patch
 
         if (!NetworkedJob.TryGetFromJob(job, out NetworkedJob networkedJob))
         {
-            Multiplayer.LogError($"BookletCreatorJob_Patch.CreateJobBooklet() NetworkedJob not found for Job ID: {job.ID}");
+            Multiplayer.LogError($"CreateJobBooklet() NetworkedJob not found for Job ID: {job.ID}");
         }
         else
         {
             NetworkedItem netItem = __result.GetOrAddComponent<NetworkedItem>();
             netItem.Initialize(__result, 0, false);
             networkedJob.JobBooklet = netItem;
+        }
+    }
+
+    [HarmonyPatch(nameof(BookletCreator.CreateJobReport))]
+    [HarmonyPostfix]
+    private static void CreateJobReport(JobReport __result, Job job)
+    {
+        if (!NetworkLifecycle.Instance.IsHost())
+            return;
+
+        if (!NetworkedJob.TryGetFromJob(job, out NetworkedJob networkedJob))
+        {
+            Multiplayer.LogError($"CreateJobReport() NetworkedJob not found for Job ID: {job.ID}");
+        }
+        else
+        {
+            NetworkedItem netItem = __result.GetOrAddComponent<NetworkedItem>();
+            netItem.Initialize(__result, 0, false);
+            networkedJob.JobReport = netItem;
         }
     }
 }

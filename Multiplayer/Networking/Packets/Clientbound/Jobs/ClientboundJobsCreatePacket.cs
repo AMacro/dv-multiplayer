@@ -11,7 +11,7 @@ public class ClientboundJobsCreatePacket
 
     public static ClientboundJobsCreatePacket FromNetworkedJobs(NetworkedStationController netStation, NetworkedJob[] jobs)
     {
-        List<JobData> jobData = new List<JobData>();
+        List<JobData> jobData = [];
         foreach (var job in jobs)
         {
             JobData jd = JobData.FromJob(netStation, job);

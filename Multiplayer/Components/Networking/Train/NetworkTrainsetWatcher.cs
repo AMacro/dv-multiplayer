@@ -103,7 +103,7 @@ public class NetworkTrainsetWatcher : SingletonBehaviour<NetworkTrainsetWatcher>
 
             if (trainCar.derailed)
             {
-                trainsetParts[i] = new TrainsetMovementPart(RigidbodySnapshot.From(trainCar.rb));
+                trainsetParts[i] = new TrainsetMovementPart(networkedTrainCar.NetId, RigidbodySnapshot.From(trainCar.rb));
             }
             else
             {
@@ -121,6 +121,7 @@ public class NetworkTrainsetWatcher : SingletonBehaviour<NetworkTrainsetWatcher>
                 }
 
                 trainsetParts[i] = new TrainsetMovementPart(
+                    networkedTrainCar.NetId,
                     trainCar.GetForwardSpeed(),
                     trainCar.stress.slowBuildUpStress,
                     BogieData.FromBogie(trainCar.Bogies[0], networkedTrainCar.BogieTracksDirty),
@@ -156,6 +157,12 @@ public class NetworkTrainsetWatcher : SingletonBehaviour<NetworkTrainsetWatcher>
             //log the discrepancies
             Multiplayer.LogWarning(
                 $"Received {nameof(ClientboundTrainsetPhysicsPacket)} for trainset with FirstNetId: {packet.FirstNetId} and LastNetId: {packet.LastNetId} with {packet.TrainsetParts.Length} parts, but trainset has {set.cars.Count} parts");
+
+            for (int i = 0; i < packet.TrainsetParts.Length; i++)
+            {
+                if (NetworkedTrainCar.Get(packet.TrainsetParts[i].NetId ,out NetworkedTrainCar networkedTrainCar))
+                    networkedTrainCar.Client_ReceiveTrainPhysicsUpdate(in packet.TrainsetParts[i], packet.Tick);
+            }
             return;
         }
 

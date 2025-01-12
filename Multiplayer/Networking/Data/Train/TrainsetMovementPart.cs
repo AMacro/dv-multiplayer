@@ -6,6 +6,7 @@ namespace Multiplayer.Networking.Data.Train;
 
 public readonly struct TrainsetMovementPart
 {
+    public readonly ushort NetId;
     public readonly MovementType typeFlag;
     public readonly float Speed;
     public readonly float SlowBuildUpStress;
@@ -23,8 +24,10 @@ public readonly struct TrainsetMovementPart
         Position = 4
     }
 
-    public TrainsetMovementPart(float speed, float slowBuildUpStress, BogieData bogie1, BogieData bogie2, Vector3? position = null, Quaternion? rotation = null)
+    public TrainsetMovementPart(ushort netId, float speed, float slowBuildUpStress, BogieData bogie1, BogieData bogie2, Vector3? position = null, Quaternion? rotation = null)
     {
+        NetId = netId;
+
         typeFlag = MovementType.Physics;    //no rigid body data
 
         Speed = speed;
@@ -43,8 +46,9 @@ public readonly struct TrainsetMovementPart
         }
     }
 
-    public TrainsetMovementPart(RigidbodySnapshot rigidbodySnapshot)
+    public TrainsetMovementPart(ushort netId, RigidbodySnapshot rigidbodySnapshot)
     {
+        NetId = netId;
         typeFlag = MovementType.RigidBody;    //rigid body data
 
         //Multiplayer.LogDebug(() => $"new TrainsetMovementPart() RigidBody");
@@ -52,8 +56,12 @@ public readonly struct TrainsetMovementPart
         RigidbodySnapshot = rigidbodySnapshot;
     }
 
+#pragma warning disable EPS05 // Use in-modifier for a readonly struct
     public static void Serialize(NetDataWriter writer, TrainsetMovementPart data)
+#pragma warning restore EPS05 // Use in-modifier for a readonly struct
     {
+        writer.Put(data.NetId);
+
         writer.Put((byte)data.typeFlag);
 
         //Multiplayer.LogDebug(() => $"TrainsetMovementPart.Serialize() {data.typeFlag}");
@@ -81,6 +89,7 @@ public readonly struct TrainsetMovementPart
 
     public static TrainsetMovementPart Deserialize(NetDataReader reader)
     {
+        ushort netId = 0;
         float speed = 0;
         float slowBuildUpStress = 0;
         Vector3? position = null;
@@ -88,11 +97,13 @@ public readonly struct TrainsetMovementPart
         BogieData bd1 = default;
         BogieData bd2 = default;
 
+        netId = reader.GetUShort();
+
         MovementType dataType = (MovementType)reader.GetByte();
 
         if (dataType.HasFlag(MovementType.RigidBody))
         {
-            return new TrainsetMovementPart(RigidbodySnapshot.Deserialize(reader));
+            return new TrainsetMovementPart(0, RigidbodySnapshot.Deserialize(reader));
         }
 
         if (dataType.HasFlag(MovementType.Physics))
@@ -109,6 +120,6 @@ public readonly struct TrainsetMovementPart
             rotation = QuaternionSerializer.Deserialize(reader);
         }
 
-        return new TrainsetMovementPart(speed, slowBuildUpStress, bd1, bd2, position, rotation);
+        return new TrainsetMovementPart(0, speed, slowBuildUpStress, bd1, bd2, position, rotation);
     }
 }

@@ -7,7 +7,7 @@ using Multiplayer.Networking.Data;
 using Multiplayer.Networking.Data.Train;
 using Multiplayer.Networking.Serialization;
 
-namespace Multiplayer.Networking.Listeners;
+namespace Multiplayer.Networking.Managers;
 
 public abstract class NetworkManager : INetEventListener, INatPunchListener
 {
@@ -26,6 +26,7 @@ public abstract class NetworkManager : INetEventListener, INatPunchListener
         netManager = new NetManager(this)
         {
             DisconnectTimeout = 10000,
+            //ReconnectDelay = 1000, 
             UnconnectedMessagesEnabled = true,
             BroadcastReceiveEnabled = true,
 
@@ -88,7 +89,7 @@ public abstract class NetworkManager : INetEventListener, INatPunchListener
     protected NetDataWriter WriteNetSerializablePacket<T>(T packet) where T : INetSerializable, new()
     {
         cachedWriter.Reset();
-        netPacketProcessor.WriteNetSerializable<T>(cachedWriter, ref packet);
+        netPacketProcessor.WriteNetSerializable(cachedWriter, ref packet);
         return cachedWriter;
     }
 
@@ -107,7 +108,7 @@ public abstract class NetworkManager : INetEventListener, INatPunchListener
         netManager.SendUnconnectedMessage(WritePacket(packet), ipAddress, port);
     }
 
-    protected abstract void Subscribe(); 
+    protected abstract void Subscribe();
 
     #region Net Events
 
@@ -142,7 +143,7 @@ public abstract class NetworkManager : INetEventListener, INatPunchListener
             IsProcessingPacket = true;
             netPacketProcessor.ReadAllPackets(reader, remoteEndPoint);
         }
-        catch (ParseException e) 
+        catch (ParseException e)
         {
             Multiplayer.LogWarning($"Failed to parse packet: {e.Message}");
         }
