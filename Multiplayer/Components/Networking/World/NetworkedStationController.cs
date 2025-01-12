@@ -6,6 +6,7 @@ using DV.Booklets;
 using DV.Logic.Job;
 using DV.ServicePenalty;
 using DV.Utils;
+using DV.ThingTypes;
 using Multiplayer.Components.Networking.Jobs;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Networking.Data;
@@ -254,7 +255,7 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
 
         NetworkedJobs.Add(networkedJob);
 
-        if (networkedJob.Job.State == DV.ThingTypes.JobState.Available)
+        if (networkedJob.Job.State == JobState.Available)
         {
             StationController.logicStation.AddJobToStation(newJob);
             StationController.processedNewJobs.Add(newJob);
@@ -264,7 +265,7 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
                 GenerateOverview(networkedJob, jobData.ItemNetID, jobData.ItemPosition);
             }
         }
-        else if (networkedJob.Job.State == DV.ThingTypes.JobState.InProgress)
+        else if (networkedJob.Job.State == JobState.InProgress)
         {
             takenJobs.Add(newJob); 
         }
@@ -385,66 +386,83 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
         }
     }
 
-    private void HandleJobStateChange(NetworkedJob netJob, JobUpdateStruct job)
+    private void HandleJobStateChange(NetworkedJob netJob, JobUpdateStruct updateData)
     {
         JobValidator validator = null;
         NetworkedItem netItem;
-        NetworkLifecycle.Instance.Client.LogDebug(()=> $"NetworkedStation.HandleJobStateChange() {job.JobNetID}, {job.ValidationStationId}");
+        string jobIdStr = $"[{netJob?.Job?.ID}, {netJob.NetId}]";
 
-        if (job.ItemNetID != 0 && job.ValidationStationId != 0)
-            if (Get(job.ValidationStationId, out var netStation))
-                validator = netStation.JobValidator;
+        NetworkLifecycle.Instance.Client.LogDebug(() => $"HandleJobStateChange({jobIdStr}) Current state: {netJob?.Job?.State}, New state: {updateData.JobState}, ValidationStationNetId: {updateData.ValidationStationId}, ItemNetId: {updateData.ItemNetID}");
 
-        if ((netJob.Job.State == DV.ThingTypes.JobState.InProgress ||
-            netJob.Job.State == DV.ThingTypes.JobState.Completed) &&
-            validator == null)
+        bool shouldPrint = updateData.JobState == JobState.InProgress || updateData.JobState == JobState.Completed;
+        bool canPrint = true;
+
+        if (shouldPrint)
         {
-            NetworkLifecycle.Instance.Client.LogError($"NetworkedStation.HandleJobStateChange() jobNetId: {job.JobNetID}, Validator required and not found!");
-            return;
+            if (updateData.ValidationStationId != 0 && Get(updateData.ValidationStationId, out var netStation))
+            {
+                validator = netStation.JobValidator;
+            }
+            else
+            {
+                NetworkLifecycle.Instance.Client.LogError($"HandleJobStateChange({jobIdStr}) Validator not found or data missing! Validator ID: {updateData.ValidationStationId}");
+                canPrint = false;
+            }
+
+            if (updateData.ItemNetID == 0)
+            {
+                NetworkLifecycle.Instance.Client.LogError($"HandleJobStateChange({jobIdStr}) Missing item data!");
+                canPrint = false;
+            }
         }
+
 
         bool printed = false;
         switch (netJob.Job.State)
         {
-            case DV.ThingTypes.JobState.InProgress:
+            case JobState.InProgress:
                 availableJobs.Remove(netJob.Job);
                 takenJobs.Add(netJob.Job);
 
-                JobBooklet jobBooklet = BookletCreator.CreateJobBooklet(netJob.Job, validator.bookletPrinter.spawnAnchor.position, validator.bookletPrinter.spawnAnchor.rotation, WorldMover.OriginShiftParent, true);
-
-                netItem = jobBooklet.GetOrAddComponent<NetworkedItem>();
-                netItem.Initialize(jobBooklet, job.ItemNetID, false);
-                netJob.JobBooklet = netItem;
-                printed = true;
+                if (canPrint)
+                {
+                    JobBooklet jobBooklet = BookletCreator.CreateJobBooklet(netJob.Job, validator.bookletPrinter.spawnAnchor.position, validator.bookletPrinter.spawnAnchor.rotation, WorldMover.OriginShiftParent, true);
+                    netItem = jobBooklet.GetOrAddComponent<NetworkedItem>();
+                    netItem.Initialize(jobBooklet, updateData.ItemNetID, false);
+                    netJob.JobBooklet = netItem;
+                    printed = true;
+                }
 
                 netJob.JobOverview?.GetTrackedItem<JobOverview>()?.DestroyJobOverview();
 
                 break;
 
-            case DV.ThingTypes.JobState.Completed:
+            case JobState.Completed:
                 takenJobs.Remove(netJob.Job);
                 completedJobs.Add(netJob.Job);
 
-                DisplayableDebt displayableDebt = SingletonBehaviour<JobDebtController>.Instance.LastStagedJobDebt;
-                JobReport jobReport = BookletCreator.CreateJobReport(netJob.Job, displayableDebt, validator.bookletPrinter.spawnAnchor.position, validator.bookletPrinter.spawnAnchor.rotation, WorldMover.OriginShiftParent);
-
-                netItem = jobReport.GetOrAddComponent<NetworkedItem>();
-                netItem.Initialize(jobReport, job.ItemNetID, false);
-                netJob.AddReport(netItem);
-                printed = true;
+                if (canPrint)
+                {
+                    DisplayableDebt displayableDebt = SingletonBehaviour<JobDebtController>.Instance.LastStagedJobDebt;
+                    JobReport jobReport = BookletCreator.CreateJobReport(netJob.Job, displayableDebt, validator.bookletPrinter.spawnAnchor.position, validator.bookletPrinter.spawnAnchor.rotation, WorldMover.OriginShiftParent);
+                    netItem = jobReport.GetOrAddComponent<NetworkedItem>();
+                    netItem.Initialize(jobReport, updateData.ItemNetID, false);
+                    netJob.AddReport(netItem);
+                    printed = true;
+                }
 
                 StartCoroutine(UpdateCarPlates(netJob.JobCars, string.Empty));
                 netJob.JobBooklet?.GetTrackedItem<JobBooklet>()?.DestroyJobBooklet();
 
                 break;
 
-            case DV.ThingTypes.JobState.Abandoned:
+            case JobState.Abandoned:
                 takenJobs.Remove(netJob.Job);
                 abandonedJobs.Add(netJob.Job);
                 StartCoroutine(UpdateCarPlates(netJob.JobCars, string.Empty));
                 break;
 
-            case DV.ThingTypes.JobState.Expired:
+            case JobState.Expired:
                 //if (availableJobs.Contains(netJob.Job))
                 //    availableJobs.Remove(netJob.Job);
 
@@ -454,13 +472,12 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
                 break;
 
             default:
-                NetworkLifecycle.Instance.Client.LogError($"NetworkedStation.UpdateJobs() Unrecognised Job State for JobId: {job.JobNetID}, {netJob.Job.ID}");
+                NetworkLifecycle.Instance.Client.LogError($"HandleJobStateChange({jobIdStr}) Unrecognised Job State: {updateData.JobState}");
                 break;
         }
 
-        if (printed && validator != null)
+        if (printed)
         {
-            Multiplayer.Log($"NetworkedStation.UpdateJobs() jobNetId: {job.JobNetID}, Playing sounds");
             netJob.ValidatorResponseReceived = true;
             netJob.ValidationAccepted = true;
             validator.jobValidatedSound.Play(validator.bookletPrinter.spawnAnchor.position, 1f, 1f, 0f, 1f, 500f, default, null, validator.transform, false, 0f, null);
@@ -511,7 +528,7 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
                     trainCar.trainPlatesCtrl?.trainCarPlates != null &&
                     trainCar.trainPlatesCtrl.trainCarPlates.Count > 0)
                 {
-                    Multiplayer.LogDebug(() => $"UpdateCarPlates({jobId}) car: {carNetId}, frameCount: {frameCounter}. Calling Update");
+                    //Multiplayer.LogDebug(() => $"UpdateCarPlates({jobId}) car: {carNetId}, frameCount: {frameCounter}. Calling Update");
                     trainCar.UpdateJobIdOnCarPlates(jobId);
                     break;
                 }
