@@ -1,5 +1,6 @@
 using System;
 using Humanizer;
+using Multiplayer.Utils;
 using Steamworks;
 using UnityEngine;
 using UnityModManagerNet;
@@ -21,6 +22,7 @@ public class Settings : UnityModManager.ModSettings, IDrawable
     [Draw("Use Steam Name", Tooltip = "Use your Steam name as your username in-game")]
     public bool UseSteamName = true;
     public string LastSteamName = string.Empty;
+    public ulong SteamId = 0;
     [Draw("Username", Tooltip = "Your username in-game", VisibleOn = "UseSteamName|false")]
     public string Username = "Player";
     public string Guid = System.Guid.NewGuid().ToString();
@@ -132,9 +134,10 @@ public class Settings : UnityModManager.ModSettings, IDrawable
 
         if (Multiplayer.Settings.UseSteamName)
         {
-            if (DVSteamworks.Success)
+            if (SteamWorksUtils.GetSteamUser(out string steamUsername, out ulong steamId))
             {
-                Multiplayer.Settings.LastSteamName = SteamClient.Name;
+                Multiplayer.Settings.LastSteamName = steamUsername;
+                Multiplayer.Settings.SteamId = steamId;
             }
 
             if (Multiplayer.Settings.LastSteamName != string.Empty)

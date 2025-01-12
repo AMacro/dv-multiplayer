@@ -1,6 +1,5 @@
 using System;
 using System.Collections;
-using System.Text.RegularExpressions;
 using DV.Localization;
 using DV.UI;
 using DV.UIFramework;
@@ -19,7 +18,6 @@ using System.Net;
 using LiteNetLib;
 using System.Collections.Generic;
 using Multiplayer.Networking.Managers.Client;
-using JetBrains.Annotations;
 
 namespace Multiplayer.Components.MainMenu
 {
