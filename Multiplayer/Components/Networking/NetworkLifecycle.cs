@@ -11,6 +11,7 @@ using Multiplayer.Networking.Data;
 using Multiplayer.Networking.Listeners;
 using Multiplayer.Utils;
 using Newtonsoft.Json;
+using Steamworks;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -121,6 +122,13 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
 
     public bool StartServer(IDifficulty difficulty)
     {
+        // Check if the user is a legitimate Steam user before proceeding
+        if (!IsLegitimateSteamUser())
+        {
+            Multiplayer.Log("User is not a legitimate Steam user. Server start aborted.");
+            return false;
+        }
+
         int port = Multiplayer.Settings.Port;
 
         if (Server != null)
@@ -128,7 +136,7 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
 
         if (!isSinglePlayer)
         {
-            if(serverData != null)
+            if (serverData != null)
             {
                 port = serverData.port;
             }
@@ -137,16 +145,34 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
         Multiplayer.Log($"Starting server on port {port}");
         NetworkServer server = new(difficulty, Multiplayer.Settings, isSinglePlayer, serverData);
 
-        //reset for next game
+        // Reset for next game
         isSinglePlayer = true;
         serverData = null;
 
         if (!server.Start(port))
             return false;
+
         Server = server;
-        StartClient("localhost", port, Multiplayer.Settings.Password, isSinglePlayer, null/* (DisconnectReason dr,string msg) =>{ }*/);
+        StartClient("localhost", port, Multiplayer.Settings.Password, isSinglePlayer, null /* (DisconnectReason dr, string msg) => { } */);
         return true;
     }
+
+    private bool IsLegitimateSteamUser()
+    {
+        if (SteamClient.IsValid)
+        {
+            // Verify the Steam ID is valid and owned
+            if (SteamClient.SteamId.IsValid)
+            {
+                System.Console.WriteLine($"Steam ID {SteamClient.SteamId} is valid.");
+                return true;
+            }
+        }
+
+        System.Console.WriteLine("Invalid or pirated Steam account detected.");
+        return false;
+    }
+
     public void StartClient(string address, int port, string password, bool isSinglePlayer, Action<DisconnectReason,string> onDisconnect )
     {
         if (Client != null)

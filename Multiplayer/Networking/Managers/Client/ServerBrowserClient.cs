@@ -8,6 +8,10 @@ using System.Diagnostics;
 using System.Linq;
 using Multiplayer.Networking.Managers.Server;
 using Multiplayer.Networking.Data;
+using Steamworks;
+using System.Text;
+using Steamworks.Data;
+using UnityEngine;
 
 
 namespace Multiplayer.Networking.Listeners;
@@ -168,7 +172,7 @@ public class ServerBrowserClient : NetworkManager, IDisposable
         {
             case DiscoveryPacketType.Response:
                 //Log($"OnUnconnectedDiscoveryPacket({packet.PacketType}, {endPoint?.Address}) id: {packet.data.id}");
-                OnDiscovery?.Invoke(endPoint,packet.data);
+                OnDiscovery?.Invoke(endPoint, packet.data);
                 break;
         }
     }
@@ -236,5 +240,5 @@ public class ServerBrowserClient : NetworkManager, IDisposable
     {
         //do other stuff here
     }
-    #endregion
+    #endregion        
 }

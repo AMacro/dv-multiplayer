@@ -32,6 +32,7 @@ using System.Net;
 using Multiplayer.Networking.Packets.Serverbound.Train;
 using Multiplayer.Networking.Packets.Unconnected;
 using System.Text;
+using Steamworks;
 
 namespace Multiplayer.Networking.Listeners;
 
@@ -149,11 +150,21 @@ public class NetworkServer : NetworkManager
 
         Log($"Server loaded, processing {joinQueue.Count} queued players");
         IsLoaded = true;
+
         while (joinQueue.Count > 0)
         {
             NetPeer peer = joinQueue.Dequeue();
-            if (peer.ConnectionState == ConnectionState.Connected)
+
+            // Assuming the `peer.ConnectionState` property exists and is being checked
+            if (peer.ConnectionState.Equals(LiteNetLib.ConnectionState.Connected))
+            {
+                System.Console.WriteLine("Connection is established.");
                 OnServerboundClientReadyPacket(null, peer);
+            }
+            else
+            {
+                System.Console.WriteLine("Connection is not established.");
+            }
         }
     }
 
@@ -218,14 +229,60 @@ public class NetworkServer : NetworkManager
 
     #endregion
 
-    #region NAT Punch Events
+#region NAT Punch Events
+
+
     public override void OnNatIntroductionRequest(IPEndPoint localEndPoint, IPEndPoint remoteEndPoint, string token)
     {
-        //do some stuff here
+        // Validate the Steam ID
+        if (!IsLegitimateSteamUser())
+        {
+            System.Console.WriteLine($"NAT request rejected from {remoteEndPoint}. Invalid Steam account.");
+            return; // Reject the NAT punch request
+        }
+
+        // Proceed with NAT punch-through handling
+        System.Console.WriteLine($"NAT request accepted from {remoteEndPoint}.");
+        // Additional logic for NAT punch-through
     }
+
     public override void OnNatIntroductionSuccess(IPEndPoint targetEndPoint, NatAddressType type, string token)
     {
-        //do other stuff here
+        System.Console.WriteLine($"NAT punch-through successful to {targetEndPoint}.");
+        // Additional logic after successful NAT punch-through
+    }
+
+    // Check for a legitimate Steam account
+    private bool IsLegitimateSteamUser()
+    {
+        // Check if the Steam client is valid
+        if (SteamClient.IsValid)
+        {
+            // Verify the Steam ID is valid
+            if (SteamClient.SteamId.IsValid)
+            {
+
+                // Check if the game is installed using the App ID
+                bool isInstalled = SteamApps.IsAppInstalled(DVSteamworks.APP_ID);
+
+                if (isInstalled)
+                {
+                    System.Console.WriteLine($"Steam ID {SteamClient.SteamId} is valid and the game is installed.");
+                    return true;
+                }
+                else
+                {
+                    // Log the piracy suspicion
+                    Multiplayer.Log($"Suspicion: Steam ID {SteamClient.SteamId} does not have the game installed. Potential piracy detected.");
+                }
+            }
+        }
+
+        // If Steam client or Steam ID is not valid, log as suspicious
+        System.Console.WriteLine("Steam client is invalid or pirated Steam account detected.");
+        Multiplayer.Log("Suspicion: Invalid Steam client or pirated Steam account detected.");
+
+        return false;
     }
     #endregion
 

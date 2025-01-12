@@ -13,6 +13,7 @@ using Multiplayer.Patches.World;
 using UnityChan;
 using UnityEngine;
 using UnityModManagerNet;
+using Steamworks;
 
 namespace Multiplayer;
 
