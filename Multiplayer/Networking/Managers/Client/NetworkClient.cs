@@ -139,7 +139,7 @@ public class NetworkClient : NetworkManager
         netPacketProcessor.SubscribeReusable<CommonHandbrakePositionPacket>(OnCommonHandbrakePositionPacket);
         netPacketProcessor.SubscribeReusable<CommonTrainPortsPacket>(OnCommonSimFlowPacket);
         netPacketProcessor.SubscribeReusable<CommonTrainFusesPacket>(OnCommonTrainFusesPacket);
-        netPacketProcessor.SubscribeReusable<ClientboundBrakePressureUpdatePacket>(OnClientboundBrakePressureUpdatePacket);
+        netPacketProcessor.SubscribeReusable<ClientboundBrakeStateUpdatePacket>(OnClientboundBrakeStateUpdatePacket);
         netPacketProcessor.SubscribeReusable<ClientboundFireboxStatePacket>(OnClientboundFireboxStatePacket);
         netPacketProcessor.SubscribeReusable<ClientboundCargoStatePacket>(OnClientboundCargoStatePacket);
         netPacketProcessor.SubscribeReusable<ClientboundCarHealthUpdatePacket>(OnClientboundCarHealthUpdatePacket);
@@ -705,13 +705,13 @@ public class NetworkClient : NetworkManager
         networkedTrainCar.Common_UpdateFuses(packet);
     }
 
-    private void OnClientboundBrakePressureUpdatePacket(ClientboundBrakePressureUpdatePacket packet)
+    private void OnClientboundBrakeStateUpdatePacket(ClientboundBrakeStateUpdatePacket packet)
     {
         if (!NetworkedTrainCar.Get(packet.NetId, out NetworkedTrainCar networkedTrainCar))
             return;
 
 
-        networkedTrainCar.Client_ReceiveBrakePressureUpdate(packet.MainReservoirPressure, packet.BrakePipePressure, packet.BrakeCylinderPressure);
+        networkedTrainCar.Client_ReceiveBrakeStateUpdate(packet);
 
         //LogDebug(() => $"Received Brake Pressures netId {packet.NetId}: {packet.MainReservoirPressure}, {packet.IndependentPipePressure}, {packet.BrakePipePressure}, {packet.BrakeCylinderPressure}");
     }

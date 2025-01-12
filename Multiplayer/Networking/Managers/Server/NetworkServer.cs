@@ -339,14 +339,17 @@ public class NetworkServer : NetworkManager
         SendPacketToAll(packet, reliable ? DeliveryMethod.ReliableOrdered : DeliveryMethod.Unreliable, SelfPeer);
     }
 
-    public void SendBrakePressures(ushort netId, float mainReservoirPressure, float brakePipePressure, float brakeCylinderPressure)
+    public void SendBrakeState(ushort netId, float mainReservoirPressure, float brakePipePressure, float brakeCylinderPressure, float overheatPercent, float overheatReductionFactor, float temperature)
     {
-        SendPacketToAll(new ClientboundBrakePressureUpdatePacket
+        SendPacketToAll(new ClientboundBrakeStateUpdatePacket
         {
             NetId = netId,
             MainReservoirPressure = mainReservoirPressure,
             BrakePipePressure = brakePipePressure,
-            BrakeCylinderPressure = brakeCylinderPressure
+            BrakeCylinderPressure = brakeCylinderPressure,
+            OverheatPercent = overheatPercent,
+            OverheatReductionFactor = overheatReductionFactor,
+            Temperature = temperature
         }, DeliveryMethod.ReliableOrdered, SelfPeer);
 
         //Multiplayer.LogDebug(()=> $"Sending Brake Pressures netId {netId}: {mainReservoirPressure}, {independentPipePressure}, {brakePipePressure}, {brakeCylinderPressure}");

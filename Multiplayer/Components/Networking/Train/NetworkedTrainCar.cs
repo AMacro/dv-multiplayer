@@ -13,6 +13,7 @@ using LocoSim.Implementations;
 using Multiplayer.Components.Networking.Player;
 using Multiplayer.Networking.Data;
 using Multiplayer.Networking.Data.Train;
+using Multiplayer.Networking.Packets.Clientbound.Train;
 using Multiplayer.Networking.Packets.Common.Train;
 using Multiplayer.Utils;
 using UnityEngine;
@@ -85,8 +86,11 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     private HashSet<string> dirtyPorts;
     private Dictionary<string, float> lastSentPortValues;
     private HashSet<string> dirtyFuses;
+
     private bool handbrakeDirty;
     private bool mainResPressureDirty;
+    private bool brakeOverheatDirty;
+
     public bool BogieTracksDirty;
     private bool cargoDirty;
     private bool cargoIsLoading;
@@ -204,6 +208,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             TrainCar.CarDamage.CarEffectiveHealthStateUpdate += Server_CarHealthUpdate;
 
             brakeSystem.MainResPressureChanged += Server_MainResUpdate;
+            brakeSystem.heatController.OverheatingActiveStateChanged += Server_BrakeHeatUpdate;
 
             if (firebox != null)
             {
@@ -252,7 +257,10 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             TrainCar.CarDamage.CarEffectiveHealthStateUpdate -= Server_CarHealthUpdate;
 
             if(brakeSystem != null)
+            {
                 brakeSystem.MainResPressureChanged -= Server_MainResUpdate;
+                brakeSystem.heatController.OverheatingActiveStateChanged -= Server_BrakeHeatUpdate;
+            }
 
             if (firebox != null)
             {
@@ -393,6 +401,11 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         mainResPressureDirty = true;
     }
 
+    private void Server_BrakeHeatUpdate(bool overheatActive)
+    {
+        brakeOverheatDirty = true;
+    }
+
     private void Server_FireboxUpdate(float normalizedPressure, float pressure)
     {
         fireboxDirty = true;
@@ -403,7 +416,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         if (UnloadWatcher.isUnloading)
             return;
 
-        Server_SendBrakePressures();
+        Server_SendBrakeStates();
         Server_SendFireBoxState();
         //Server_SendCouplers();
         Server_SendCables();
@@ -413,13 +426,18 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         TicksSinceSync++; //keep track of last full sync
     }
 
-    private void Server_SendBrakePressures()
+    private void Server_SendBrakeStates()
     {
-        if (!mainResPressureDirty)
+        if (!mainResPressureDirty && !brakeOverheatDirty)
             return;
 
         mainResPressureDirty = false;
-        NetworkLifecycle.Instance.Server.SendBrakePressures(NetId, brakeSystem.mainReservoirPressure, brakeSystem.brakePipePressure, brakeSystem.brakeCylinderPressure);
+        var hc = brakeSystem.heatController;
+        NetworkLifecycle.Instance.Server.SendBrakeState(
+                                                            NetId,
+                                                            brakeSystem.mainReservoirPressure, brakeSystem.brakePipePressure, brakeSystem.brakeCylinderPressure,
+                                                            hc.overheatPercentage, hc.overheatReductionFactor, hc.temperature
+                                                        );
     }
 
     private void Server_SendFireBoxState()
@@ -1096,7 +1114,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         }
     }
 
-    public void Client_ReceiveBrakePressureUpdate(float mainReservoirPressure, float brakePipePressure, float brakeCylinderPressure)
+    public void Client_ReceiveBrakeStateUpdate(ClientboundBrakeStateUpdatePacket packet)
     {
         if (brakeSystem == null)
             return;
@@ -1104,12 +1122,19 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         if (!hasSimFlow)
             return;
 
-        brakeSystem.SetMainReservoirPressure(mainReservoirPressure);
+        brakeSystem.SetMainReservoirPressure(packet.MainReservoirPressure);
 
-        brakeSystem.brakePipePressure = brakePipePressure;
-        brakeSystem.brakeset.pipePressure = brakePipePressure;
+        brakeSystem.brakePipePressure = packet.BrakePipePressure;
+        brakeSystem.brakeset.pipePressure = packet.BrakePipePressure;
 
-        brakeSystem.brakeCylinderPressure = brakeCylinderPressure;
+        brakeSystem.brakeCylinderPressure = packet.BrakeCylinderPressure;
+
+        if (brakeSystem.heatController == null)
+            return;
+
+        brakeSystem.heatController.overheatPercentage = packet.OverheatPercent;
+        brakeSystem.heatController.overheatReductionFactor = packet.OverheatReductionFactor;
+        brakeSystem.heatController.temperature = packet.Temperature;
     }
 
     private void Client_OnAddCoal(float coalMassDelta)
