@@ -1086,6 +1086,9 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             //Multiplayer.LogDebug(() => $"Client_ReceiveTrainPhysicsUpdate({TrainCar.ID}, {tick}): is RigidBody");
             TrainCar.Derail();
             TrainCar.stress.ResetTrainStress();
+            if (TrainCar.rb != null)
+                TrainCar.rb.constraints = RigidbodyConstraints.FreezeAll;
+
             Client_trainRigidbodyQueue.ReceiveSnapshot(movementPart.RigidbodySnapshot, tick);
         }
         else
@@ -1112,6 +1115,9 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
             
         }
+
+        if (!TrainCar.derailed && TrainCar.rb != null)
+            TrainCar.rb.constraints = RigidbodyConstraints.None;
     }
 
     public void Client_ReceiveBrakeStateUpdate(ClientboundBrakeStateUpdatePacket packet)

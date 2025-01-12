@@ -121,6 +121,7 @@ public class NetworkTrainsetWatcher : SingletonBehaviour<NetworkTrainsetWatcher>
                 }
 
                 trainsetParts[i] = new TrainsetMovementPart(
+                    networkedTrainCar.NetId,
                     trainCar.GetForwardSpeed(),
                     trainCar.stress.slowBuildUpStress,
                     BogieData.FromBogie(trainCar.Bogies[0], networkedTrainCar.BogieTracksDirty),
