@@ -108,7 +108,7 @@ public static class JobValidator_Patch
     }
     private static IEnumerator AwaitResponse(JobValidator validator, NetworkedJob networkedJob)
     {
-        yield return new WaitForSecondsRealtime((NetworkLifecycle.Instance.Client.Ping * 3f)/1000);
+        yield return new WaitForSecondsRealtime((NetworkLifecycle.Instance.Client.Ping * 4f)/1000);
 
         bool received = networkedJob.ValidatorResponseReceived;
         bool accepted = networkedJob.ValidationAccepted;
