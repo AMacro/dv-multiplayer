@@ -129,6 +129,7 @@ public static class JobValidator_Patch
             validator.bookletPrinter.PlayErrorSound();
         }
 
+        networkedJob.ValidatorRequestSent = false;
         networkedJob.ValidatorResponseReceived = false;
         networkedJob.ValidationAccepted = false;
 
