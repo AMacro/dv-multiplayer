@@ -17,7 +17,10 @@ using DV;
 using System.Net;
 using LiteNetLib;
 using System.Collections.Generic;
+using Steamworks;
+using Steamworks.Data;
 using Multiplayer.Networking.Managers.Client;
+
 
 namespace Multiplayer.Components.MainMenu
 {
@@ -121,6 +124,7 @@ namespace Multiplayer.Components.MainMenu
         private Popup connectingPopup;
         private int attempt;
 
+        private Lobby[] lobbies;
 
 
         #region setup
@@ -424,6 +428,10 @@ namespace Multiplayer.Components.MainMenu
             buttonRefresh.ToggleInteractable(false);
 
             StartCoroutine(GetRequest($"{Multiplayer.Settings.LobbyServerAddress}/list_game_servers"));
+
+            if (DVSteamworks.Success)
+                ListActiveLobbies();
+
 
             //Send a message to find local peers
             discoveryTimer = 0f;
@@ -973,6 +981,18 @@ namespace Multiplayer.Components.MainMenu
             }
 
             remoteRefreshComplete = true;
+        }
+
+        private async void ListActiveLobbies()
+        {
+            lobbies = await SteamMatchmaking.LobbyList.WithMaxResults(100).RequestAsync();
+            foreach (var lobby in lobbies)
+            {
+                var name = lobby.GetData("Server Name");
+                var difficulty = lobby.GetData("Difficulty");
+                Multiplayer.Log($"Steamworks Lobby Server name: \"{name}\", Difficulty: {difficulty}");
+            }
+
         }
 
         private void RefreshGridView()

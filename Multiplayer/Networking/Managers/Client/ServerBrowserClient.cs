@@ -7,6 +7,10 @@ using System.Threading.Tasks;
 using System.Diagnostics;
 using System.Linq;
 using Multiplayer.Networking.Data;
+using Steamworks;
+using System.Text;
+using Steamworks.Data;
+using UnityEngine;
 
 
 namespace Multiplayer.Networking.Managers.Client;
@@ -165,6 +169,7 @@ public class ServerBrowserClient : NetworkManager, IDisposable
 
         if (packet.IsResponse)
         {
+
             //Log($"OnUnconnectedDiscoveryPacket({packet.PacketType}, {endPoint?.Address}) id: {packet.data.id}");
             OnDiscovery?.Invoke(endPoint, packet.Data);
         }
@@ -233,5 +238,5 @@ public class ServerBrowserClient : NetworkManager, IDisposable
     {
         //do other stuff here
     }
-    #endregion
+    #endregion        
 }

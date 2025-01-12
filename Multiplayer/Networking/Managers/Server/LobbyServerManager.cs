@@ -14,7 +14,8 @@ using LiteNetLib.Utils;
 using Multiplayer.Networking.Packets.Unconnected;
 using System.Net;
 using System.Linq;
-using JetBrains.Annotations;
+using Steamworks;
+using Steamworks.Data;
 
 namespace Multiplayer.Networking.Managers.Server;
 public class LobbyServerManager : MonoBehaviour
@@ -37,6 +38,8 @@ public class LobbyServerManager : MonoBehaviour
     private string server_id;
     private string private_key;
 
+    private Lobby lobby;
+
     private bool initialised = false;
     private bool sendUpdates = false;
     private float timePassed = 0f;
@@ -54,6 +57,72 @@ public class LobbyServerManager : MonoBehaviour
         server = NetworkLifecycle.Instance.Server;
 
         Multiplayer.Log($"LobbyServerManager New({server != null})");
+
+        if (DVSteamworks.Success)
+        {
+            CreateLobby();
+        }
+    }
+
+    public async void CreateLobby()
+    {
+        // Check if the user is a legitimate Steam user
+        if (!IsLegitimateSteamUser())
+        {
+            server.Log("User is suspected to be using a pirated copy. Lobby creation aborted.");
+            return;
+        }
+
+        // Specify the lobby type (public, private, etc.)
+        var result = await SteamMatchmaking.CreateLobbyAsync(server.serverData.MaxPlayers);
+
+        if (result.HasValue)
+        {
+            // Lobby was created successfully
+            server.Log("Steam Lobby created successfully!");
+            lobby = result.Value;
+            lobby.SetPublic();
+            lobby.SetJoinable(true);
+            lobby.SetData("Server Name", server.serverData.Name);
+            lobby.SetData("Difficulty", server.serverData.Difficulty.ToString());
+        }
+        else
+        {
+            // Handle failure
+            server.Log("Failed to create lobby.");
+        }
+    }
+
+    private bool IsLegitimateSteamUser()
+    {
+        // Check if the Steam client is valid
+        if (SteamClient.IsValid)
+        {
+            // Verify the Steam ID is valid
+            if (SteamClient.SteamId.IsValid)
+            {
+
+                // Check if the game is installed using the App ID
+                bool isInstalled = SteamApps.IsAppInstalled(DVSteamworks.APP_ID);
+
+                if (isInstalled)
+                {
+                    System.Console.WriteLine($"Steam ID {SteamClient.SteamId} is valid and the game is installed.");
+                    return true;
+                }
+                else
+                {
+                    // Log the piracy suspicion
+                    server.Log($"Suspicion: Steam ID {SteamClient.SteamId} does not have the game installed. Potential piracy detected.");
+                }
+            }
+        }
+
+        // If Steam client or Steam ID is not valid, log as suspicious
+        System.Console.WriteLine("Steam client is invalid or pirated Steam account detected.");
+        server.Log("Suspicion: Invalid Steam client or pirated Steam account detected.");
+
+        return false;
     }
 
     public IEnumerator Start()
@@ -99,6 +168,12 @@ public class LobbyServerManager : MonoBehaviour
         sendUpdates = false;
         StopAllCoroutines();
         StartCoroutine(RemoveFromLobbyServer($"{Multiplayer.Settings.LobbyServerAddress}/{ENDPOINT_REMOVE_SERVER}"));
+
+        if (lobby.Id.IsValid)
+        {
+            lobby.SetJoinable(false);
+            lobby.Leave();
+        }
 
         discoveryManager?.Stop();
     }
