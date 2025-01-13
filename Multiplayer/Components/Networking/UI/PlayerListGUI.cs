@@ -7,10 +7,17 @@ namespace Multiplayer.Components.Networking.UI;
 public class PlayerListGUI : MonoBehaviour
 {
     private bool showPlayerList;
+    private string localPlayerUsername;
 
     public void RegisterListeners()
     {
         ScreenspaceMouse.Instance.ValueChanged += OnToggle;
+        localPlayerUsername = Multiplayer.Settings.GetUserName();
+    }
+    public void UnRegisterListeners()
+    {
+        ScreenspaceMouse.Instance.ValueChanged -= OnToggle;
+        OnToggle(false);
     }
 
     private void OnToggle(bool status)
@@ -26,14 +33,14 @@ public class PlayerListGUI : MonoBehaviour
         GUILayout.Window(157031520, new Rect(Screen.width / 2.0f - 125, 25, 250, 0), DrawPlayerList, Locale.PLAYER_LIST__TITLE);
     }
 
-    private static void DrawPlayerList(int windowId)
+    private void DrawPlayerList(int windowId)
     {
         foreach (string player in GetPlayerList())
             GUILayout.Label(player);
     }
 
     // todo: cache this?
-    private static IEnumerable<string> GetPlayerList()
+    private IEnumerable<string> GetPlayerList()
     {
         if (!NetworkLifecycle.Instance.IsClientRunning)
             return new[] { "Not in game" };
@@ -48,7 +55,7 @@ public class PlayerListGUI : MonoBehaviour
         }
 
         // The Player of the Client is not in the PlayerManager, so we need to add it separately
-        playerList[playerList.Length - 1] = $"{Multiplayer.Settings.GetUserName()} ({NetworkLifecycle.Instance.Client.Ping}ms)";
+        playerList[playerList.Length - 1] = $"{localPlayerUsername} ({NetworkLifecycle.Instance.Client.Ping}ms)";
         return playerList;
     }
 }
