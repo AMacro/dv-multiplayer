@@ -229,16 +229,6 @@ public class NetworkClient : NetworkManager
 
     #endregion
 
-    #region NAT Punch Events
-    public override void OnNatIntroductionRequest(IPEndPoint localEndPoint, IPEndPoint remoteEndPoint, string token)
-    {
-        //do some stuff here
-    }
-    public override void OnNatIntroductionSuccess(IPEndPoint targetEndPoint, NatAddressType type, string token)
-    {
-        //do other stuff here
-    }
-    #endregion
 
     #region Listeners 
 
@@ -529,11 +519,11 @@ public class NetworkClient : NetworkManager
         //Protect other players from getting deleted in race conditions - this should be a temporary fix, if another playe's game object is deleted we should just recreate it
         if(networkedTrainCar == null || networkedTrainCar.gameObject == null || networkedTrainCar.TrainCar == null)
         {
-            LogDebug(() => $"OnClientboundDestroyTrainCarPacket({packet?.NetId}) networkedTrainCar: {networkedTrainCar != null}, go: {networkedTrainCar?.gameObject != null}, trainCar: {networkedTrainCar?.TrainCar != null}");
+            LogDebug(() => $"OnClientboundDestroyTrainCarPacket({packet?.NetId}) networkedTrainCar: {networkedTrainCar != null}, go: {(networkedTrainCar?.gameObject) != null}, trainCar: {networkedTrainCar?.TrainCar != null}");
         }
         else
         {
-            NetworkedPlayer[] componentsInChildren = networkedTrainCar?.GetComponentsInChildren<NetworkedPlayer>() ?? [];
+            NetworkedPlayer[] componentsInChildren = (networkedTrainCar?.gameObject != null) ? networkedTrainCar.GetComponentsInChildren<NetworkedPlayer>() : [];
 
             foreach (NetworkedPlayer networkedPlayer in componentsInChildren)
             {
@@ -1302,4 +1292,16 @@ public class NetworkClient : NetworkManager
     }
 
     #endregion
+
+    public override void OnNatIntroductionSuccess(IPEndPoint targetEndPoint, NatAddressType type, string token)
+    {
+        // Add your implementation here
+        Multiplayer.Log($"NAT introduction successful. Target end point: {targetEndPoint}, Type: {type}, Token: {token}");
+    }
+
+    public override void OnNatIntroductionRequest(IPEndPoint localEndPoint, IPEndPoint remoteEndPoint, string token)
+    {
+        // Add your implementation here
+        Multiplayer.Log($"NAT introduction request received. Local end point: {localEndPoint}, Remote end point: {remoteEndPoint}, Token: {token}");
+    }
 }
