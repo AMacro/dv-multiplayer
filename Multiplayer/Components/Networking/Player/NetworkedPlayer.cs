@@ -106,6 +106,14 @@ public class NetworkedPlayer : MonoBehaviour
     public void UpdateCar(ushort netId)
     {
         isOnCar = NetworkedTrainCar.GetTrainCar(netId, out TrainCar trainCar);
+
+        if(isOnCar && trainCar == null)
+        {
+            //we have a desync!
+            Multiplayer.LogWarning($"Desync detected! Trying to update player '{username}' position to TrainCar netId {netId}, but car is null!");
+            return;
+        }
+
         selfTransform.SetParent(isOnCar ? trainCar.transform : null, true);
         targetPos = isOnCar ? transform.localPosition : selfTransform.position;
         targetRotation = isOnCar ? transform.localRotation : selfTransform.rotation;
