@@ -43,10 +43,6 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         return b;
     }
 
-    public static Coupler GetCoupler(HoseAndCock hoseAndCock)
-    {
-        return hoseToCoupler[hoseAndCock];
-    }
     public static bool TryGetCoupler(HoseAndCock hoseAndCock, out Coupler coupler)
     {
         return hoseToCoupler.TryGetValue(hoseAndCock, out coupler);
@@ -157,16 +153,11 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         {
             hoseToCoupler[coupler.hoseAndCock] = coupler;
 
-            Multiplayer.LogDebug(() => $"TrainCar.Start() [{TrainCar?.ID}, {NetId}], Coupler exists: {coupler != null}, ChainScript exists: {coupler.ChainScript != null}");
-            try
-            {
+            Multiplayer.LogDebug(() => $"TrainCar.Start() [{TrainCar?.ID}, {NetId}], Coupler exists: {coupler != null}, Is front: {coupler.isFrontCoupler}, ChainScript exists: {coupler.ChainScript != null}");
 
+            //Locos with tenders and tenders only have one chainscript each, no trainscript is used for the hitch between the loco and tender
+            if(coupler.ChainScript != null)
                 coupler.ChainScript.StateChanged += (state) => { Client_CouplerStateChange(state, coupler); };
-            }
-            catch (Exception ex)
-            {
-                Multiplayer.LogError($"Error subscribing to coupler state changes [{TrainCar?.ID}, {NetId}]\r\n{ex.Message}\r\n{ex.StackTrace}");
-            }
         }
 
         SimController simController = GetComponent<SimController>();
@@ -329,9 +320,6 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             if (simulationFlow.TryGetPort(portId, out Port port))
             {
                 lastSentPortValues[portId] = port.value;
-
-                //Multiplayer.Log($"Server_DirtyAllState({TrainCar.ID}): {portId}({port.type}): {port.value}({port.valueType})");
-
             }
         }
 
@@ -638,9 +626,16 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         float[] portValues = new float[portIds.Length];
         foreach (string portId in dirtyPorts)
         {
-            float value = simulationFlow.fullPortIdToPort[portId].Value;
-            portValues[i++] = value;
-            lastSentPortValues[portId] = value;
+            if(simulationFlow.TryGetPort(portId, out Port port))
+            {
+                float value = port.Value;
+                portValues[i++] = value;
+                lastSentPortValues[portId] = value;
+            }
+            else
+            {
+                Multiplayer.LogWarning($"SendPorts() [{CurrentID}, {NetId}] Failed to find port \"{portId}\"");
+            }
         }
 
         dirtyPorts.Clear();
@@ -657,7 +652,10 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         string[] fuseIds = dirtyFuses.ToArray();
         bool[] fuseValues = new bool[fuseIds.Length];
         foreach (string fuseId in dirtyFuses)
-            fuseValues[i++] = simulationFlow.fullFuseIdToFuse[fuseId].State;
+            if(simulationFlow.TryGetFuse(fuseId, out Fuse fuse))
+                fuseValues[i++] = fuse.State;
+            else
+                Multiplayer.LogWarning($"SendFuses() [{CurrentID}, {NetId}] Failed to find fuse \"{fuseId}\"");
 
         dirtyFuses.Clear();
 
@@ -712,22 +710,22 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         //string log = $"CommonTrainPortsPacket({TrainCar.ID})";
         for (int i = 0; i < packet.PortIds.Length; i++)
         {
-            Port port = simulationFlow.fullPortIdToPort[packet.PortIds[i]];
-            float value = packet.PortValues[i];
-            // before = port.value;
+            if(simulationFlow.TryGetPort(packet.PortIds[i], out Port port))
+            {
+                float value = packet.PortValues[i];
+                // before = port.value;
 
-            if (port.type == PortType.EXTERNAL_IN)
-                port.ExternalValueUpdate(value);
+                if (port.type == PortType.EXTERNAL_IN)
+                    port.ExternalValueUpdate(value);
+                else
+                    port.Value = value;
+            }
             else
-                port.Value = value;
-
-            /*
-            if (Multiplayer.Settings.DebugLogging)
-                log += $"\r\n\tPort name: {port.id}, value before: {before}, value after: {port.value}, value: {value}, port type: {port.type}";)
-            */
+            {
+                Multiplayer.LogWarning($"Common_UpdatePorts() [{CurrentID}, {NetId}] Failed to find port \"{packet.PortIds[i]}\", Value: {packet.PortValues[i]}");
+            }
         }
 
-        //NetworkLifecycle.Instance.Client.LogDebug(() => log);
     }
 
     public void Common_UpdateFuses(CommonTrainFusesPacket packet)
@@ -736,7 +734,12 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             return;
 
         for (int i = 0; i < packet.FuseIds.Length; i++)
-            simulationFlow.fullFuseIdToFuse[packet.FuseIds[i]].ChangeState(packet.FuseValues[i]);
+            if (simulationFlow.TryGetFuse(packet.FuseIds[i], out Fuse fuse))
+                fuse.ChangeState(packet.FuseValues[i]);
+            else
+                Multiplayer.LogWarning($"UpdateFuses() [{CurrentID}, {NetId}] Failed to find fuse \"{packet.FuseIds[i]}\", Value: {packet.FuseValues[i]}");
+
+        //simulationFlow.fullFuseIdToFuse[packet.FuseIds[i]].ChangeState(packet.FuseValues[i]);
     }
 
     public void Common_ReceiveCouplerInteraction(CommonCouplerInteractionPacket packet)
