@@ -275,7 +275,7 @@ public class LobbyServerManager : MonoBehaviour
         {
             if (webRequest.isNetworkError || webRequest.isHttpError)
             {
-                Multiplayer.LogError($"Error: {webRequest.error}\r\n{webRequest.downloadHandler.text}");
+                Multiplayer.LogError($"SendWebRequest({uri}) responseCode: {webRequest.responseCode}, Error: {webRequest.error}\r\n{webRequest.downloadHandler.text}");
                 onError?.Invoke(webRequest);
             }
             else
@@ -315,7 +315,7 @@ public class LobbyServerManager : MonoBehaviour
         {
             if (webRequest.isNetworkError || webRequest.isHttpError)
             {
-                Multiplayer.LogError($"Error: {webRequest.error}\r\n{webRequest.downloadHandler.text}");
+                Multiplayer.LogError($"SendWebRequest({uri}) responseCode: {webRequest.responseCode}, Error: {webRequest.error}\r\n{webRequest.downloadHandler.text}");
                 onError?.Invoke(webRequest);
             }
             else
