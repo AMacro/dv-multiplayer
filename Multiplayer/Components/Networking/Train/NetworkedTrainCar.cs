@@ -65,6 +65,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     #endregion
 
     private const int MAX_COUPLER_ITERATIONS = 10;
+    private const float MAX_FIREBOX_DELTA = 0.1f;
 
     public string CurrentID {  get; private set; }
     public TrainCar TrainCar;
@@ -82,6 +83,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     private HashSet<string> dirtyPorts;
     private Dictionary<string, float> lastSentPortValues;
     private HashSet<string> dirtyFuses;
+    private float lastSentFireboxValue;
 
     private bool handbrakeDirty;
     private bool mainResPressureDirty;
@@ -676,12 +678,18 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         NetworkLifecycle.Instance.Client.SendBrakeCylinderReleased(NetId);
     }
 
-    private void Common_OnFireboxUpdate(float _)
+    private void Common_OnFireboxUpdate(float newFireboxValue)
     {
         if (NetworkLifecycle.Instance.IsProcessingPacket)
             return;
 
-        fireboxDirty = true;
+        var delta = Math.Abs(lastSentFireboxValue - newFireboxValue);
+        if (delta > MAX_FIREBOX_DELTA || (newFireboxValue == 0 && lastSentFireboxValue != 0))
+        {
+            fireboxDirty = true;
+            lastSentFireboxValue = newFireboxValue;
+        }
+
     }
 
     private void Common_OnPortUpdated(Port port)
