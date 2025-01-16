@@ -82,10 +82,17 @@ public class NetworkedMapMarkersController : MonoBehaviour
 
     public void UpdatePlayers()
     {
-        Multiplayer.LogDebug(() => $"NetworkedWorldMap.UpdatePlayers() playerIndicators: {playerIndicators != null}, count: {playerIndicators?.Count}");
+        if (playerIndicators == null)
+        {
+            Multiplayer.LogDebug(() => $"NetworkedWorldMap.UpdatePlayers() playerIndicators: {playerIndicators != null}, count: {playerIndicators?.Count}");
+            return;
+        }
+
         foreach (KeyValuePair<byte, WorldMapIndicatorRefs> kvp in playerIndicators)
         {
-            Multiplayer.LogDebug(() => $"NetworkedWorldMap.UpdatePlayers() key: {kvp.Key}, value is null: {kvp.Value == null}");
+            if(kvp.Value == null)
+                Multiplayer.LogDebug(() => $"NetworkedWorldMap.UpdatePlayers() key: {kvp.Key}, value is null: {kvp.Value == null}");
+
             if (!NetworkLifecycle.Instance.Client.ClientPlayerManager.TryGetPlayer(kvp.Key, out NetworkedPlayer networkedPlayer))
             {
                 Multiplayer.LogWarning($"Player indicator for {kvp.Key} exists but {nameof(NetworkedPlayer)} does not!");
@@ -105,9 +112,10 @@ public class NetworkedMapMarkersController : MonoBehaviour
             if (refs.gameObject.activeSelf != active)
                 refs.gameObject.SetActive(active);
             if (!active)
+            {
+                Multiplayer.LogDebug(() => $"NetworkedWorldMap.UpdatePlayers() key: {kvp.Key}, is NOT active");
                 return;
-
-            Multiplayer.LogDebug(() => $"NetworkedWorldMap.UpdatePlayers() key: {kvp.Key}, Is active");
+            }
 
             Transform playerTransform = networkedPlayer.transform;
 
