@@ -744,17 +744,18 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
     public void Common_ReceiveCouplerInteraction(CommonCouplerInteractionPacket packet)
     {
+        CouplerInteractionType flags = (CouplerInteractionType)packet.Flags;
         Coupler coupler = packet.IsFrontCoupler ? TrainCar?.frontCoupler : TrainCar?.rearCoupler;
         TrainCar otherCar = null;
         Coupler otherCoupler = null;
-        
+
+        Multiplayer.LogDebug(() => $"Common_ReceiveCouplerInteraction() couplerNetId: {NetId}, coupler is front: {packet.IsFrontCoupler}, flags: {flags}, otherCouplerNetId: {packet.OtherNetId}, otherCoupler is front: {packet.IsFrontOtherCoupler}");
+
         if (coupler == null)
         {
             Multiplayer.LogWarning($"Common_ReceiveCouplerInteraction() did not find coupler for [{TrainCar?.ID}, {NetId}], coupler is front: {packet.IsFrontCoupler}");
             return;
         }
-
-        CouplerInteractionType flags = (CouplerInteractionType)packet.Flags;
 
         if (packet.OtherNetId != 0)
         {
