@@ -24,6 +24,7 @@ public static class CarSpawner_Patch
         NetworkLifecycle.Instance.Server?.SendDestroyTrainCar(networkedTrainCar.NetId);
     }
 
+    //Called from 
     [HarmonyPatch(nameof(CarSpawner.SpawnCars))]
     [HarmonyPostfix]
     private static void SpawnCars(List<TrainCar> __result)
@@ -38,8 +39,44 @@ public static class CarSpawner_Patch
             return;
 
         //Coupling is delayed by AutoCouple(), so a true trainset for the entire consist doesn't exist yet
-        Multiplayer.LogDebug(() => $"SpawnCars() {__result?.Count} cars spawned, adding to queue");
+        Multiplayer.LogDebug(() => $"SpawnCars() {__result?.Count} cars spawned, sending to players");
         NetworkLifecycle.Instance.Server.SendSpawnTrainset(__result, true, true);
+
+    }
+
+    [HarmonyPatch(nameof(CarSpawner.SpawnCarFromRemote))]
+    [HarmonyPostfix]
+    private static void SpawnCarFromRemote(TrainCar __result)
+    {
+        if (UnloadWatcher.isUnloading)
+            return;
+
+        if (!NetworkLifecycle.Instance.IsHost())
+            return;
+
+        if (__result == null)
+            return;
+
+        Multiplayer.LogDebug(() => $"SpawnCarFromRemote() {__result?.carLivery?.name} spawned, sending to players");
+        NetworkLifecycle.Instance.Server.SendSpawnTrainset([__result], true, true);
+
+    }
+
+    [HarmonyPatch(nameof(CarSpawner.SpawnCarOnClosestTrack))]
+    [HarmonyPostfix]
+    private static void SpawnCarOnClosestTrack(TrainCar __result)
+    {
+        if (UnloadWatcher.isUnloading)
+            return;
+
+        if (!NetworkLifecycle.Instance.IsHost())
+            return;
+
+        if (__result == null)
+            return;
+
+        Multiplayer.LogDebug(() => $"SpawnCarOnClosestTrack() {__result?.carLivery?.name} spawned, sending to players");
+        NetworkLifecycle.Instance.Server.SendSpawnTrainset([__result], true, true);
 
     }
 }
