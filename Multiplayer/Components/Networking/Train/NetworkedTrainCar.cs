@@ -498,7 +498,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     public bool Server_ValidateCouplerInteraction(CommonCouplerInteractionPacket packet, NetPeer peer)
     {
         Multiplayer.LogDebug(() =>
-                $"Server_ValidateCouplerInteraction([{(CouplerInteractionType)packet.Flags}, {CurrentID}, {packet.NetId}], {peer.Id}) " +
+                $"Server_ValidateCouplerInteraction([[{(CouplerInteractionType)packet.Flags}], {CurrentID}, {packet.NetId}], {peer.Id}) " +
                 $"isFront: {packet.IsFrontCoupler}, frontInteracting: {frontInteracting}, frontInteractionPeer: {frontInteractionPeer}, " +
                 $"rearInteracting: {rearInteracting}, rearInteractionPeer: {rearInteractionPeer}"
                 );
@@ -895,11 +895,24 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
         if (flags.HasFlag(CouplerInteractionType.CoupleViaUI))
         {
-            Multiplayer.LogDebug(() => $"10 Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], coupler is front: {packet.IsFrontCoupler}, flags: {flags}, other coupler: {otherCoupler != null}");
+            //if hose connect also requested, then we want everything to connect, otherwise only connect the chain
+            bool chainInteraction = !flags.HasFlag(CouplerInteractionType.HoseConnect);
+
+            Multiplayer.LogDebug(() => $"10 Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], coupler is front: {packet.IsFrontCoupler}, flags: [{flags}], other coupler: {otherCoupler != null}, chainInteraction: {chainInteraction}");
             if(otherCoupler != null)
             {
-                Multiplayer.LogDebug(() => $"10A Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], coupler state: {coupler.state}, other coupler state: {otherCoupler.state}, coupler coupledTo: {coupler?.coupledTo?.train?.ID}, other coupledTo: {otherCoupler?.coupledTo?.train?.ID}");
-                var car = coupler.CoupleTo(otherCoupler, true);
+                Multiplayer.LogDebug(() => $"10A Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], coupler state: {coupler.state}, other coupler state: {otherCoupler.state}, coupler coupledTo: {coupler?.coupledTo?.train?.ID}, other coupledTo: {otherCoupler?.coupledTo?.train?.ID}, chainInteraction: {chainInteraction}");
+                var car = coupler.CoupleTo(otherCoupler, viaChainInteraction: chainInteraction);
+
+                /* fix for bug in vanilla game */
+                coupler.SetChainTight(true);
+                if (coupler.ChainScript.enabled)
+                {
+                    coupler.ChainScript.enabled = false;
+                    coupler.ChainScript.enabled = true;
+                }
+                /* end fix for bug */
+
                 Multiplayer.LogDebug(() => $"10B Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], result: {car != null}");
                 //todo: rework hose and MU interactions
             }
@@ -907,9 +920,22 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
         if (flags.HasFlag(CouplerInteractionType.UncoupleViaUI))
         {
-            Multiplayer.LogDebug(() => $"11 Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], coupler is front: {packet.IsFrontCoupler}, flags: {flags}");
-            CouplerLogic.Uncouple(coupler);
-            //todo: rework hose and MU interactions
+            //if hose connect also requested, then we want everything to disconnect, otherwise only disconnect the chain
+            bool chainInteraction = !flags.HasFlag(CouplerInteractionType.HoseDisconnect);
+
+            Multiplayer.LogDebug(() => $"11 Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], coupler is front: {packet.IsFrontCoupler}, flags: {flags}, chainInteraction: {chainInteraction}");
+            CouplerLogic.Uncouple(coupler,viaChainInteraction: chainInteraction);
+
+            /* fix for bug in vanilla game */
+            coupler.state = ChainCouplerInteraction.State.Parked;
+            if (coupler.ChainScript.enabled)
+            {
+                coupler.ChainScript.enabled = false;
+                coupler.ChainScript.enabled = true;
+            }
+            /* end fix for bug */
+
+            //todo: rework hose and MU interactions 
         }
 
         if (flags.HasFlag(CouplerInteractionType.CoupleViaRemote))

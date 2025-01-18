@@ -1030,6 +1030,7 @@ public class NetworkClient : NetworkManager
     {
         ushort couplerNetId = coupler?.train?.GetNetId() ?? 0;
         ushort otherCouplerNetId = otherCoupler?.train?.GetNetId() ?? 0;
+        bool couplerIsFront = coupler?.isFrontCoupler ?? false;
         bool otherCouplerIsFront = otherCoupler?.isFrontCoupler ?? false;
 
         if (couplerNetId == 0)
@@ -1038,13 +1039,17 @@ public class NetworkClient : NetworkManager
             return;
         }
 
-        Log($"Sending coupler interaction {flags} for {coupler?.train?.ID}");
-        LogDebug(() => $"SendCouplerInteraction({flags}, {coupler?.train?.ID}, {otherCoupler?.train?.ID}) coupler isFront: {coupler?.isFrontCoupler}, otherCoupler isFront: {otherCouplerIsFront}");
+        LogDebug(() => $"SendCouplerInteraction([{flags}], {coupler?.train?.ID}, {otherCoupler?.train?.ID}) coupler isFront: {couplerIsFront}, otherCoupler isFront: {otherCouplerIsFront}");
+
+        if (coupler == null)
+            return;
+
+        Log($"Sending coupler interaction [{flags}] for {coupler?.train?.ID}, {(couplerIsFront ? "Front" : "Rear")}");
 
         SendPacketToServer(new CommonCouplerInteractionPacket
         {
             NetId = couplerNetId,
-            IsFrontCoupler = coupler.isFrontCoupler,
+            IsFrontCoupler = couplerIsFront,
             OtherNetId = otherCouplerNetId,
             IsFrontOtherCoupler = otherCouplerIsFront,
             Flags = (ushort)flags,

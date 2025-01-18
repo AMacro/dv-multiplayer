@@ -15,6 +15,7 @@ public static class CouplerPatch
 
         if (UnloadWatcher.isUnloading || NetworkLifecycle.Instance.IsProcessingPacket)
             return;
+
         NetworkLifecycle.Instance.Client?.SendHoseConnected(__instance, other, playAudio);
     }
 
