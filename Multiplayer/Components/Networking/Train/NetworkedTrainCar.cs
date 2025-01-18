@@ -67,6 +67,8 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
     private const int MAX_COUPLER_ITERATIONS = 10;
     private const float MAX_FIREBOX_DELTA = 0.1f;
+    private const float MAX_PORT_DELTA = 0.001f;
+
 
     public string CurrentID {  get; private set; }
     public TrainCar TrainCar;
@@ -708,9 +710,10 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             return;
         if (float.IsNaN(port.prevValue) && float.IsNaN(port.Value))
             return;
-        if (lastSentPortValues.TryGetValue(port.id, out float value) && Mathf.Abs(value - port.Value) < 0.001f)
-            return;
-        dirtyPorts.Add(port.id);
+        if (!lastSentPortValues.TryGetValue(port.id, out float lastSentvalue) ||
+            Mathf.Abs(lastSentvalue - port.Value) > MAX_PORT_DELTA ||
+            (port.Value == 0 && lastSentvalue != 0))
+            dirtyPorts.Add(port.id);
     }
 
     private void Common_OnPaintThemeChange(TrainCarPaint paintController)
