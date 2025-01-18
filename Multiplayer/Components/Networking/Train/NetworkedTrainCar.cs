@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using DV.Customization.Paint;
 using DV.MultipleUnit;
 using DV.Simulation.Brake;
 using DV.Simulation.Cars;
@@ -43,10 +44,6 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         return b;
     }
 
-    public static Coupler GetCoupler(HoseAndCock hoseAndCock)
-    {
-        return hoseToCoupler[hoseAndCock];
-    }
     public static bool TryGetCoupler(HoseAndCock hoseAndCock, out Coupler coupler)
     {
         return hoseToCoupler.TryGetValue(hoseAndCock, out coupler);
@@ -69,6 +66,9 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     #endregion
 
     private const int MAX_COUPLER_ITERATIONS = 10;
+    private const float MAX_FIREBOX_DELTA = 0.1f;
+    private const float MAX_PORT_DELTA = 0.001f;
+
 
     public string CurrentID {  get; private set; }
     public TrainCar TrainCar;
@@ -86,6 +86,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     private HashSet<string> dirtyPorts;
     private Dictionary<string, float> lastSentPortValues;
     private HashSet<string> dirtyFuses;
+    private float lastSentFireboxValue;
 
     private bool handbrakeDirty;
     private bool mainResPressureDirty;
@@ -157,16 +158,11 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         {
             hoseToCoupler[coupler.hoseAndCock] = coupler;
 
-            Multiplayer.LogDebug(() => $"TrainCar.Start() [{TrainCar?.ID}, {NetId}], Coupler exists: {coupler != null}, ChainScript exists: {coupler.ChainScript != null}");
-            try
-            {
+            Multiplayer.LogDebug(() => $"TrainCar.Start() [{TrainCar?.ID}, {NetId}], Coupler exists: {coupler != null}, Is front: {coupler.isFrontCoupler}, ChainScript exists: {coupler.ChainScript != null}");
 
+            //Locos with tenders and tenders only have one chainscript each, no trainscript is used for the hitch between the loco and tender
+            if(coupler.ChainScript != null)
                 coupler.ChainScript.StateChanged += (state) => { Client_CouplerStateChange(state, coupler); };
-            }
-            catch (Exception ex)
-            {
-                Multiplayer.LogError($"Error subscribing to coupler state changes [{TrainCar?.ID}, {NetId}]\r\n{ex.Message}\r\n{ex.StackTrace}");
-            }
         }
 
         SimController simController = GetComponent<SimController>();
@@ -195,7 +191,11 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
          
         brakeSystem.HandbrakePositionChanged += Common_OnHandbrakePositionChanged;
         brakeSystem.BrakeCylinderReleased += Common_OnBrakeCylinderReleased;
-        
+
+        if (TrainCar.PaintExterior != null)
+            TrainCar.PaintExterior.OnThemeChanged += Common_OnPaintThemeChange;
+        if (TrainCar.PaintInterior != null)
+            TrainCar.PaintInterior.OnThemeChanged += Common_OnPaintThemeChange;
 
         NetworkLifecycle.Instance.OnTick += Common_OnTick;
         if (NetworkLifecycle.Instance.IsHost())
@@ -248,6 +248,11 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             brakeSystem.HandbrakePositionChanged -= Common_OnHandbrakePositionChanged;
             brakeSystem.BrakeCylinderReleased -= Common_OnBrakeCylinderReleased;
         }
+
+        if(TrainCar.PaintExterior != null)
+            TrainCar.PaintExterior.OnThemeChanged -= Common_OnPaintThemeChange;
+        if (TrainCar.PaintInterior != null)
+            TrainCar.PaintInterior.OnThemeChanged -= Common_OnPaintThemeChange;
 
         if (NetworkLifecycle.Instance.IsHost())
         {
@@ -329,9 +334,6 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             if (simulationFlow.TryGetPort(portId, out Port port))
             {
                 lastSentPortValues[portId] = port.value;
-
-                //Multiplayer.Log($"Server_DirtyAllState({TrainCar.ID}): {portId}({port.type}): {port.value}({port.valueType})");
-
             }
         }
 
@@ -508,7 +510,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     public bool Server_ValidateCouplerInteraction(CommonCouplerInteractionPacket packet, NetPeer peer)
     {
         Multiplayer.LogDebug(() =>
-                $"Server_ValidateCouplerInteraction([{(CouplerInteractionType)packet.Flags}, {CurrentID}, {packet.NetId}], {peer.Id}) " +
+                $"Server_ValidateCouplerInteraction([[{(CouplerInteractionType)packet.Flags}], {CurrentID}, {packet.NetId}], {peer.Id}) " +
                 $"isFront: {packet.IsFrontCoupler}, frontInteracting: {frontInteracting}, frontInteractionPeer: {frontInteractionPeer}, " +
                 $"rearInteracting: {rearInteracting}, rearInteractionPeer: {rearInteractionPeer}"
                 );
@@ -638,9 +640,16 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         float[] portValues = new float[portIds.Length];
         foreach (string portId in dirtyPorts)
         {
-            float value = simulationFlow.fullPortIdToPort[portId].Value;
-            portValues[i++] = value;
-            lastSentPortValues[portId] = value;
+            if(simulationFlow.TryGetPort(portId, out Port port))
+            {
+                float value = port.Value;
+                portValues[i++] = value;
+                lastSentPortValues[portId] = value;
+            }
+            else
+            {
+                Multiplayer.LogWarning($"SendPorts() [{CurrentID}, {NetId}] Failed to find port \"{portId}\"");
+            }
         }
 
         dirtyPorts.Clear();
@@ -657,7 +666,10 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         string[] fuseIds = dirtyFuses.ToArray();
         bool[] fuseValues = new bool[fuseIds.Length];
         foreach (string fuseId in dirtyFuses)
-            fuseValues[i++] = simulationFlow.fullFuseIdToFuse[fuseId].State;
+            if(simulationFlow.TryGetFuse(fuseId, out Fuse fuse))
+                fuseValues[i++] = fuse.State;
+            else
+                Multiplayer.LogWarning($"SendFuses() [{CurrentID}, {NetId}] Failed to find fuse \"{fuseId}\"");
 
         dirtyFuses.Clear();
 
@@ -678,12 +690,18 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         NetworkLifecycle.Instance.Client.SendBrakeCylinderReleased(NetId);
     }
 
-    private void Common_OnFireboxUpdate(float _)
+    private void Common_OnFireboxUpdate(float newFireboxValue)
     {
         if (NetworkLifecycle.Instance.IsProcessingPacket)
             return;
 
-        fireboxDirty = true;
+        var delta = Math.Abs(lastSentFireboxValue - newFireboxValue);
+        if (delta > MAX_FIREBOX_DELTA || (newFireboxValue == 0 && lastSentFireboxValue != 0))
+        {
+            fireboxDirty = true;
+            lastSentFireboxValue = newFireboxValue;
+        }
+
     }
 
     private void Common_OnPortUpdated(Port port)
@@ -692,9 +710,24 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             return;
         if (float.IsNaN(port.prevValue) && float.IsNaN(port.Value))
             return;
-        if (lastSentPortValues.TryGetValue(port.id, out float value) && Mathf.Abs(value - port.Value) < 0.001f)
+        if (!lastSentPortValues.TryGetValue(port.id, out float lastSentvalue) ||
+            Mathf.Abs(lastSentvalue - port.Value) > MAX_PORT_DELTA ||
+            (port.Value == 0 && lastSentvalue != 0))
+            dirtyPorts.Add(port.id);
+    }
+
+    private void Common_OnPaintThemeChange(TrainCarPaint paintController)
+    {
+        if(paintController == null)
             return;
-        dirtyPorts.Add(port.id);
+
+        Multiplayer.LogDebug(() => $"Common_OnPaintThemeChange() target: {paintController.TargetArea}, theme: {paintController.CurrentTheme.name}");
+
+        byte target = (byte)paintController.TargetArea;
+        var theme = PaintThemeLookup.Instance.GetThemeIndex(paintController.CurrentTheme);
+
+        Multiplayer.LogDebug(() => $"Common_OnPaintThemeChange() sending [{CurrentID},{NetId}], target: {paintController.TargetArea}, theme: [{paintController.CurrentTheme.name},{theme}]");
+        NetworkLifecycle.Instance?.Client.SendPaintThemeChangePacket(NetId,target,theme);
     }
 
     private void Common_OnFuseUpdated(Fuse fuse)
@@ -712,22 +745,22 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         //string log = $"CommonTrainPortsPacket({TrainCar.ID})";
         for (int i = 0; i < packet.PortIds.Length; i++)
         {
-            Port port = simulationFlow.fullPortIdToPort[packet.PortIds[i]];
-            float value = packet.PortValues[i];
-            // before = port.value;
+            if(simulationFlow.TryGetPort(packet.PortIds[i], out Port port))
+            {
+                float value = packet.PortValues[i];
+                // before = port.value;
 
-            if (port.type == PortType.EXTERNAL_IN)
-                port.ExternalValueUpdate(value);
+                if (port.type == PortType.EXTERNAL_IN)
+                    port.ExternalValueUpdate(value);
+                else
+                    port.Value = value;
+            }
             else
-                port.Value = value;
-
-            /*
-            if (Multiplayer.Settings.DebugLogging)
-                log += $"\r\n\tPort name: {port.id}, value before: {before}, value after: {port.value}, value: {value}, port type: {port.type}";)
-            */
+            {
+                Multiplayer.LogWarning($"Common_UpdatePorts() [{CurrentID}, {NetId}] Failed to find port \"{packet.PortIds[i]}\", Value: {packet.PortValues[i]}");
+            }
         }
 
-        //NetworkLifecycle.Instance.Client.LogDebug(() => log);
     }
 
     public void Common_UpdateFuses(CommonTrainFusesPacket packet)
@@ -736,22 +769,28 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             return;
 
         for (int i = 0; i < packet.FuseIds.Length; i++)
-            simulationFlow.fullFuseIdToFuse[packet.FuseIds[i]].ChangeState(packet.FuseValues[i]);
+            if (simulationFlow.TryGetFuse(packet.FuseIds[i], out Fuse fuse))
+                fuse.ChangeState(packet.FuseValues[i]);
+            else
+                Multiplayer.LogWarning($"UpdateFuses() [{CurrentID}, {NetId}] Failed to find fuse \"{packet.FuseIds[i]}\", Value: {packet.FuseValues[i]}");
+
+        //simulationFlow.fullFuseIdToFuse[packet.FuseIds[i]].ChangeState(packet.FuseValues[i]);
     }
 
     public void Common_ReceiveCouplerInteraction(CommonCouplerInteractionPacket packet)
     {
+        CouplerInteractionType flags = (CouplerInteractionType)packet.Flags;
         Coupler coupler = packet.IsFrontCoupler ? TrainCar?.frontCoupler : TrainCar?.rearCoupler;
         TrainCar otherCar = null;
         Coupler otherCoupler = null;
-        
+
+        Multiplayer.LogDebug(() => $"Common_ReceiveCouplerInteraction() couplerNetId: {NetId}, coupler is front: {packet.IsFrontCoupler}, flags: {flags}, otherCouplerNetId: {packet.OtherNetId}, otherCoupler is front: {packet.IsFrontOtherCoupler}");
+
         if (coupler == null)
         {
             Multiplayer.LogWarning($"Common_ReceiveCouplerInteraction() did not find coupler for [{TrainCar?.ID}, {NetId}], coupler is front: {packet.IsFrontCoupler}");
             return;
         }
-
-        CouplerInteractionType flags = (CouplerInteractionType)packet.Flags;
 
         if (packet.OtherNetId != 0)
         {
@@ -883,11 +922,24 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
         if (flags.HasFlag(CouplerInteractionType.CoupleViaUI))
         {
-            Multiplayer.LogDebug(() => $"10 Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], coupler is front: {packet.IsFrontCoupler}, flags: {flags}, other coupler: {otherCoupler != null}");
+            //if hose connect also requested, then we want everything to connect, otherwise only connect the chain
+            bool chainInteraction = !flags.HasFlag(CouplerInteractionType.HoseConnect);
+
+            Multiplayer.LogDebug(() => $"10 Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], coupler is front: {packet.IsFrontCoupler}, flags: [{flags}], other coupler: {otherCoupler != null}, chainInteraction: {chainInteraction}");
             if(otherCoupler != null)
             {
-                Multiplayer.LogDebug(() => $"10A Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], coupler state: {coupler.state}, other coupler state: {otherCoupler.state}, coupler coupledTo: {coupler?.coupledTo?.train?.ID}, other coupledTo: {otherCoupler?.coupledTo?.train?.ID}");
-                var car = coupler.CoupleTo(otherCoupler, true);
+                Multiplayer.LogDebug(() => $"10A Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], coupler state: {coupler.state}, other coupler state: {otherCoupler.state}, coupler coupledTo: {coupler?.coupledTo?.train?.ID}, other coupledTo: {otherCoupler?.coupledTo?.train?.ID}, chainInteraction: {chainInteraction}");
+                var car = coupler.CoupleTo(otherCoupler, viaChainInteraction: chainInteraction);
+
+                /* fix for bug in vanilla game */
+                coupler.SetChainTight(true);
+                if (coupler.ChainScript.enabled)
+                {
+                    coupler.ChainScript.enabled = false;
+                    coupler.ChainScript.enabled = true;
+                }
+                /* end fix for bug */
+
                 Multiplayer.LogDebug(() => $"10B Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], result: {car != null}");
                 //todo: rework hose and MU interactions
             }
@@ -895,9 +947,22 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
         if (flags.HasFlag(CouplerInteractionType.UncoupleViaUI))
         {
-            Multiplayer.LogDebug(() => $"11 Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], coupler is front: {packet.IsFrontCoupler}, flags: {flags}");
-            CouplerLogic.Uncouple(coupler);
-            //todo: rework hose and MU interactions
+            //if hose connect also requested, then we want everything to disconnect, otherwise only disconnect the chain
+            bool chainInteraction = !flags.HasFlag(CouplerInteractionType.HoseDisconnect);
+
+            Multiplayer.LogDebug(() => $"11 Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], coupler is front: {packet.IsFrontCoupler}, flags: {flags}, chainInteraction: {chainInteraction}");
+            CouplerLogic.Uncouple(coupler,viaChainInteraction: chainInteraction);
+
+            /* fix for bug in vanilla game */
+            coupler.state = ChainCouplerInteraction.State.Parked;
+            if (coupler.ChainScript.enabled)
+            {
+                coupler.ChainScript.enabled = false;
+                coupler.ChainScript.enabled = true;
+            }
+            /* end fix for bug */
+
+            //todo: rework hose and MU interactions 
         }
 
         if (flags.HasFlag(CouplerInteractionType.CoupleViaRemote))
@@ -1058,6 +1123,32 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
         //Drop the chain
         coupler.ChainScript.fsm.Fire(ChainCouplerInteraction.Trigger.Dropped_By_Player);
+    }
+
+    public void Common_ReceivePaintThemeUpdate(TrainCarPaint.Target target, PaintTheme paint)
+    {
+        TrainCarPaint targetPaint = null;
+
+        if (target == TrainCarPaint.Target.Interior)
+        {
+            Multiplayer.LogWarning($"Received Paint Theme update for [{CurrentID}, {NetId}], targeting Interior");
+            targetPaint = TrainCar.PaintInterior;
+        }
+        else if (target == TrainCarPaint.Target.Exterior)
+        {
+            Multiplayer.LogWarning($"Received Paint Theme update for [{CurrentID}, {NetId}], targeting Exterior");
+            targetPaint = TrainCar.PaintExterior;
+        }
+
+        if (targetPaint == null || !targetPaint.IsSupported(paint))
+        {
+            Multiplayer.LogWarning($"Received Paint Theme update for [{CurrentID}, {NetId}], but {paint?.assetName} is not supported");
+            return;
+        }
+
+        targetPaint.currentTheme = paint;
+        targetPaint.UpdateTheme();
+        TrainCar.OnPaintThemeChanged(targetPaint);
     }
     #endregion
 

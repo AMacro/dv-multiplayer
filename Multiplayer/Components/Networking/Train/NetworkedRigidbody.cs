@@ -50,7 +50,7 @@ public class NetworkedRigidbody : TickedQueue<RigidbodySnapshot>
 
         try
         {
-            Multiplayer.LogDebug(() => $"NetworkedRigidBody.Process() {(IncludedData)snapshot.IncludedDataFlags}, {snapshot.Position.ToString() ?? "null"}, {snapshot.Rotation.ToString() ?? "null"}, {snapshot.Velocity.ToString() ?? "null"}, {snapshot.AngularVelocity.ToString() ?? "null"}, tick: {snapshotTick}");
+            //Multiplayer.LogDebug(() => $"NetworkedRigidBody.Process() {(IncludedData)snapshot.IncludedDataFlags}, {snapshot.Position.ToString() ?? "null"}, {snapshot.Rotation.ToString() ?? "null"}, {snapshot.Velocity.ToString() ?? "null"}, {snapshot.AngularVelocity.ToString() ?? "null"}, tick: {snapshotTick}");
             snapshot.Apply(rigidbody);
         }
         catch (Exception ex)

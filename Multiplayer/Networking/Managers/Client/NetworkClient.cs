@@ -41,6 +41,7 @@ using System.Linq;
 using LiteNetLib.Utils;
 using DV.UserManagement;
 using DV.Common;
+using DV.Customization.Paint;
 
 namespace Multiplayer.Networking.Managers.Client;
 
@@ -137,6 +138,7 @@ public class NetworkClient : NetworkManager
         netPacketProcessor.SubscribeReusable<CommonCockFiddlePacket>(OnCommonCockFiddlePacket);
         netPacketProcessor.SubscribeReusable<CommonBrakeCylinderReleasePacket>(OnCommonBrakeCylinderReleasePacket);
         netPacketProcessor.SubscribeReusable<CommonHandbrakePositionPacket>(OnCommonHandbrakePositionPacket);
+        netPacketProcessor.SubscribeReusable<CommonPaintThemePacket>(OnCommonPaintThemePacket);
         netPacketProcessor.SubscribeReusable<CommonTrainPortsPacket>(OnCommonSimFlowPacket);
         netPacketProcessor.SubscribeReusable<CommonTrainFusesPacket>(OnCommonTrainFusesPacket);
         netPacketProcessor.SubscribeReusable<ClientboundBrakeStateUpdatePacket>(OnClientboundBrakeStateUpdatePacket);
@@ -519,11 +521,11 @@ public class NetworkClient : NetworkManager
         //Protect other players from getting deleted in race conditions - this should be a temporary fix, if another playe's game object is deleted we should just recreate it
         if(networkedTrainCar == null || networkedTrainCar.gameObject == null || networkedTrainCar.TrainCar == null)
         {
-            LogDebug(() => $"OnClientboundDestroyTrainCarPacket({packet?.NetId}) networkedTrainCar: {networkedTrainCar != null}, go: {networkedTrainCar?.gameObject != null}, trainCar: {networkedTrainCar?.TrainCar != null}");
+            LogDebug(() => $"OnClientboundDestroyTrainCarPacket({packet?.NetId}) networkedTrainCar: {networkedTrainCar != null}, go: {(networkedTrainCar?.gameObject) != null}, trainCar: {networkedTrainCar?.TrainCar != null}");
         }
         else
         {
-            NetworkedPlayer[] componentsInChildren = networkedTrainCar?.GetComponentsInChildren<NetworkedPlayer>() ?? [];
+            NetworkedPlayer[] componentsInChildren = (networkedTrainCar?.gameObject != null) ? networkedTrainCar.GetComponentsInChildren<NetworkedPlayer>() : [];
 
             foreach (NetworkedPlayer networkedPlayer in componentsInChildren)
             {
@@ -586,20 +588,32 @@ public class NetworkClient : NetworkManager
 
     private void OnCommonHoseConnectedPacket(CommonHoseConnectedPacket packet)
     {
-        TrainCar otherTrainCar = null;
+        bool foundTrainCar = NetworkedTrainCar.GetTrainCar(packet.NetId, out TrainCar trainCar);
+        bool foundOtherTrainCar = NetworkedTrainCar.GetTrainCar(packet.OtherNetId, out TrainCar otherTrainCar);
 
-        if (!NetworkedTrainCar.GetTrainCar(packet.NetId, out TrainCar trainCar) || !NetworkedTrainCar.GetTrainCar(packet.OtherNetId, out otherTrainCar))
+        if (!foundTrainCar || trainCar == null ||
+            !foundOtherTrainCar || otherTrainCar == null)
         {
-            LogDebug(() => $"OnCommonHoseConnectedPacket() netId: {packet.NetId}, trainCar found?: {trainCar != null}, otherNetId: {packet.OtherNetId}, otherTrainCar found?: {otherTrainCar != null}");
+            LogError($"OnCommonHoseConnectedPacket() netId: {packet.NetId}, trainCar found: {foundTrainCar}, trainCar is null: {trainCar == null}, otherNetId: {packet.OtherNetId}, otherTrainCar found: {foundOtherTrainCar}, other trainCar is null:  {otherTrainCar == null}");
             return;
         }
 
-        LogDebug(() => $"OnCommonHoseConnectedPacket() netId: {packet.NetId}, trainCar: {trainCar.ID}, isFront: {packet.IsFront}, playAudio: {packet.PlayAudio}");
+        string carId = $"[{ trainCar?.ID}, { packet.NetId}]";
+        string otherCarId = $"[{ otherTrainCar?.ID}, { packet.OtherNetId}]";
+
+        LogDebug(() => $"OnCommonHoseConnectedPacket() trainCar: {carId}, isFront: {packet.IsFront}, otherTrainCar: {otherCarId}, isFront: {packet.OtherIsFront}, playAudio: {packet.PlayAudio}");
 
         Coupler coupler = packet.IsFront ? trainCar.frontCoupler : trainCar.rearCoupler;
         Coupler otherCoupler = packet.OtherIsFront ? otherTrainCar.frontCoupler : otherTrainCar.rearCoupler;
 
-        if (coupler == null || otherCoupler == null || coupler.hoseAndCock.IsHoseConnected || otherCoupler.hoseAndCock.IsHoseConnected)
+        if (coupler == null || coupler.hoseAndCock == null ||
+            otherCoupler == null || otherCoupler.hoseAndCock == null)
+        {
+            LogError($"OnCommonHoseConnectedPacket() trainCar: {carId}, coupler found: {coupler != null}, otherCoupler found: {otherCoupler != null}, hoseAndCock found: {coupler.hoseAndCock != null}, otherHoseAndCock found: {otherCoupler.hoseAndCock != null}");
+            return;
+        }
+
+        if (coupler.hoseAndCock.IsHoseConnected || otherCoupler.hoseAndCock.IsHoseConnected)
         {
             Coupler connectedTo = null;
             Coupler otherConnectedTo = null;
@@ -609,8 +623,8 @@ public class NetworkClient : NetworkManager
             if(otherCoupler?.hoseAndCock?.connectedTo != null)
                 NetworkedTrainCar.TryGetCoupler(otherCoupler.hoseAndCock.connectedTo, out otherConnectedTo);
 
-            LogWarning($"OnCommonHoseConnectedPacket() netId: {packet.NetId}, trainCar: {trainCar?.ID}, isFront: {packet.IsFront}, IsHoseConnected: {coupler?.hoseAndCock?.IsHoseConnected}, connectedTo: {connectedTo?.train?.ID}," +
-                       $" other trainCar: {otherTrainCar?.ID}, other isFront: {otherCoupler?.isFrontCoupler}, other IsHoseConnected: {otherCoupler?.hoseAndCock?.IsHoseConnected}, other connectedTo: {otherConnectedTo?.train?.ID}");
+            LogWarning($"OnCommonHoseConnectedPacket() trainCar: {carId}, isFront: {packet.IsFront}, IsHoseConnected: {coupler?.hoseAndCock?.IsHoseConnected}, connectedTo: {connectedTo?.train?.ID}," +
+                       $" otherTrainCar: {otherCarId}, other isFront: {otherCoupler?.isFrontCoupler}, other IsHoseConnected: {otherCoupler?.hoseAndCock?.IsHoseConnected}, other connectedTo: {otherConnectedTo?.train?.ID}");
         }
         else
         {
@@ -903,7 +917,7 @@ public class NetworkClient : NetworkManager
 
     private void OnClientboundJobValidateResponsePacket(ClientboundJobValidateResponsePacket packet)
     {
-        Log($"OnClientboundJobValidateResponsePacket() JobNetId: {packet.JobNetId}, Status: {packet.Invalid}");
+        Log($"Job validation response received JobNetId: {packet.JobNetId}, Status: {packet.Invalid}");
 
         if (!NetworkedJob.Get(packet.JobNetId, out NetworkedJob networkedJob))
             return;
@@ -946,6 +960,31 @@ public class NetworkClient : NetworkManager
         //});
 
         //NetworkedItemManager.Instance.ReceiveSnapshots(packet.Items, null);
+    }
+
+    private void OnCommonPaintThemePacket(CommonPaintThemePacket packet)
+    {
+        if (!NetworkedTrainCar.Get(packet.NetId, out NetworkedTrainCar netTrainCar))
+            return;
+
+        Log($"Received paint theme change for {netTrainCar?.CurrentID}");
+
+        PaintTheme paint = PaintThemeLookup.Instance.GetPaintTheme(packet.PaintThemeId);
+
+        if (paint == null)
+        {
+            LogWarning($"Paint theme index {packet.PaintThemeId} does not exist!");
+            return;
+        }
+
+        if (!Enum.IsDefined(typeof(TrainCarPaint.Target), packet.TargetArea))
+        {
+            LogWarning($"TrainCarPaint Target {packet.TargetArea} is not defined!");
+            return;
+        }
+
+        LogDebug(() => $"OnCommonPaintThemePacket() [{netTrainCar?.CurrentID}, {packet.NetId}], area: {(TrainCarPaint.Target)packet.TargetArea}, paint: [{paint?.assetName}, {packet.PaintThemeId}]");
+        netTrainCar?.Common_ReceivePaintThemeUpdate((TrainCarPaint.Target)packet.TargetArea, paint);
     }
 
     #endregion
@@ -1018,6 +1057,7 @@ public class NetworkClient : NetworkManager
     {
         ushort couplerNetId = coupler?.train?.GetNetId() ?? 0;
         ushort otherCouplerNetId = otherCoupler?.train?.GetNetId() ?? 0;
+        bool couplerIsFront = coupler?.isFrontCoupler ?? false;
         bool otherCouplerIsFront = otherCoupler?.isFrontCoupler ?? false;
 
         if (couplerNetId == 0)
@@ -1026,13 +1066,17 @@ public class NetworkClient : NetworkManager
             return;
         }
 
-        Log($"Sending coupler interaction {flags} for {coupler?.train?.ID}");
-        LogDebug(() => $"SendCouplerInteraction({flags}, {coupler?.train?.ID}, {otherCoupler?.train?.ID}) coupler isFront: {coupler?.isFrontCoupler}, otherCoupler isFront: {otherCouplerIsFront}");
+        LogDebug(() => $"SendCouplerInteraction([{flags}], {coupler?.train?.ID}, {otherCoupler?.train?.ID}) coupler isFront: {couplerIsFront}, otherCoupler isFront: {otherCouplerIsFront}");
+
+        if (coupler == null)
+            return;
+
+        Log($"Sending coupler interaction [{flags}] for {coupler?.train?.ID}, {(couplerIsFront ? "Front" : "Rear")}");
 
         SendPacketToServer(new CommonCouplerInteractionPacket
         {
             NetId = couplerNetId,
-            IsFrontCoupler = coupler.isFrontCoupler,
+            IsFrontCoupler = couplerIsFront,
             OtherNetId = otherCouplerNetId,
             IsFrontOtherCoupler = otherCouplerIsFront,
             Flags = (ushort)flags,
@@ -1289,6 +1333,11 @@ public class NetworkClient : NetworkManager
 
         SendNetSerializablePacketToServer(new CommonItemChangePacket { Items = items },
                 DeliveryMethod.ReliableOrdered);
+    }
+
+    public void SendPaintThemeChangePacket(ushort netId, byte targetArea, sbyte themeIndex)
+    {
+        SendPacketToServer(new CommonPaintThemePacket { NetId = netId, TargetArea = targetArea, PaintThemeId = themeIndex }, DeliveryMethod.ReliableUnordered);
     }
 
     #endregion

@@ -78,6 +78,8 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
         {
             if (scene.buildIndex != (int)DVScenes.MainMenu)
                 return;
+
+            playerList.UnRegisterListeners();
             TriggerMainMenuEventLater();
         };
         StartCoroutine(PollEvents());

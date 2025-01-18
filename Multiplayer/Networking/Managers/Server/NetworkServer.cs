@@ -113,11 +113,16 @@ public class NetworkServer : NetworkManager
 
     protected override void Subscribe()
     {
+        //Client management
         netPacketProcessor.SubscribeReusable<ServerboundClientLoginPacket, ConnectionRequest>(OnServerboundClientLoginPacket);
+
+        //World sync
         netPacketProcessor.SubscribeReusable<ServerboundClientReadyPacket, NetPeer>(OnServerboundClientReadyPacket);
         netPacketProcessor.SubscribeReusable<ServerboundSaveGameDataRequestPacket, NetPeer>(OnServerboundSaveGameDataRequestPacket);
-        netPacketProcessor.SubscribeReusable<ServerboundPlayerPositionPacket, NetPeer>(OnServerboundPlayerPositionPacket);
         netPacketProcessor.SubscribeReusable<ServerboundTimeAdvancePacket, NetPeer>(OnServerboundTimeAdvancePacket);
+
+
+        netPacketProcessor.SubscribeReusable<ServerboundPlayerPositionPacket, NetPeer>(OnServerboundPlayerPositionPacket);
         netPacketProcessor.SubscribeReusable<ServerboundTrainSyncRequestPacket>(OnServerboundTrainSyncRequestPacket);
         netPacketProcessor.SubscribeReusable<ServerboundTrainDeleteRequestPacket, NetPeer>(OnServerboundTrainDeleteRequestPacket);
         netPacketProcessor.SubscribeReusable<ServerboundTrainRerailRequestPacket, NetPeer>(OnServerboundTrainRerailRequestPacket);
@@ -134,6 +139,7 @@ public class NetworkServer : NetworkManager
         netPacketProcessor.SubscribeReusable<CommonCockFiddlePacket, NetPeer>(OnCommonCockFiddlePacket);
         netPacketProcessor.SubscribeReusable<CommonBrakeCylinderReleasePacket, NetPeer>(OnCommonBrakeCylinderReleasePacket);
         netPacketProcessor.SubscribeReusable<CommonHandbrakePositionPacket, NetPeer>(OnCommonHandbrakePositionPacket);
+        netPacketProcessor.SubscribeReusable<CommonPaintThemePacket, NetPeer>(OnCommonPaintThemePacket);
         netPacketProcessor.SubscribeReusable<ServerboundAddCoalPacket, NetPeer>(OnServerboundAddCoalPacket);
         netPacketProcessor.SubscribeReusable<ServerboundFireboxIgnitePacket, NetPeer>(OnServerboundFireboxIgnitePacket);
         netPacketProcessor.SubscribeReusable<CommonTrainPortsPacket, NetPeer>(OnCommonTrainPortsPacket);
@@ -908,6 +914,11 @@ public class NetworkServer : NetworkManager
     }
 
     private void OnCommonHandbrakePositionPacket(CommonHandbrakePositionPacket packet, NetPeer peer)
+    {
+        SendPacketToAll(packet, DeliveryMethod.ReliableOrdered, peer);
+    }
+
+    private void OnCommonPaintThemePacket(CommonPaintThemePacket packet, NetPeer peer)
     {
         SendPacketToAll(packet, DeliveryMethod.ReliableOrdered, peer);
     }

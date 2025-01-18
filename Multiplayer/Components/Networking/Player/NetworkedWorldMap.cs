@@ -9,7 +9,7 @@ public class NetworkedMapMarkersController : MonoBehaviour
 {
     private MapMarkersController markersController;
     private GameObject textPrefab;
-    private readonly Dictionary<byte, WorldMapIndicatorRefs> playerIndicators = new();
+    private readonly Dictionary<byte, WorldMapIndicatorRefs> playerIndicators = [];
 
     private void Awake()
     {
@@ -82,12 +82,27 @@ public class NetworkedMapMarkersController : MonoBehaviour
 
     public void UpdatePlayers()
     {
+        if (playerIndicators == null)
+        {
+            Multiplayer.LogDebug(() => $"NetworkedWorldMap.UpdatePlayers() playerIndicators: {playerIndicators != null}, count: {playerIndicators?.Count}");
+            return;
+        }
+
         foreach (KeyValuePair<byte, WorldMapIndicatorRefs> kvp in playerIndicators)
         {
+            if(kvp.Value == null)
+                Multiplayer.LogDebug(() => $"NetworkedWorldMap.UpdatePlayers() key: {kvp.Key}, value is null: {kvp.Value == null}");
+
             if (!NetworkLifecycle.Instance.Client.ClientPlayerManager.TryGetPlayer(kvp.Key, out NetworkedPlayer networkedPlayer))
             {
                 Multiplayer.LogWarning($"Player indicator for {kvp.Key} exists but {nameof(NetworkedPlayer)} does not!");
                 OnPlayerDisconnected(kvp.Key, null);
+                continue;
+            }
+
+            if(kvp.Value == null)
+            {
+                Multiplayer.LogWarning($"NetworkedWorldMap.UpdatePlayers() key: {kvp.Key}, value is null skipping");
                 continue;
             }
 
@@ -97,7 +112,10 @@ public class NetworkedMapMarkersController : MonoBehaviour
             if (refs.gameObject.activeSelf != active)
                 refs.gameObject.SetActive(active);
             if (!active)
+            {
+                Multiplayer.LogDebug(() => $"NetworkedWorldMap.UpdatePlayers() key: {kvp.Key}, is NOT active");
                 return;
+            }
 
             Transform playerTransform = networkedPlayer.transform;
 
