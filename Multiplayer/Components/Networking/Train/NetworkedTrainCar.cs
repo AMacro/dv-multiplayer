@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using DV.Customization.Paint;
 using DV.MultipleUnit;
 using DV.Simulation.Brake;
 using DV.Simulation.Cars;
@@ -188,7 +189,11 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
          
         brakeSystem.HandbrakePositionChanged += Common_OnHandbrakePositionChanged;
         brakeSystem.BrakeCylinderReleased += Common_OnBrakeCylinderReleased;
-        
+
+        if (TrainCar.PaintExterior != null)
+            TrainCar.PaintExterior.OnThemeChanged += Common_OnPaintThemeChange;
+        if (TrainCar.PaintInterior != null)
+            TrainCar.PaintInterior.OnThemeChanged += Common_OnPaintThemeChange;
 
         NetworkLifecycle.Instance.OnTick += Common_OnTick;
         if (NetworkLifecycle.Instance.IsHost())
@@ -241,6 +246,11 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             brakeSystem.HandbrakePositionChanged -= Common_OnHandbrakePositionChanged;
             brakeSystem.BrakeCylinderReleased -= Common_OnBrakeCylinderReleased;
         }
+
+        if(TrainCar.PaintExterior != null)
+            TrainCar.PaintExterior.OnThemeChanged -= Common_OnPaintThemeChange;
+        if (TrainCar.PaintInterior != null)
+            TrainCar.PaintInterior.OnThemeChanged -= Common_OnPaintThemeChange;
 
         if (NetworkLifecycle.Instance.IsHost())
         {
@@ -703,6 +713,20 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         dirtyPorts.Add(port.id);
     }
 
+    private void Common_OnPaintThemeChange(TrainCarPaint paintController)
+    {
+        if(paintController == null)
+            return;
+
+        Multiplayer.LogDebug(() => $"Common_OnPaintThemeChange() target: {paintController.TargetArea}, theme: {paintController.CurrentTheme.name}");
+
+        byte target = (byte)paintController.TargetArea;
+        var theme = PaintThemeLookup.Instance.GetThemeIndex(paintController.CurrentTheme);
+
+        Multiplayer.LogDebug(() => $"Common_OnPaintThemeChange() sending [{CurrentID},{NetId}], target: {paintController.TargetArea}, theme: [{paintController.CurrentTheme.name},{theme}]");
+        NetworkLifecycle.Instance?.Client.SendPaintThemeChangePacket(NetId,target,theme);
+    }
+
     private void Common_OnFuseUpdated(Fuse fuse)
     {
         if (UnloadWatcher.isUnloading || NetworkLifecycle.Instance.IsProcessingPacket)
@@ -1096,6 +1120,32 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
         //Drop the chain
         coupler.ChainScript.fsm.Fire(ChainCouplerInteraction.Trigger.Dropped_By_Player);
+    }
+
+    public void Common_ReceivePaintThemeUpdate(TrainCarPaint.Target target, PaintTheme paint)
+    {
+        TrainCarPaint targetPaint = null;
+
+        if (target == TrainCarPaint.Target.Interior)
+        {
+            Multiplayer.LogWarning($"Received Paint Theme update for [{CurrentID}, {NetId}], targeting Interior");
+            targetPaint = TrainCar.PaintInterior;
+        }
+        else if (target == TrainCarPaint.Target.Exterior)
+        {
+            Multiplayer.LogWarning($"Received Paint Theme update for [{CurrentID}, {NetId}], targeting Exterior");
+            targetPaint = TrainCar.PaintExterior;
+        }
+
+        if (targetPaint == null || !targetPaint.IsSupported(paint))
+        {
+            Multiplayer.LogWarning($"Received Paint Theme update for [{CurrentID}, {NetId}], but {paint?.assetName} is not supported");
+            return;
+        }
+
+        targetPaint.currentTheme = paint;
+        targetPaint.UpdateTheme();
+        TrainCar.OnPaintThemeChanged(targetPaint);
     }
     #endregion
 

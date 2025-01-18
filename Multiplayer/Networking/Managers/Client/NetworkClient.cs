@@ -41,6 +41,7 @@ using System.Linq;
 using LiteNetLib.Utils;
 using DV.UserManagement;
 using DV.Common;
+using DV.Customization.Paint;
 
 namespace Multiplayer.Networking.Managers.Client;
 
@@ -137,6 +138,7 @@ public class NetworkClient : NetworkManager
         netPacketProcessor.SubscribeReusable<CommonCockFiddlePacket>(OnCommonCockFiddlePacket);
         netPacketProcessor.SubscribeReusable<CommonBrakeCylinderReleasePacket>(OnCommonBrakeCylinderReleasePacket);
         netPacketProcessor.SubscribeReusable<CommonHandbrakePositionPacket>(OnCommonHandbrakePositionPacket);
+        netPacketProcessor.SubscribeReusable<CommonPaintThemePacket>(OnCommonPaintThemePacket);
         netPacketProcessor.SubscribeReusable<CommonTrainPortsPacket>(OnCommonSimFlowPacket);
         netPacketProcessor.SubscribeReusable<CommonTrainFusesPacket>(OnCommonTrainFusesPacket);
         netPacketProcessor.SubscribeReusable<ClientboundBrakeStateUpdatePacket>(OnClientboundBrakeStateUpdatePacket);
@@ -915,7 +917,7 @@ public class NetworkClient : NetworkManager
 
     private void OnClientboundJobValidateResponsePacket(ClientboundJobValidateResponsePacket packet)
     {
-        Log($"OnClientboundJobValidateResponsePacket() JobNetId: {packet.JobNetId}, Status: {packet.Invalid}");
+        Log($"Job validation response received JobNetId: {packet.JobNetId}, Status: {packet.Invalid}");
 
         if (!NetworkedJob.Get(packet.JobNetId, out NetworkedJob networkedJob))
             return;
@@ -958,6 +960,31 @@ public class NetworkClient : NetworkManager
         //});
 
         //NetworkedItemManager.Instance.ReceiveSnapshots(packet.Items, null);
+    }
+
+    private void OnCommonPaintThemePacket(CommonPaintThemePacket packet)
+    {
+        if (!NetworkedTrainCar.Get(packet.NetId, out NetworkedTrainCar netTrainCar))
+            return;
+
+        Log($"Received paint theme change for {netTrainCar?.CurrentID}");
+
+        PaintTheme paint = PaintThemeLookup.Instance.GetPaintTheme(packet.PaintThemeId);
+
+        if (paint == null)
+        {
+            LogWarning($"Paint theme index {packet.PaintThemeId} does not exist!");
+            return;
+        }
+
+        if (!Enum.IsDefined(typeof(TrainCarPaint.Target), packet.TargetArea))
+        {
+            LogWarning($"TrainCarPaint Target {packet.TargetArea} is not defined!");
+            return;
+        }
+
+        LogDebug(() => $"OnCommonPaintThemePacket() [{netTrainCar?.CurrentID}, {packet.NetId}], area: {(TrainCarPaint.Target)packet.TargetArea}, paint: [{paint?.assetName}, {packet.PaintThemeId}]");
+        netTrainCar?.Common_ReceivePaintThemeUpdate((TrainCarPaint.Target)packet.TargetArea, paint);
     }
 
     #endregion
@@ -1306,6 +1333,11 @@ public class NetworkClient : NetworkManager
 
         SendNetSerializablePacketToServer(new CommonItemChangePacket { Items = items },
                 DeliveryMethod.ReliableOrdered);
+    }
+
+    public void SendPaintThemeChangePacket(ushort netId, byte targetArea, sbyte themeIndex)
+    {
+        SendPacketToServer(new CommonPaintThemePacket { NetId = netId, TargetArea = targetArea, PaintThemeId = themeIndex }, DeliveryMethod.ReliableUnordered);
     }
 
     #endregion
