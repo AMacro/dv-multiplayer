@@ -100,6 +100,7 @@ If you'd like to help with translations, please create a pull request or send a 
 | :------------ | :------------ 
 | Ádi | Hungarian   |
 | My Name Is BorING | Chinese (Simplified) |
+| Harfeur | French |
 
 
 
