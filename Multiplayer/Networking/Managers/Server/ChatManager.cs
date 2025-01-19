@@ -4,6 +4,7 @@ using System.Linq;
 using Multiplayer.Networking.Data;
 using System.Text.RegularExpressions;
 using UnityEngine;
+using Multiplayer.Networking.TransportLayers;
 
 namespace Multiplayer.Networking.Managers.Server;
 
@@ -23,7 +24,7 @@ public static class ChatManager
     public const string MESSAGE_COLOUR_SERVER = "9CDCFE";
     public const string MESSAGE_COLOUR_HELP = "00FF00";
 
-    public static void ProcessMessage(string message, NetPeer sender)
+    public static void ProcessMessage(string message, ITransportPeer sender)
     {
 
         if (message == null || message == string.Empty)
@@ -89,7 +90,7 @@ public static class ChatManager
         ChatMessage(message, player.Username, sender);
     }
 
-    private static void ChatMessage(string message, string sender, NetPeer peer)
+    private static void ChatMessage(string message, string sender, ITransportPeer peer)
     {
         //clean up the message to stop format injection
         message = Regex.Replace(message, "</noparse>", string.Empty, RegexOptions.IgnoreCase);
@@ -98,7 +99,7 @@ public static class ChatManager
         NetworkLifecycle.Instance.Server.SendChat(message, peer);
     }
 
-    public static void ServerMessage(string message, NetPeer sender, NetPeer exclude = null, int commandLength =-1)
+    public static void ServerMessage(string message, ITransportPeer sender, ITransportPeer exclude = null, int commandLength =-1)
     {
         //If user is not the host, we should ignore - will require changes for dedicated server
         if (sender !=null && !NetworkLifecycle.Instance.IsHost(sender))
@@ -114,9 +115,9 @@ public static class ChatManager
         NetworkLifecycle.Instance.Server.SendChat(message, exclude);
     }
 
-    private static void WhisperMessage(string message, int commandLength, string senderName, NetPeer sender)
+    private static void WhisperMessage(string message, int commandLength, string senderName, ITransportPeer sender)
     {
-        NetPeer recipient;
+        ITransportPeer recipient;
         string recipientName;
 
         Multiplayer.Log($"Whispering: \"{message}\", sender: {senderName}, senderID: {sender?.Id}");
@@ -171,9 +172,9 @@ public static class ChatManager
         NetworkLifecycle.Instance.Server.SendWhisper(message, recipient);
     }
 
-    public static void KickMessage(string message, int commandLength, string senderName, NetPeer sender)
+    public static void KickMessage(string message, int commandLength, string senderName, ITransportPeer sender)
     {
-        NetPeer player;
+        ITransportPeer player;
         string playerName;
 
         //If user is not the host, we should ignore - will require changes for dedicated server
@@ -204,7 +205,7 @@ public static class ChatManager
         NetworkLifecycle.Instance.Server.SendWhisper(message, sender);
     }
 
-    private static void HelpMessage(NetPeer peer)
+    private static void HelpMessage(ITransportPeer peer)
     {
         string message = $"<color=#{MESSAGE_COLOUR_HELP}>{Locale.CHAT_HELP_AVAILABLE}" +
 
@@ -243,7 +244,7 @@ public static class ChatManager
     }
 
 
-    private static NetPeer NetPeerFromName(string peerName)
+    private static ITransportPeer NetPeerFromName(string peerName)
     {
      
         if(peerName == null || peerName == string.Empty)
@@ -253,7 +254,7 @@ public static class ChatManager
         if (player == null)
             return null;
 
-        if(NetworkLifecycle.Instance.Server.TryGetNetPeer(player.Id, out NetPeer peer))
+        if(NetworkLifecycle.Instance.Server.TryGetPeer(player.Id, out ITransportPeer peer))
         {
             return peer;
         }

@@ -19,17 +19,37 @@ public interface ITransport
     void UpdateSettings(Settings settings);
 
     // Connection management
-    NetPeer Connect(string address, int port, NetDataWriter data);
-    void Send(NetPeer peer, NetDataWriter writer, DeliveryMethod deliveryMethod);
+    ITransportPeer Connect(string address, int port, NetDataWriter data);
+    void Send(ITransportPeer peer, NetDataWriter writer, DeliveryMethod deliveryMethod);
 
     // Events
-    event Action<NetDataReader, ConnectionRequest> OnConnectionRequest;
-    event Action<NetPeer> OnPeerConnected;
-    event Action<NetPeer, DisconnectInfo> OnPeerDisconnected;
-    event Action<NetPeer, NetPacketReader, byte, DeliveryMethod> OnNetworkReceive;
+    event Action<NetDataReader, IConnectionRequest> OnConnectionRequest;
+    event Action<ITransportPeer> OnPeerConnected;
+    event Action<ITransportPeer, DisconnectInfo> OnPeerDisconnected;
+    event Action<ITransportPeer, NetDataReader, byte, DeliveryMethod> OnNetworkReceive;
     event Action<IPEndPoint, SocketError> OnNetworkError;
-
-
+    event Action<ITransportPeer, int> OnNetworkLatencyUpdate;
 }
 
+public interface IConnectionRequest
+{
+    ITransportPeer Accept();
+    void Reject(NetDataWriter data = null);
+    IPEndPoint RemoteEndPoint { get; }
+}
 
+public interface ITransportPeer
+{
+    int Id { get; }
+    TransportConnectionState ConnectionState { get; }
+    void Send(NetDataWriter writer, DeliveryMethod deliveryMethod);
+    void Disconnect(NetDataWriter data = null);
+}
+
+public enum TransportConnectionState
+{
+    Connected,
+    Connecting,
+    Disconnected,
+    Disconnecting
+}

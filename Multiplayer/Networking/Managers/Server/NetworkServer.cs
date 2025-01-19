@@ -42,9 +42,9 @@ public class NetworkServer : NetworkManager
     public Action<uint> PlayerDisconnect;
     protected override string LogPrefix => "[Server]";
 
-    private readonly Queue<NetPeer> joinQueue = new();
+    private readonly Queue<ITransportPeer> joinQueue = new();
     private readonly Dictionary<byte, ServerPlayer> serverPlayers = [];
-    private readonly Dictionary<byte, NetPeer> netPeers = [];
+    private readonly Dictionary<byte, ITransportPeer> Peers = [];
 
     private LobbyServerManager lobbyServerManager;
     public bool isSinglePlayer;
@@ -54,7 +54,7 @@ public class NetworkServer : NetworkManager
     public IReadOnlyCollection<ServerPlayer> ServerPlayers => serverPlayers.Values;
     public int PlayerCount => ServerPlayers.Count;
 
-    private static NetPeer SelfPeer => NetworkLifecycle.Instance.Client?.SelfPeer;
+    private static ITransportPeer SelfPeer => NetworkLifecycle.Instance.Client?.SelfPeer;
     public static byte SelfId => (byte)SelfPeer.Id;
     private readonly ModInfo[] serverMods;
 
@@ -112,40 +112,40 @@ public class NetworkServer : NetworkManager
     protected override void Subscribe()
     {
         //Client management
-        netPacketProcessor.SubscribeReusable<ServerboundClientLoginPacket, ConnectionRequest>(OnServerboundClientLoginPacket);
+        netPacketProcessor.SubscribeReusable<ServerboundClientLoginPacket, IConnectionRequest>(OnServerboundClientLoginPacket);
 
         //World sync
-        netPacketProcessor.SubscribeReusable<ServerboundClientReadyPacket, NetPeer>(OnServerboundClientReadyPacket);
-        netPacketProcessor.SubscribeReusable<ServerboundSaveGameDataRequestPacket, NetPeer>(OnServerboundSaveGameDataRequestPacket);
-        netPacketProcessor.SubscribeReusable<ServerboundTimeAdvancePacket, NetPeer>(OnServerboundTimeAdvancePacket);
+        netPacketProcessor.SubscribeReusable<ServerboundClientReadyPacket, ITransportPeer>(OnServerboundClientReadyPacket);
+        netPacketProcessor.SubscribeReusable<ServerboundSaveGameDataRequestPacket, ITransportPeer>(OnServerboundSaveGameDataRequestPacket);
+        netPacketProcessor.SubscribeReusable<ServerboundTimeAdvancePacket, ITransportPeer>(OnServerboundTimeAdvancePacket);
 
 
-        netPacketProcessor.SubscribeReusable<ServerboundPlayerPositionPacket, NetPeer>(OnServerboundPlayerPositionPacket);
+        netPacketProcessor.SubscribeReusable<ServerboundPlayerPositionPacket, ITransportPeer>(OnServerboundPlayerPositionPacket);
         netPacketProcessor.SubscribeReusable<ServerboundTrainSyncRequestPacket>(OnServerboundTrainSyncRequestPacket);
-        netPacketProcessor.SubscribeReusable<ServerboundTrainDeleteRequestPacket, NetPeer>(OnServerboundTrainDeleteRequestPacket);
-        netPacketProcessor.SubscribeReusable<ServerboundTrainRerailRequestPacket, NetPeer>(OnServerboundTrainRerailRequestPacket);
-        netPacketProcessor.SubscribeReusable<ServerboundLicensePurchaseRequestPacket, NetPeer>(OnServerboundLicensePurchaseRequestPacket);
-        netPacketProcessor.SubscribeReusable<CommonChangeJunctionPacket, NetPeer>(OnCommonChangeJunctionPacket);
-        netPacketProcessor.SubscribeReusable<CommonRotateTurntablePacket, NetPeer>(OnCommonRotateTurntablePacket);
-        netPacketProcessor.SubscribeReusable<CommonCouplerInteractionPacket, NetPeer>(OnCommonCouplerInteractionPacket);
-        netPacketProcessor.SubscribeReusable<CommonTrainCouplePacket, NetPeer>(OnCommonTrainCouplePacket);
-        netPacketProcessor.SubscribeReusable<CommonTrainUncouplePacket, NetPeer>(OnCommonTrainUncouplePacket);
-        netPacketProcessor.SubscribeReusable<CommonHoseConnectedPacket, NetPeer>(OnCommonHoseConnectedPacket);
-        netPacketProcessor.SubscribeReusable<CommonHoseDisconnectedPacket, NetPeer>(OnCommonHoseDisconnectedPacket);
-        netPacketProcessor.SubscribeReusable<CommonMuConnectedPacket, NetPeer>(OnCommonMuConnectedPacket);
-        netPacketProcessor.SubscribeReusable<CommonMuDisconnectedPacket, NetPeer>(OnCommonMuDisconnectedPacket);
-        netPacketProcessor.SubscribeReusable<CommonCockFiddlePacket, NetPeer>(OnCommonCockFiddlePacket);
-        netPacketProcessor.SubscribeReusable<CommonBrakeCylinderReleasePacket, NetPeer>(OnCommonBrakeCylinderReleasePacket);
-        netPacketProcessor.SubscribeReusable<CommonHandbrakePositionPacket, NetPeer>(OnCommonHandbrakePositionPacket);
-        netPacketProcessor.SubscribeReusable<CommonPaintThemePacket, NetPeer>(OnCommonPaintThemePacket);
-        netPacketProcessor.SubscribeReusable<ServerboundAddCoalPacket, NetPeer>(OnServerboundAddCoalPacket);
-        netPacketProcessor.SubscribeReusable<ServerboundFireboxIgnitePacket, NetPeer>(OnServerboundFireboxIgnitePacket);
-        netPacketProcessor.SubscribeReusable<CommonTrainPortsPacket, NetPeer>(OnCommonTrainPortsPacket);
-        netPacketProcessor.SubscribeReusable<CommonTrainFusesPacket, NetPeer>(OnCommonTrainFusesPacket);
-        netPacketProcessor.SubscribeReusable<ServerboundJobValidateRequestPacket, NetPeer>(OnServerboundJobValidateRequestPacket);
-        netPacketProcessor.SubscribeReusable<CommonChatPacket, NetPeer>(OnCommonChatPacket);
+        netPacketProcessor.SubscribeReusable<ServerboundTrainDeleteRequestPacket, ITransportPeer>(OnServerboundTrainDeleteRequestPacket);
+        netPacketProcessor.SubscribeReusable<ServerboundTrainRerailRequestPacket, ITransportPeer>(OnServerboundTrainRerailRequestPacket);
+        netPacketProcessor.SubscribeReusable<ServerboundLicensePurchaseRequestPacket, ITransportPeer>(OnServerboundLicensePurchaseRequestPacket);
+        netPacketProcessor.SubscribeReusable<CommonChangeJunctionPacket, ITransportPeer>(OnCommonChangeJunctionPacket);
+        netPacketProcessor.SubscribeReusable<CommonRotateTurntablePacket, ITransportPeer>(OnCommonRotateTurntablePacket);
+        netPacketProcessor.SubscribeReusable<CommonCouplerInteractionPacket, ITransportPeer>(OnCommonCouplerInteractionPacket);
+        netPacketProcessor.SubscribeReusable<CommonTrainCouplePacket, ITransportPeer>(OnCommonTrainCouplePacket);
+        netPacketProcessor.SubscribeReusable<CommonTrainUncouplePacket, ITransportPeer>(OnCommonTrainUncouplePacket);
+        netPacketProcessor.SubscribeReusable<CommonHoseConnectedPacket, ITransportPeer>(OnCommonHoseConnectedPacket);
+        netPacketProcessor.SubscribeReusable<CommonHoseDisconnectedPacket, ITransportPeer>(OnCommonHoseDisconnectedPacket);
+        netPacketProcessor.SubscribeReusable<CommonMuConnectedPacket, ITransportPeer>(OnCommonMuConnectedPacket);
+        netPacketProcessor.SubscribeReusable<CommonMuDisconnectedPacket, ITransportPeer>(OnCommonMuDisconnectedPacket);
+        netPacketProcessor.SubscribeReusable<CommonCockFiddlePacket, ITransportPeer>(OnCommonCockFiddlePacket);
+        netPacketProcessor.SubscribeReusable<CommonBrakeCylinderReleasePacket, ITransportPeer>(OnCommonBrakeCylinderReleasePacket);
+        netPacketProcessor.SubscribeReusable<CommonHandbrakePositionPacket, ITransportPeer>(OnCommonHandbrakePositionPacket);
+        netPacketProcessor.SubscribeReusable<CommonPaintThemePacket, ITransportPeer>(OnCommonPaintThemePacket);
+        netPacketProcessor.SubscribeReusable<ServerboundAddCoalPacket, ITransportPeer>(OnServerboundAddCoalPacket);
+        netPacketProcessor.SubscribeReusable<ServerboundFireboxIgnitePacket, ITransportPeer>(OnServerboundFireboxIgnitePacket);
+        netPacketProcessor.SubscribeReusable<CommonTrainPortsPacket, ITransportPeer>(OnCommonTrainPortsPacket);
+        netPacketProcessor.SubscribeReusable<CommonTrainFusesPacket, ITransportPeer>(OnCommonTrainFusesPacket);
+        netPacketProcessor.SubscribeReusable<ServerboundJobValidateRequestPacket, ITransportPeer>(OnServerboundJobValidateRequestPacket);
+        netPacketProcessor.SubscribeReusable<CommonChatPacket, ITransportPeer>(OnCommonChatPacket);
         netPacketProcessor.SubscribeReusable<UnconnectedPingPacket, IPEndPoint>(OnUnconnectedPingPacket);
-        netPacketProcessor.SubscribeNetSerializable<CommonItemChangePacket, NetPeer>(OnCommonItemChangePacket);
+        netPacketProcessor.SubscribeNetSerializable<CommonItemChangePacket, ITransportPeer>(OnCommonItemChangePacket);
     }
 
     private void OnLoaded()
@@ -161,10 +161,10 @@ public class NetworkServer : NetworkManager
 
         while (joinQueue.Count > 0)
         {
-            NetPeer peer = joinQueue.Dequeue();
+            ITransportPeer peer = joinQueue.Dequeue();
 
             // Assuming the `peer.ConnectionState` property exists and is being checked
-            if (peer.ConnectionState.Equals(LiteNetLib.ConnectionState.Connected))
+            if (peer.ConnectionState.Equals(TransportConnectionState.Connected))
             {
                 System.Console.WriteLine("Connection is established.");
                 OnServerboundClientReadyPacket(null, peer);
@@ -176,7 +176,7 @@ public class NetworkServer : NetworkManager
         }
     }
 
-    public bool TryGetServerPlayer(NetPeer peer, out ServerPlayer player)
+    public bool TryGetServerPlayer(ITransportPeer peer, out ServerPlayer player)
     {
         return serverPlayers.TryGetValue((byte)peer.Id, out player);
     }
@@ -185,18 +185,18 @@ public class NetworkServer : NetworkManager
         return serverPlayers.TryGetValue(id, out player);
     }
 
-    public bool TryGetNetPeer(byte id, out NetPeer peer)
+    public bool TryGetPeer(byte id, out ITransportPeer peer)
     {
-        return netPeers.TryGetValue(id, out peer);
+        return Peers.TryGetValue(id, out peer);
     }
 
     #region Net Events
 
-    public override void OnPeerConnected(NetPeer peer)
+    public override void OnPeerConnected(ITransportPeer peer)
     {
     }
 
-    public override void OnPeerDisconnected(NetPeer peer, DisconnectInfo disconnectInfo)
+    public override void OnPeerDisconnected(ITransportPeer peer, DisconnectInfo disconnectInfo)
     {
         byte id = (byte)peer.Id;
         Log($"Player {(serverPlayers.TryGetValue(id, out ServerPlayer player) ? player : id)} disconnected: {disconnectInfo.Reason}");
@@ -205,7 +205,7 @@ public class NetworkServer : NetworkManager
             SaveGameManager.Instance.UpdateInternalData();
 
         serverPlayers.Remove(id);
-        netPeers.Remove(id);
+        Peers.Remove(id);
         SendPacketToAll(WritePacket(new ClientboundPlayerDisconnectPacket
         {
             Id = id
@@ -214,7 +214,7 @@ public class NetworkServer : NetworkManager
         PlayerDisconnect?.Invoke(id);
     }
 
-    public override void OnNetworkLatencyUpdate(NetPeer peer, int latency)
+    public override void OnNetworkLatencyUpdate(ITransportPeer peer, int latency)
     {
         ClientboundPingUpdatePacket clientboundPingUpdatePacket = new()
         {
@@ -230,10 +230,10 @@ public class NetworkServer : NetworkManager
         }, DeliveryMethod.ReliableUnordered);
     }
 
-    public override void OnConnectionRequest(NetDataReader requestData, ConnectionRequest request)
+    public override void OnConnectionRequest(NetDataReader requestData, IConnectionRequest request)
     {
         LogDebug(() => $"NetworkServer OnConnectionRequest");
-        netPacketProcessor.ReadAllPackets(request.Data, request);
+        netPacketProcessor.ReadAllPackets(requestData, request);
     }
 
     #endregion
@@ -243,14 +243,14 @@ public class NetworkServer : NetworkManager
     private void SendPacketToAll<T>(T packet, DeliveryMethod deliveryMethod) where T : class, new()
     {
         NetDataWriter writer = WritePacket(packet);
-        foreach (KeyValuePair<byte, NetPeer> kvp in netPeers)
+        foreach (KeyValuePair<byte, ITransportPeer> kvp in Peers)
             kvp.Value.Send(writer, deliveryMethod);
     }
 
-    private void SendPacketToAll<T>(T packet, DeliveryMethod deliveryMethod, NetPeer excludePeer) where T : class, new()
+    private void SendPacketToAll<T>(T packet, DeliveryMethod deliveryMethod, ITransportPeer excludePeer) where T : class, new()
     {
         NetDataWriter writer = WritePacket(packet);
-        foreach (KeyValuePair<byte, NetPeer> kvp in netPeers)
+        foreach (KeyValuePair<byte, ITransportPeer> kvp in Peers)
         {
             if (kvp.Key == excludePeer.Id)
                 continue;
@@ -260,14 +260,14 @@ public class NetworkServer : NetworkManager
     private void SendNetSerializablePacketToAll<T>(T packet, DeliveryMethod deliveryMethod) where T : INetSerializable, new()
     {
         NetDataWriter writer = WriteNetSerializablePacket(packet);
-        foreach (KeyValuePair<byte, NetPeer> kvp in netPeers)
+        foreach (KeyValuePair<byte, ITransportPeer> kvp in Peers)
             kvp.Value.Send(writer, deliveryMethod);
     }
 
-    private void SendNetSerializablePacketToAll<T>(T packet, DeliveryMethod deliveryMethod, NetPeer excludePeer) where T : INetSerializable, new()
+    private void SendNetSerializablePacketToAll<T>(T packet, DeliveryMethod deliveryMethod, ITransportPeer excludePeer) where T : INetSerializable, new()
     {
         NetDataWriter writer = WriteNetSerializablePacket(packet);
-        foreach (KeyValuePair<byte, NetPeer> kvp in netPeers)
+        foreach (KeyValuePair<byte, ITransportPeer> kvp in Peers)
         {
             if (kvp.Key == excludePeer.Id)
                 continue;
@@ -275,7 +275,7 @@ public class NetworkServer : NetworkManager
         }
     }
 
-    public void KickPlayer(NetPeer peer)
+    public void KickPlayer(ITransportPeer peer)
     {
         peer.Disconnect(WritePacket(new ClientboundPlayerKickPacket()));
     }
@@ -284,7 +284,7 @@ public class NetworkServer : NetworkManager
         SendPacketToAll(ClientboundGameParamsPacket.FromGameParams(gameParams), DeliveryMethod.ReliableOrdered, SelfPeer);
     }
 
-    public void SendSpawnTrainset(List<TrainCar> set, bool autoCouple, bool sendToAll, NetPeer sendTo = null)
+    public void SendSpawnTrainset(List<TrainCar> set, bool autoCouple, bool sendToAll, ITransportPeer sendTo = null)
     {
 
         LogDebug(() =>
@@ -320,7 +320,7 @@ public class NetworkServer : NetworkManager
         SendPacketToAll(ClientboundSpawnTrainCarPacket.FromTrainCar(networkedTrainCar), DeliveryMethod.ReliableOrdered, SelfPeer);
     }
 
-    public void SendDestroyTrainCar(ushort netId, NetPeer peer = null)
+    public void SendDestroyTrainCar(ushort netId, ITransportPeer peer = null)
     {
         //ushort netID = trainCar.GetNetId();
         LogDebug(() => $"SendDestroyTrainCar({netId})");
@@ -457,7 +457,7 @@ public class NetworkServer : NetworkManager
         }, DeliveryMethod.ReliableUnordered, SelfPeer);
     }
 
-    public void SendJobsCreatePacket(NetworkedStationController networkedStation, NetworkedJob[] jobs, NetPeer peer = null)
+    public void SendJobsCreatePacket(NetworkedStationController networkedStation, NetworkedJob[] jobs, ITransportPeer peer = null)
     {
         Multiplayer.Log($"Sending JobsCreatePacket for stationNetId {networkedStation.NetId} with {jobs.Count()} jobs");
 
@@ -479,14 +479,14 @@ public class NetworkServer : NetworkManager
     {
         Multiplayer.Log($"Sending SendItemsChangePacket with {items.Count()} items to {player.Username}");
 
-        if (TryGetNetPeer(player.Id, out NetPeer peer) && peer != SelfPeer)
+        if (Peers.TryGetValue(player.Id, out ITransportPeer peer) && peer != SelfPeer)
         {
             SendNetSerializablePacket(peer, new CommonItemChangePacket { Items = items },
                 DeliveryMethod.ReliableOrdered);
         }
     }
 
-    public void SendChat(string message, NetPeer exclude = null)
+    public void SendChat(string message, ITransportPeer exclude = null)
     {
 
         if (exclude != null)
@@ -505,7 +505,7 @@ public class NetworkServer : NetworkManager
         }
     }
 
-    public void SendWhisper(string message, NetPeer recipient)
+    public void SendWhisper(string message, ITransportPeer recipient)
     {
         if (message != null || recipient != null)
         {
@@ -521,7 +521,7 @@ public class NetworkServer : NetworkManager
 
     #region Listeners
 
-    private void OnServerboundClientLoginPacket(ServerboundClientLoginPacket packet, ConnectionRequest request)
+    private void OnServerboundClientLoginPacket(ServerboundClientLoginPacket packet, IConnectionRequest request)
     {
         // clean up username - remove leading/trailing white space, swap spaces for underscores and truncate
         packet.Username = packet.Username.Trim().Replace(' ', '_').Truncate(Settings.MAX_USERNAME_LENGTH);
@@ -601,7 +601,7 @@ public class NetworkServer : NetworkManager
             return;
         }
 
-        NetPeer peer = request.Accept();
+        ITransportPeer peer = request.Accept();
 
         ServerPlayer serverPlayer = new()
         {
@@ -614,9 +614,9 @@ public class NetworkServer : NetworkManager
         serverPlayers.Add(serverPlayer.Id, serverPlayer);
     }
 
-    private void OnServerboundSaveGameDataRequestPacket(ServerboundSaveGameDataRequestPacket packet, NetPeer peer)
+    private void OnServerboundSaveGameDataRequestPacket(ServerboundSaveGameDataRequestPacket packet, ITransportPeer peer)
     {
-        if (netPeers.ContainsKey((byte)peer.Id))
+        if (Peers.ContainsKey((byte)peer.Id))
         {
             LogWarning("Denied save game data request from already connected peer!");
             return;
@@ -628,7 +628,7 @@ public class NetworkServer : NetworkManager
         SendPacket(peer, ClientboundSaveGameDataPacket.CreatePacket(player), DeliveryMethod.ReliableOrdered);
     }
 
-    private void OnServerboundClientReadyPacket(ServerboundClientReadyPacket packet, NetPeer peer)
+    private void OnServerboundClientReadyPacket(ServerboundClientReadyPacket packet, ITransportPeer peer)
     {
         byte peerId = (byte)peer.Id;
 
@@ -645,7 +645,7 @@ public class NetworkServer : NetworkManager
             AppUtil.Instance.RequestSystemOnValueChanged(0.0f);
 
         // Allow the player to receive packets
-        netPeers.Add(peerId, peer);
+        Peers.Add(peerId, peer);
 
         // Send the new player to all other players
         ServerPlayer serverPlayer = serverPlayers[peerId];
@@ -740,7 +740,7 @@ public class NetworkServer : NetworkManager
         serverPlayer.IsLoaded = true;
     }
 
-    private void OnServerboundPlayerPositionPacket(ServerboundPlayerPositionPacket packet, NetPeer peer)
+    private void OnServerboundPlayerPositionPacket(ServerboundPlayerPositionPacket packet, ITransportPeer peer)
     {
         if (TryGetServerPlayer(peer, out ServerPlayer player))
         {
@@ -763,7 +763,7 @@ public class NetworkServer : NetworkManager
         SendPacketToAll(clientboundPacket, DeliveryMethod.Sequenced, peer);
     }
 
-    private void OnServerboundTimeAdvancePacket(ServerboundTimeAdvancePacket packet, NetPeer peer)
+    private void OnServerboundTimeAdvancePacket(ServerboundTimeAdvancePacket packet, ITransportPeer peer)
     {
         SendPacketToAll(new ClientboundTimeAdvancePacket
         {
@@ -771,17 +771,17 @@ public class NetworkServer : NetworkManager
         }, DeliveryMethod.ReliableUnordered, peer);
     }
 
-    private void OnCommonChangeJunctionPacket(CommonChangeJunctionPacket packet, NetPeer peer)
+    private void OnCommonChangeJunctionPacket(CommonChangeJunctionPacket packet, ITransportPeer peer)
     {
         SendPacketToAll(packet, DeliveryMethod.ReliableUnordered, peer);
     }
 
-    private void OnCommonRotateTurntablePacket(CommonRotateTurntablePacket packet, NetPeer peer)
+    private void OnCommonRotateTurntablePacket(CommonRotateTurntablePacket packet, ITransportPeer peer)
     {
         SendPacketToAll(packet, DeliveryMethod.ReliableOrdered, peer);
     }
 
-    private void OnCommonCouplerInteractionPacket(CommonCouplerInteractionPacket packet, NetPeer peer)
+    private void OnCommonCouplerInteractionPacket(CommonCouplerInteractionPacket packet, ITransportPeer peer)
     {
         //todo: add validation that to ensure the client is near the coupler - this packet may also be used for remote operations and may need to factor that in in the future
         if(NetworkedTrainCar.Get(packet.NetId, out var netTrainCar))
@@ -815,57 +815,57 @@ public class NetworkServer : NetworkManager
         }
         
     }
-    private void OnCommonTrainCouplePacket(CommonTrainCouplePacket packet, NetPeer peer)
+    private void OnCommonTrainCouplePacket(CommonTrainCouplePacket packet, ITransportPeer peer)
     {
         SendPacketToAll(packet, DeliveryMethod.ReliableUnordered, peer);
     }
 
-    private void OnCommonTrainUncouplePacket(CommonTrainUncouplePacket packet, NetPeer peer)
+    private void OnCommonTrainUncouplePacket(CommonTrainUncouplePacket packet, ITransportPeer peer)
     {
         SendPacketToAll(packet, DeliveryMethod.ReliableUnordered, peer);
     }
 
-    private void OnCommonHoseConnectedPacket(CommonHoseConnectedPacket packet, NetPeer peer)
+    private void OnCommonHoseConnectedPacket(CommonHoseConnectedPacket packet, ITransportPeer peer)
     {
         SendPacketToAll(packet, DeliveryMethod.ReliableUnordered, peer);
     }
 
-    private void OnCommonHoseDisconnectedPacket(CommonHoseDisconnectedPacket packet, NetPeer peer)
+    private void OnCommonHoseDisconnectedPacket(CommonHoseDisconnectedPacket packet, ITransportPeer peer)
     {
         SendPacketToAll(packet, DeliveryMethod.ReliableUnordered, peer);
     }
 
-    private void OnCommonMuConnectedPacket(CommonMuConnectedPacket packet, NetPeer peer)
+    private void OnCommonMuConnectedPacket(CommonMuConnectedPacket packet, ITransportPeer peer)
     {
         SendPacketToAll(packet, DeliveryMethod.ReliableUnordered, peer);
     }
 
-    private void OnCommonMuDisconnectedPacket(CommonMuDisconnectedPacket packet, NetPeer peer)
+    private void OnCommonMuDisconnectedPacket(CommonMuDisconnectedPacket packet, ITransportPeer peer)
     {
         SendPacketToAll(packet, DeliveryMethod.ReliableUnordered, peer);
     }
 
-    private void OnCommonCockFiddlePacket(CommonCockFiddlePacket packet, NetPeer peer)
+    private void OnCommonCockFiddlePacket(CommonCockFiddlePacket packet, ITransportPeer peer)
     {
         SendPacketToAll(packet, DeliveryMethod.ReliableUnordered, peer);
     }
 
-    private void OnCommonBrakeCylinderReleasePacket(CommonBrakeCylinderReleasePacket packet, NetPeer peer)
+    private void OnCommonBrakeCylinderReleasePacket(CommonBrakeCylinderReleasePacket packet, ITransportPeer peer)
     {
         SendPacketToAll(packet, DeliveryMethod.ReliableUnordered, peer);
     }
 
-    private void OnCommonHandbrakePositionPacket(CommonHandbrakePositionPacket packet, NetPeer peer)
+    private void OnCommonHandbrakePositionPacket(CommonHandbrakePositionPacket packet, ITransportPeer peer)
     {
         SendPacketToAll(packet, DeliveryMethod.ReliableOrdered, peer);
     }
 
-    private void OnCommonPaintThemePacket(CommonPaintThemePacket packet, NetPeer peer)
+    private void OnCommonPaintThemePacket(CommonPaintThemePacket packet, ITransportPeer peer)
     {
         SendPacketToAll(packet, DeliveryMethod.ReliableOrdered, peer);
     }
 
-    private void OnServerboundAddCoalPacket(ServerboundAddCoalPacket packet, NetPeer peer)
+    private void OnServerboundAddCoalPacket(ServerboundAddCoalPacket packet, ITransportPeer peer)
     {
         if (!TryGetServerPlayer(peer, out ServerPlayer player))
             return;
@@ -888,7 +888,7 @@ public class NetworkServer : NetworkManager
 
     }
 
-    private void OnServerboundFireboxIgnitePacket(ServerboundFireboxIgnitePacket packet, NetPeer peer)
+    private void OnServerboundFireboxIgnitePacket(ServerboundFireboxIgnitePacket packet, ITransportPeer peer)
     {
         if (!TryGetServerPlayer(peer, out ServerPlayer player))
             return;
@@ -905,7 +905,7 @@ public class NetworkServer : NetworkManager
         }
     }
 
-    private void OnCommonTrainPortsPacket(CommonTrainPortsPacket packet, NetPeer peer)
+    private void OnCommonTrainPortsPacket(CommonTrainPortsPacket packet, ITransportPeer peer)
     {
         if (!TryGetServerPlayer(peer, out ServerPlayer player))
             return;
@@ -927,7 +927,7 @@ public class NetworkServer : NetworkManager
         SendPacketToAll(packet, DeliveryMethod.ReliableOrdered, peer);
     }
 
-    private void OnCommonTrainFusesPacket(CommonTrainFusesPacket packet, NetPeer peer)
+    private void OnCommonTrainFusesPacket(CommonTrainFusesPacket packet, ITransportPeer peer)
     {
         SendPacketToAll(packet, DeliveryMethod.ReliableOrdered, peer);
     }
@@ -938,7 +938,7 @@ public class NetworkServer : NetworkManager
             networkedTrainCar.Server_DirtyAllState();
     }
 
-    private void OnServerboundTrainDeleteRequestPacket(ServerboundTrainDeleteRequestPacket packet, NetPeer peer)
+    private void OnServerboundTrainDeleteRequestPacket(ServerboundTrainDeleteRequestPacket packet, ITransportPeer peer)
     {
         if (!TryGetServerPlayer(peer, out ServerPlayer player))
             return;
@@ -973,7 +973,7 @@ public class NetworkServer : NetworkManager
         CarSpawner.Instance.DeleteCar(trainCar);
     }
 
-    private void OnServerboundTrainRerailRequestPacket(ServerboundTrainRerailRequestPacket packet, NetPeer peer)
+    private void OnServerboundTrainRerailRequestPacket(ServerboundTrainRerailRequestPacket packet, ITransportPeer peer)
     {
         if (!TryGetServerPlayer(peer, out ServerPlayer player))
             return;
@@ -998,7 +998,7 @@ public class NetworkServer : NetworkManager
         trainCar.Rerail(networkedRailTrack.RailTrack, position, packet.Forward);
     }
 
-    private void OnServerboundLicensePurchaseRequestPacket(ServerboundLicensePurchaseRequestPacket packet, NetPeer peer)
+    private void OnServerboundLicensePurchaseRequestPacket(ServerboundLicensePurchaseRequestPacket packet, ITransportPeer peer)
     {
         if (!TryGetServerPlayer(peer, out ServerPlayer player))
             return;
@@ -1035,7 +1035,7 @@ public class NetworkServer : NetworkManager
     }
 
 
-    private void OnServerboundJobValidateRequestPacket(ServerboundJobValidateRequestPacket packet, NetPeer peer)
+    private void OnServerboundJobValidateRequestPacket(ServerboundJobValidateRequestPacket packet, ITransportPeer peer)
     {
         Log($"OnServerboundJobValidateRequestPacket(): {packet.JobNetId}");
 
@@ -1075,7 +1075,7 @@ public class NetworkServer : NetworkManager
         //SendPacket(peer, new ClientboundJobValidateResponsePacket { JobNetId = packet.JobNetId, Invalid = false }, DeliveryMethod.ReliableUnordered);
     }
 
-    private void OnCommonChatPacket(CommonChatPacket packet, NetPeer peer)
+    private void OnCommonChatPacket(CommonChatPacket packet, ITransportPeer peer)
     {
         ChatManager.ProcessMessage(packet.message, peer);
     }
@@ -1088,7 +1088,7 @@ public class NetworkServer : NetworkManager
         //SendUnconnectedPacket(packet, endPoint.Address.ToString(), endPoint.Port);
     }
 
-    private void OnCommonItemChangePacket(CommonItemChangePacket packet, NetPeer peer)
+    private void OnCommonItemChangePacket(CommonItemChangePacket packet, ITransportPeer peer)
     {
         //if(!TryGetServerPlayer(peer, out var player))
         //    return;

@@ -16,6 +16,7 @@ using Multiplayer.Networking.Data;
 using Multiplayer.Networking.Data.Train;
 using Multiplayer.Networking.Packets.Clientbound.Train;
 using Multiplayer.Networking.Packets.Common.Train;
+using Multiplayer.Networking.TransportLayers;
 using Multiplayer.Utils;
 using UnityEngine;
 
@@ -507,7 +508,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         NetworkLifecycle.Instance.Server.SendCarHealthUpdate(NetId, TrainCar.CarDamage.currentHealth);
     }
 
-    public bool Server_ValidateCouplerInteraction(CommonCouplerInteractionPacket packet, NetPeer peer)
+    public bool Server_ValidateCouplerInteraction(CommonCouplerInteractionPacket packet, ITransportPeer peer)
     {
         Multiplayer.LogDebug(() =>
                 $"Server_ValidateCouplerInteraction([[{(CouplerInteractionType)packet.Flags}], {CurrentID}, {packet.NetId}], {peer.Id}) " +

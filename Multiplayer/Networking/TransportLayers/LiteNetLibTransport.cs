@@ -1,25 +1,31 @@
 using LiteNetLib;
 using LiteNetLib.Utils;
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using static DV.UI.ATutorialsMenuProvider;
 
 namespace Multiplayer.Networking.TransportLayers;
 
 public class LiteNetLibTransport : ITransport, INetEventListener
 {
     public NetStatistics Statistics => netManager.Statistics;
+    public bool IsRunning => netManager?.IsRunning ?? false;
+
+    public event Action<NetDataReader, IConnectionRequest> OnConnectionRequest;
+    public event Action<ITransportPeer> OnPeerConnected;
+    public event Action<ITransportPeer, DisconnectInfo> OnPeerDisconnected;
+    public event Action<ITransportPeer, NetDataReader, byte, DeliveryMethod> OnNetworkReceive;
+    public event Action<IPEndPoint, SocketError> OnNetworkError;
+    public event Action<ITransportPeer, int> OnNetworkLatencyUpdate;
+ 
+    private readonly Dictionary<NetPeer, LiteNetLibPeer> netPeerToPeer = [];
 
     private readonly NetManager netManager;
 
-    public bool IsRunning => netManager?.IsRunning ?? false;
-
-    public event Action<NetDataReader, ConnectionRequest> OnConnectionRequest;
-    public event Action<NetPeer> OnPeerConnected;
-    public event Action<NetPeer, DisconnectInfo> OnPeerDisconnected;
-    public event Action<NetPeer, NetPacketReader, byte, DeliveryMethod> OnNetworkReceive;
-    public event Action<IPEndPoint, SocketError> OnNetworkError;
-
+    #region ITransport
     public LiteNetLibTransport()
     {
         Multiplayer.LogDebug(() => $"LiteNetLibTransport.LiteNetLibTransport()");
@@ -60,40 +66,58 @@ public class LiteNetLibTransport : ITransport, INetEventListener
         netManager.PollEvents();
     }
 
-    public NetPeer Connect(string address, int port, NetDataWriter data)
+    public ITransportPeer Connect(string address, int port, NetDataWriter data)
     {
-        Multiplayer.LogDebug(() => $"LiteNetLibTransport.Connect({address}, {port})");
-        return netManager.Connect(address, port, data);
+        var netPeer = netManager.Connect(address, port, data);
+        var peer = new LiteNetLibPeer(netPeer);
+
+        Multiplayer.LogDebug(() => $"LiteNetLibTransport.Connect length: {data.Length}. packet: {BitConverter.ToString(data.Data)}");
+
+        netPeerToPeer[netPeer] = peer;
+        return peer;
     }
 
-    public void Send(NetPeer peer, NetDataWriter writer, DeliveryMethod deliveryMethod)
+    public void Send(ITransportPeer peer, NetDataWriter writer, DeliveryMethod deliveryMethod)
     {
-        Multiplayer.LogDebug(() => $"LiteNetLibTransport.Send({peer.Id}, {deliveryMethod})");
-        peer.Send(writer, deliveryMethod);
+        var litePeer = (LiteNetLibPeer)peer;
+        litePeer.Send(writer, deliveryMethod);
     }
+    #endregion
 
+    #region INetEventListener
     void INetEventListener.OnConnectionRequest(ConnectionRequest request)
     {
-        Multiplayer.LogDebug(() => $"LiteNetLibTransport.INetEventListener.OnConnectionRequest({request.RemoteEndPoint})");
-        OnConnectionRequest?.Invoke(request.Data, request);
+        //Multiplayer.LogDebug(() => $"LiteNetLibTransport.INetEventListener.OnConnectionRequest({request.RemoteEndPoint})");
+        OnConnectionRequest?.Invoke(request.Data, new LiteNetLibConnectionRequest(request));
     }
 
-    void INetEventListener.OnPeerConnected(NetPeer peer)
+    void INetEventListener.OnPeerConnected(NetPeer netPeer)
     {
-        Multiplayer.LogDebug(() => $"LiteNetLibTransport.INetEventListener.OnPeerConnected({peer.Id})");
+        var peer = new LiteNetLibPeer(netPeer);
+
+        netPeerToPeer[netPeer] = peer;
+
         OnPeerConnected?.Invoke(peer);
     }
 
-    void INetEventListener.OnPeerDisconnected(NetPeer peer, DisconnectInfo disconnectInfo)
+    void INetEventListener.OnPeerDisconnected(NetPeer netPeer, DisconnectInfo disconnectInfo)
     {
-        Multiplayer.LogDebug(() => $"LiteNetLibTransport.INetEventListener.OnPeerDisconnected({peer.Id}, {disconnectInfo.Reason})");
+        if(!netPeerToPeer.TryGetValue(netPeer, out var peer))
+            return;
+
         OnPeerDisconnected?.Invoke(peer, disconnectInfo);
+
+        netPeerToPeer.Remove(netPeer);
+        CleanupPeerDictionaries();
     }
 
-    void INetEventListener.OnNetworkReceive(NetPeer peer, NetPacketReader reader, byte channelNumber, DeliveryMethod deliveryMethod)
+
+    void INetEventListener.OnNetworkReceive(NetPeer netPeer, NetPacketReader reader, byte channelNumber, DeliveryMethod deliveryMethod)
     {
-        Multiplayer.LogDebug(() => $"LiteNetLibTransport.INetEventListener.OnNetworkReceive({peer.Id}, {channelNumber}, {deliveryMethod})");
-        OnNetworkReceive?.Invoke(peer, reader, channelNumber, deliveryMethod);
+        Multiplayer.LogDebug(() => $"LiteNetLibTransport.OnNetworkReceive length: {reader.AvailableBytes}. packet: {BitConverter.ToString(reader.RawData)}");
+
+        if (netPeerToPeer.TryGetValue(netPeer, out var peer))
+            OnNetworkReceive?.Invoke(peer, reader, channelNumber, deliveryMethod);
     }
 
     void INetEventListener.OnNetworkError(IPEndPoint endPoint, SocketError socketError)
@@ -107,13 +131,17 @@ public class LiteNetLibTransport : ITransport, INetEventListener
         Multiplayer.LogDebug(() => $"LiteNetLibTransport.INetEventListener.OnNetworkReceiveUnconnected({remoteEndPoint}, {messageType})");
     }
 
-    void INetEventListener.OnNetworkLatencyUpdate(NetPeer peer, int latency)
+    void INetEventListener.OnNetworkLatencyUpdate(NetPeer netPeer, int latency)
     {
-        Multiplayer.LogDebug(() => $"LiteNetLibTransport.INetEventListener.OnNetworkLatencyUpdate({peer.Id}, {latency})");
+        if (netPeerToPeer.TryGetValue(netPeer, out var peer))
+            OnNetworkLatencyUpdate?.Invoke(peer, latency);
     }
+
+    #endregion
 
     public void UpdateSettings(Settings settings)
     {
+        Multiplayer.LogDebug(() => $"LiteNetLibTransport.INetEventListener.UpdateSettings()");
         //only look at LiteNetLib settings
         netManager.NatPunchEnabled = settings.EnableNatPunch;
         netManager.AutoRecycle = settings.ReuseNetPacketReaders;
@@ -125,5 +153,69 @@ public class LiteNetLibTransport : ITransport, INetEventListener
         netManager.SimulationMinLatency = settings.SimulationMinLatency;
         netManager.SimulationMaxLatency = settings.SimulationMaxLatency;
     }
+
+    private void CleanupPeerDictionaries()
+    {
+        var nullPeers = netPeerToPeer.Where(kvp => kvp.Key == null || kvp.Value == null).ToList();
+        foreach (var pair in nullPeers)
+        {
+            netPeerToPeer.Remove(pair.Key);
+        }
+    }
+
+
+}
+
+public class LiteNetLibConnectionRequest : IConnectionRequest
+{
+    private readonly ConnectionRequest request;
+
+    public LiteNetLibConnectionRequest(ConnectionRequest request)
+    {
+        this.request = request;
+    }
+
+    public ITransportPeer Accept()
+    {
+        var peer = request.Accept();
+        return new LiteNetLibPeer(peer);
+    }
+
+    public void Reject(NetDataWriter data = null)
+    {
+        request.Reject(data);
+    }
+
+    public IPEndPoint RemoteEndPoint => request.RemoteEndPoint;
+}
+
+public class LiteNetLibPeer : ITransportPeer
+{
+    private readonly NetPeer peer;
+    public int Id => peer.Id;
+
+    public LiteNetLibPeer(NetPeer peer)
+    {
+        this.peer = peer;
+    }
+
+    public void Send(NetDataWriter writer, DeliveryMethod deliveryMethod)
+    {
+        peer.Send(writer, deliveryMethod);
+    }
+
+    public void Disconnect(NetDataWriter data = null)
+    {
+        peer.Disconnect(data);
+    }
+
+    public TransportConnectionState ConnectionState => peer.ConnectionState switch
+    {
+        LiteNetLib.ConnectionState.Connected => TransportConnectionState.Connected,
+        LiteNetLib.ConnectionState.Outgoing => TransportConnectionState.Connecting,
+        LiteNetLib.ConnectionState.Disconnected => TransportConnectionState.Disconnected,
+        LiteNetLib.ConnectionState.ShutdownRequested => TransportConnectionState.Disconnecting,
+        _ => TransportConnectionState.Disconnected
+    };
 
 }

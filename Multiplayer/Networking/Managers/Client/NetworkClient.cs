@@ -42,6 +42,7 @@ using LiteNetLib.Utils;
 using DV.UserManagement;
 using DV.Common;
 using DV.Customization.Paint;
+using Multiplayer.Networking.TransportLayers;
 
 namespace Multiplayer.Networking.Managers.Client;
 
@@ -51,12 +52,12 @@ public class NetworkClient : NetworkManager
 
     private Action<DisconnectReason, string> onDisconnect;
 
-    public NetPeer SelfPeer { get; private set; }
+    public ITransportPeer SelfPeer { get; private set; }
     public readonly ClientPlayerManager ClientPlayerManager;
 
     // One way ping in milliseconds
     public int Ping { get; private set; }
-    private NetPeer serverPeer;
+    private ITransportPeer serverPeer;
 
     private ChatGUI chatGUI;
     public bool isSinglePlayer;
@@ -164,7 +165,7 @@ public class NetworkClient : NetworkManager
 
     #region Net Events
 
-    public override void OnPeerConnected(NetPeer peer)
+    public override void OnPeerConnected(ITransportPeer peer)
     {
         serverPeer = peer;
         if (NetworkLifecycle.Instance.IsHost(peer))
@@ -173,7 +174,7 @@ public class NetworkClient : NetworkManager
             SendSaveGameDataRequest();
     }
 
-    public override void OnPeerDisconnected(NetPeer peer, DisconnectInfo disconnectInfo)
+    public override void OnPeerDisconnected(ITransportPeer peer, DisconnectInfo disconnectInfo)
     {
         NetworkLifecycle.Instance.Stop();
 
@@ -222,12 +223,12 @@ public class NetworkClient : NetworkManager
         });*/
     }
 
-    public override void OnNetworkLatencyUpdate(NetPeer peer, int latency)
+    public override void OnNetworkLatencyUpdate(ITransportPeer peer, int latency)
     {
         Ping = latency;
     }
 
-    public override void OnConnectionRequest(NetDataReader dataReader, ConnectionRequest request)
+    public override void OnConnectionRequest(NetDataReader dataReader, IConnectionRequest request)
     {
         // todo
     }

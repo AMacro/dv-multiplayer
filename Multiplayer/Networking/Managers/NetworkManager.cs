@@ -15,7 +15,7 @@ public abstract class NetworkManager
     protected readonly NetPacketProcessor netPacketProcessor;
     protected readonly NetDataWriter cachedWriter = new();
 
-    private readonly LiteNetLibTransport transport;
+    private readonly ITransport transport;
     protected readonly NetManager netManager;
 
     protected abstract string LogPrefix { get; }
@@ -29,13 +29,15 @@ public abstract class NetworkManager
         Multiplayer.LogDebug(() => $"NetworkManager Constructor");
 
         netPacketProcessor = new NetPacketProcessor();
-        transport = new LiteNetLibTransport();
+        //transport = new LiteNetLibTransport();
+        transport = new SteamWorksTransport();
 
         transport.OnConnectionRequest += OnConnectionRequest;
         transport.OnPeerConnected += OnPeerConnected;
         transport.OnPeerDisconnected += OnPeerDisconnected;
         transport.OnNetworkReceive += OnNetworkReceive;
         transport.OnNetworkError += OnNetworkError;
+        transport.OnNetworkLatencyUpdate += OnNetworkLatencyUpdate;
 
         
         RegisterNestedTypes();
@@ -44,6 +46,7 @@ public abstract class NetworkManager
         Settings.OnSettingsUpdated += OnSettingsUpdated;
 
         Subscribe();
+
     }
 
     private void RegisterNestedTypes()
@@ -84,7 +87,7 @@ public abstract class NetworkManager
         return transport.Start(port);
     }
 
-    protected virtual NetPeer Connect(string address, int port, NetDataWriter netDataWriter)
+    protected virtual ITransportPeer Connect(string address, int port, NetDataWriter netDataWriter)
     {
         return transport.Connect(address, port, netDataWriter);
     }
@@ -110,12 +113,12 @@ public abstract class NetworkManager
         return cachedWriter;
     }
 
-    protected void SendPacket<T>(NetPeer peer, T packet, DeliveryMethod deliveryMethod) where T : class, new()
+    protected void SendPacket<T>(ITransportPeer peer, T packet, DeliveryMethod deliveryMethod) where T : class, new()
     {
         peer?.Send(WritePacket(packet), deliveryMethod);
     }
 
-    protected void SendNetSerializablePacket<T>(NetPeer peer, T packet, DeliveryMethod deliveryMethod) where T : INetSerializable, new()
+    protected void SendNetSerializablePacket<T>(ITransportPeer peer, T packet, DeliveryMethod deliveryMethod) where T : INetSerializable, new()
     {
         peer?.Send(WriteNetSerializablePacket(packet), deliveryMethod);
     }
@@ -128,13 +131,13 @@ public abstract class NetworkManager
     protected abstract void Subscribe();
 
     #region Net Events
-    public void OnNetworkReceive(NetPeer connection, NetPacketReader reader, byte channel, DeliveryMethod deliveryMethod)
+    public void OnNetworkReceive(ITransportPeer connection, NetDataReader reader, byte channel, DeliveryMethod deliveryMethod)
     {
-        LogDebug(() => $"NetworkManager.OnNetworkReceive()");
+        //LogDebug(() => $"NetworkManager.OnNetworkReceive()");
         try
         {
             IsProcessingPacket = true;
-            netPacketProcessor.ReadAllPackets(reader, connection);
+            netPacketProcessor.ReadAllPackets(reader, null);
         }
         catch (ParseException e)
         {
@@ -170,10 +173,10 @@ public abstract class NetworkManager
     }
 
     //Standard networking callbacks
-    public abstract void OnPeerConnected(NetPeer peer);
-    public abstract void OnPeerDisconnected(NetPeer peer, DisconnectInfo disconnectInfo);
-    public abstract void OnConnectionRequest(NetDataReader requestData, ConnectionRequest request);
-    public abstract void OnNetworkLatencyUpdate(NetPeer peer, int latency);
+    public abstract void OnPeerConnected(ITransportPeer peer);
+    public abstract void OnPeerDisconnected(ITransportPeer peer, DisconnectInfo disconnectInfo);
+    public abstract void OnConnectionRequest(NetDataReader requestData, IConnectionRequest request);
+    public abstract void OnNetworkLatencyUpdate(ITransportPeer peer, int latency);
 
     #endregion
 

@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Net;
 using System.Text;
 using DV.Scenarios.Common;
 using DV.Utils;
@@ -11,6 +12,7 @@ using Multiplayer.Networking.Data;
 using Multiplayer.Networking.Managers;
 using Multiplayer.Networking.Managers.Client;
 using Multiplayer.Networking.Managers.Server;
+using Multiplayer.Networking.TransportLayers;
 using Multiplayer.Utils;
 using Newtonsoft.Json;
 using Steamworks;
@@ -39,7 +41,7 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
     public bool IsServerRunning => Server?.IsRunning ?? false;
     public bool IsClientRunning => Client?.IsRunning ?? false;
 
-    public bool IsProcessingPacket => Client.IsProcessingPacket;
+    public bool IsProcessingPacket => Client?.IsProcessingPacket ?? false;
 
     private PlayerListGUI playerList;
     private NetworkStatsGui Stats;
@@ -47,10 +49,10 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
     private readonly ExecutionTimer tickWatchdog = new(0.25f);
 
     /// <summary>
-    ///     Whether the provided NetPeer is the host.
+    ///     Whether the provided ITransportPeer is the host.
     ///     Note that this does NOT check authority, and should only be used for client-only logic.
     /// </summary>
-    public bool IsHost(NetPeer peer)
+    public bool IsHost(ITransportPeer peer)
     {
         return Server?.IsRunning == true && Client?.IsRunning == true && Client?.SelfPeer?.Id == peer?.Id;
     }
@@ -150,7 +152,7 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
             return false;
 
         Server = server;
-        StartClient("localhost", port, Multiplayer.Settings.Password, IsSinglePlayer, null/* (DisconnectReason dr,string msg) =>{ }*/);
+        StartClient(IPAddress.Loopback.ToString(), port, Multiplayer.Settings.Password, IsSinglePlayer, null/* (DisconnectReason dr,string msg) =>{ }*/);
         return true;
     }
 
