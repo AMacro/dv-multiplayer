@@ -32,6 +32,7 @@ using Multiplayer.Networking.Packets.Serverbound.Train;
 using Multiplayer.Networking.Packets.Unconnected;
 using System.Text;
 using Steamworks;
+using Multiplayer.Networking.Data.Train;
 
 
 namespace Multiplayer.Networking.Managers.Server;

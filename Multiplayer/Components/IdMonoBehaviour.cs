@@ -32,7 +32,7 @@ public abstract class IdMonoBehaviour<T, I> : MonoBehaviour where T : struct whe
             return true;
         obj = null;
         if ((netId as dynamic).CompareTo(default(T)) != 0)
-            Multiplayer.LogDebug(() => $"Got invalid NetId {netId} while processing packet {NetPacketProcessor.CurrentlyProcessingPacket}");
+            Multiplayer.LogDebug(() => $"Got invalid NetId {netId} while processing packet {NetworkLifecycle.Instance.IsProcessingPacket}");
         return false;
     }
 

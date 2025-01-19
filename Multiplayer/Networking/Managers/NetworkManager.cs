@@ -31,7 +31,7 @@ public abstract class NetworkManager : INetEventListener, INatPunchListener
             BroadcastReceiveEnabled = true,
 
         };
-        netPacketProcessor = new NetPacketProcessor(netManager);
+        netPacketProcessor = new NetPacketProcessor();
         RegisterNestedTypes();
         OnSettingsUpdated(settings);
         Settings.OnSettingsUpdated += OnSettingsUpdated;

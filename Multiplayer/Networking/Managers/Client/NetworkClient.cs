@@ -1341,16 +1341,4 @@ public class NetworkClient : NetworkManager
     }
 
     #endregion
-
-    public override void OnNatIntroductionSuccess(IPEndPoint targetEndPoint, NatAddressType type, string token)
-    {
-        // Add your implementation here
-        Multiplayer.Log($"NAT introduction successful. Target end point: {targetEndPoint}, Type: {type}, Token: {token}");
-    }
-
-    public override void OnNatIntroductionRequest(IPEndPoint localEndPoint, IPEndPoint remoteEndPoint, string token)
-    {
-        // Add your implementation here
-        Multiplayer.Log($"NAT introduction request received. Local end point: {localEndPoint}, Remote end point: {remoteEndPoint}, Token: {token}");
-    }
 }

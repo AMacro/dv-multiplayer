@@ -71,7 +71,7 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
         base.Awake();
         playerList = gameObject.AddComponent<PlayerListGUI>();
         Stats = gameObject.AddComponent<NetworkStatsGui>();
-        RegisterPackets();
+        //RegisterPackets();
         WorldStreamingInit.LoadingFinished += () => { playerList.RegisterListeners(); };
         Settings.OnSettingsUpdated += OnSettingsUpdated;
         SceneManager.sceneLoaded += (scene, _) =>
@@ -85,17 +85,17 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
         StartCoroutine(PollEvents());
     }
 
-    private static void RegisterPackets()
-    {
-        IReadOnlyDictionary<Type, byte> packetMappings = NetPacketProcessor.RegisterPacketTypes();
-        Multiplayer.LogDebug(() =>
-        {
-            StringBuilder stringBuilder = new($"Registered {packetMappings.Count} packets. Mappings:\n");
-            foreach (KeyValuePair<Type, byte> kvp in packetMappings)
-                stringBuilder.AppendLine($"{kvp.Value}: {kvp.Key}");
-            return stringBuilder;
-        });
-    }
+    //private static void RegisterPackets()
+    //{
+    //    IReadOnlyDictionary<Type, byte> packetMappings = NetPacketProcessor.RegisterPacketTypes();
+    //    Multiplayer.LogDebug(() =>
+    //    {
+    //        StringBuilder stringBuilder = new($"Registered {packetMappings.Count} packets. Mappings:\n");
+    //        foreach (KeyValuePair<Type, byte> kvp in packetMappings)
+    //            stringBuilder.AppendLine($"{kvp.Value}: {kvp.Key}");
+    //        return stringBuilder;
+    //    });
+    //}
 
     private void OnSettingsUpdated(Settings settings)
     {
@@ -126,13 +126,6 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
 
     public bool StartServer(IDifficulty difficulty)
     {
-        // Check if the user is a legitimate Steam user before proceeding
-        if (!IsLegitimateSteamUser())
-        {
-            Multiplayer.Log("User is not a legitimate Steam user. Server start aborted.");
-            return false;
-        }
-
         int port = Multiplayer.Settings.Port;
 
         if (Server != null)
@@ -159,22 +152,6 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
         Server = server;
         StartClient("localhost", port, Multiplayer.Settings.Password, IsSinglePlayer, null/* (DisconnectReason dr,string msg) =>{ }*/);
         return true;
-    }
-
-    private bool IsLegitimateSteamUser()
-    {
-        if (SteamClient.IsValid)
-        {
-            // Verify the Steam ID is valid and owned
-            if (SteamClient.SteamId.IsValid)
-            {
-                System.Console.WriteLine($"Steam ID {SteamClient.SteamId} is valid.");
-                return true;
-            }
-        }
-
-        System.Console.WriteLine("Invalid or pirated Steam account detected.");
-        return false;
     }
 
     public void StartClient(string address, int port, string password, bool isSinglePlayer, Action<DisconnectReason,string> onDisconnect )

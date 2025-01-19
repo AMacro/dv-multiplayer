@@ -17,8 +17,8 @@ public class NetworkStatsGui : MonoBehaviour
     private long bytesSentPerSecond;
     private long packetsReceivedPerSecond;
     private long packetsSentPerSecond;
-    private Dictionary<byte, ushort> packetsWrittenByType;
-    private Dictionary<byte, int> bytesWrittenByType;
+    //private Dictionary<byte, ushort> packetsWrittenByType;
+    //private Dictionary<byte, int> bytesWrittenByType;
 
     private Coroutine updateCoro;
 
@@ -47,8 +47,8 @@ public class NetworkStatsGui : MonoBehaviour
             bytesSentPerSecond = serverStats != null ? serverStats.BytesSent - clientStats.BytesReceived : clientStats.BytesReceived;
             packetsReceivedPerSecond = serverStats != null ? serverStats.PacketsReceived - clientStats.PacketsSent : clientStats.PacketsReceived;
             packetsSentPerSecond = serverStats != null ? serverStats.PacketsSent - clientStats.PacketsReceived : clientStats.PacketsReceived;
-            packetsWrittenByType = serverStats?.PacketsWrittenByType;
-            bytesWrittenByType = serverStats?.BytesWrittenByType;
+            //packetsWrittenByType = serverStats?.PacketsWrittenByType; //disabled for steamnetworking
+            //bytesWrittenByType = serverStats?.BytesWrittenByType;     //disabled for steamnetworking
             serverStats?.Reset();
             clientStats?.Reset();
             yield return new WaitForSecondsRealtime(1);
@@ -66,24 +66,24 @@ public class NetworkStatsGui : MonoBehaviour
     // Write clean IMGUI code challenge (impossible)
     private void DrawStats(int windowId)
     {
-        int statsListSize = Multiplayer.Settings.StatsListSize;
+        //int statsListSize = Multiplayer.Settings.StatsListSize;
 
         GUILayout.Label($"Send: {bytesSentPerSecond.Bytes().ToFullWords()}/s ({packetsSentPerSecond:N0} packets/s)");
         GUILayout.Label($"Receive: {bytesReceivedPerSecond.Bytes().ToFullWords()}/s ({packetsReceivedPerSecond:N0} packets/s)");
 
-        if (serverStats == null)
+        if (serverStats == null) 
             return;
 
-        GUILayout.Space(5);
-        GUILayout.Label($"Top {statsListSize} sent packets");
-        foreach (KeyValuePair<byte, ushort> kvp in packetsWrittenByType.OrderByDescending(k => k.Value).Take(statsListSize))
-            GUILayout.Label($"  • {kvp.Key}: {kvp.Value}/s");
-        if (packetsWrittenByType.Count < statsListSize)
-            for (int i = 0; i < statsListSize - packetsWrittenByType.Count; i++)
-                GUILayout.Label(string.Empty);
+        //GUILayout.Space(5);
+        //GUILayout.Label($"Top {statsListSize} sent packets");
+        //foreach (KeyValuePair<byte, ushort> kvp in packetsWrittenByType.OrderByDescending(k => k.Value).Take(statsListSize))
+        //    GUILayout.Label($"  • {kvp.Key}: {kvp.Value}/s");
+        //if (packetsWrittenByType.Count < statsListSize)
+        //    for (int i = 0; i < statsListSize - packetsWrittenByType.Count; i++)
+        //        GUILayout.Label(string.Empty);
 
-        GUILayout.Label($"Top {statsListSize} sent packets by size");
-        foreach (KeyValuePair<byte, int> kvp in bytesWrittenByType.OrderByDescending(k => k.Value).Take(statsListSize))
-            GUILayout.Label($"  • {kvp.Key}: {kvp.Value.Bytes().ToFullWords()}/s");
+        //GUILayout.Label($"Top {statsListSize} sent packets by size");
+        //foreach (KeyValuePair<byte, int> kvp in bytesWrittenByType.OrderByDescending(k => k.Value).Take(statsListSize))
+        //    GUILayout.Label($"  • {kvp.Key}: {kvp.Value.Bytes().ToFullWords()}/s");
     }
 }
