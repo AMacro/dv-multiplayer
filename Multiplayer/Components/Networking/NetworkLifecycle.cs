@@ -186,8 +186,11 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
                 tickWatchdog.Stop(time => Multiplayer.LogWarning($"OnTick took {time} ms!"));
             }
 
-            TickManager(Client);
-            TickManager(Server);
+            if(Client != null)
+                TickManager(Client);
+
+            if(Server != null)
+                TickManager(Server);
 
             float elapsedTime = tickTimer.Stop();
             float remainingTime = Mathf.Max(0f, TICK_INTERVAL - elapsedTime);

@@ -71,8 +71,11 @@ public class NetworkClient : NetworkManager
 
     public void Start(string address, int port, string password, bool isSinglePlayer, Action<DisconnectReason, string> onDisconnect)
     {
+        LogDebug(() => $"NetworkClient Constructor");
+
         this.onDisconnect = onDisconnect;
-        netManager.Start();
+        //netManager.Start();
+        base.Start();
 
         ServerboundClientLoginPacket serverboundClientLoginPacket = new()
         {
@@ -83,7 +86,7 @@ public class NetworkClient : NetworkManager
             Mods = ModInfo.FromModEntries(UnityModManager.modEntries)
         };
         netPacketProcessor.Write(cachedWriter, serverboundClientLoginPacket);
-        SelfPeer = netManager.Connect(address, port, cachedWriter);
+        SelfPeer = Connect(address, port, cachedWriter);
 
         isAlsoHost = NetworkLifecycle.Instance.IsServerRunning;
         originalSession = UserManager.Instance.CurrentUser.CurrentSession;
@@ -224,7 +227,7 @@ public class NetworkClient : NetworkManager
         Ping = latency;
     }
 
-    public override void OnConnectionRequest(ConnectionRequest request)
+    public override void OnConnectionRequest(NetDataReader dataReader, ConnectionRequest request)
     {
         // todo
     }

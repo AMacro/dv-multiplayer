@@ -31,8 +31,8 @@ using System.Net;
 using Multiplayer.Networking.Packets.Serverbound.Train;
 using Multiplayer.Networking.Packets.Unconnected;
 using System.Text;
-using Steamworks;
 using Multiplayer.Networking.Data.Train;
+using Multiplayer.Networking.TransportLayers;
 
 
 namespace Multiplayer.Networking.Managers.Server;
@@ -52,7 +52,7 @@ public class NetworkServer : NetworkManager
     public RerailController rerailController;
 
     public IReadOnlyCollection<ServerPlayer> ServerPlayers => serverPlayers.Values;
-    public int PlayerCount => netManager.ConnectedPeersCount;
+    public int PlayerCount => ServerPlayers.Count;
 
     private static NetPeer SelfPeer => NetworkLifecycle.Instance.Client?.SelfPeer;
     public static byte SelfId => (byte)SelfPeer.Id;
@@ -66,6 +66,7 @@ public class NetworkServer : NetworkManager
 
     public NetworkServer(IDifficulty difficulty, Settings settings, bool isSinglePlayer, LobbyServerData serverData) : base(settings)
     {
+        LogDebug(()=>$"NetworkServer Constructor");
         this.isSinglePlayer = isSinglePlayer;
         this.serverData = serverData;
 
@@ -74,14 +75,10 @@ public class NetworkServer : NetworkManager
         serverMods = ModInfo.FromModEntries(UnityModManager.modEntries)
                             .Where(mod => !modWhiteList.Contains(mod.Id)).ToArray();
 
-        //Start our NAT punch server
-        if (Multiplayer.Settings.EnableNatPunch)
-        {
-            netManager.NatPunchModule.Init(this);
-        }
+
     }
 
-    public bool Start(int port)
+    public override bool Start(int port)
     {
         //setup paint theme lookup cache
         PaintThemeLookup.Instance.CheckInstance();
@@ -93,12 +90,12 @@ public class NetworkServer : NetworkManager
         if (IPAddress.TryParse(LobbyServerManager.GetStaticIPv6Address(), out IPAddress ipv6Address))
         {
             //start the connection, IPv4 messages can come from anywhere, IPv6 messages need to specifically come from the static IPv6
-            return netManager.Start(IPAddress.Any, ipv6Address,port);
-            //return netManager.Start(IPAddress.Any, IPAddress.IPv6Any, port);
+            return base.Start(IPAddress.Any, ipv6Address,port);
+
         }
 
         //we're not running IPv6, start as normal
-        return netManager.Start(port);
+        return base.Start(port);
     }
 
     public override void Stop()
@@ -209,7 +206,7 @@ public class NetworkServer : NetworkManager
 
         serverPlayers.Remove(id);
         netPeers.Remove(id);
-        netManager.SendToAll(WritePacket(new ClientboundPlayerDisconnectPacket
+        SendPacketToAll(WritePacket(new ClientboundPlayerDisconnectPacket
         {
             Id = id
         }), DeliveryMethod.ReliableUnordered);
@@ -233,68 +230,12 @@ public class NetworkServer : NetworkManager
         }, DeliveryMethod.ReliableUnordered);
     }
 
-    public override void OnConnectionRequest(ConnectionRequest request)
+    public override void OnConnectionRequest(NetDataReader requestData, ConnectionRequest request)
     {
+        LogDebug(() => $"NetworkServer OnConnectionRequest");
         netPacketProcessor.ReadAllPackets(request.Data, request);
     }
 
-    #endregion
-
-#region NAT Punch Events
-
-
-    public override void OnNatIntroductionRequest(IPEndPoint localEndPoint, IPEndPoint remoteEndPoint, string token)
-    {
-        // Validate the Steam ID
-        if (!IsLegitimateSteamUser())
-        {
-            System.Console.WriteLine($"NAT request rejected from {remoteEndPoint}. Invalid Steam account.");
-            return; // Reject the NAT punch request
-        }
-
-        // Proceed with NAT punch-through handling
-        System.Console.WriteLine($"NAT request accepted from {remoteEndPoint}.");
-        // Additional logic for NAT punch-through
-    }
-
-    public override void OnNatIntroductionSuccess(IPEndPoint targetEndPoint, NatAddressType type, string token)
-    {
-        System.Console.WriteLine($"NAT punch-through successful to {targetEndPoint}.");
-        // Additional logic after successful NAT punch-through
-    }
-
-    // Check for a legitimate Steam account
-    private bool IsLegitimateSteamUser()
-    {
-        // Check if the Steam client is valid
-        if (SteamClient.IsValid)
-        {
-            // Verify the Steam ID is valid
-            if (SteamClient.SteamId.IsValid)
-            {
-
-                // Check if the game is installed using the App ID
-                bool isInstalled = SteamApps.IsAppInstalled(DVSteamworks.APP_ID);
-
-                if (isInstalled)
-                {
-                    System.Console.WriteLine($"Steam ID {SteamClient.SteamId} is valid and the game is installed.");
-                    return true;
-                }
-                else
-                {
-                    // Log the piracy suspicion
-                    Multiplayer.Log($"Suspicion: Steam ID {SteamClient.SteamId} does not have the game installed. Potential piracy detected.");
-                }
-            }
-        }
-
-        // If Steam client or Steam ID is not valid, log as suspicious
-        System.Console.WriteLine("Steam client is invalid or pirated Steam account detected.");
-        Multiplayer.Log("Suspicion: Invalid Steam client or pirated Steam account detected.");
-
-        return false;
-    }
     #endregion
 
     #region Packet Senders
@@ -632,7 +573,7 @@ public class NetworkServer : NetworkManager
             return;
         }
 
-        if (netManager.ConnectedPeersCount >= Multiplayer.Settings.MaxPlayers || isSinglePlayer && netManager.ConnectedPeersCount >= 1)
+        if (PlayerCount >= Multiplayer.Settings.MaxPlayers || isSinglePlayer && PlayerCount >= 1)
         {
             LogWarning("Denied login due to server being full!");
             ClientboundServerDenyPacket denyPacket = new()
@@ -1144,7 +1085,7 @@ public class NetworkServer : NetworkManager
     private void OnUnconnectedPingPacket(UnconnectedPingPacket packet, IPEndPoint endPoint)
     {
         //Multiplayer.Log($"OnUnconnectedPingPacket({endPoint.Address})");
-        SendUnconnectedPacket(packet, endPoint.Address.ToString(), endPoint.Port);
+        //SendUnconnectedPacket(packet, endPoint.Address.ToString(), endPoint.Port);
     }
 
     private void OnCommonItemChangePacket(CommonItemChangePacket packet, NetPeer peer)

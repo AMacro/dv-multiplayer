@@ -6,36 +6,43 @@ using LiteNetLib.Utils;
 using Multiplayer.Networking.Data;
 using Multiplayer.Networking.Data.Train;
 using Multiplayer.Networking.Serialization;
+using Multiplayer.Networking.TransportLayers;
 
 namespace Multiplayer.Networking.Managers;
 
-public abstract class NetworkManager : INetEventListener, INatPunchListener
+public abstract class NetworkManager
 {
     protected readonly NetPacketProcessor netPacketProcessor;
-    protected readonly NetManager netManager;
     protected readonly NetDataWriter cachedWriter = new();
+
+    private readonly LiteNetLibTransport transport;
+    protected readonly NetManager netManager;
 
     protected abstract string LogPrefix { get; }
 
-    public NetStatistics Statistics => netManager.Statistics;
-    public bool IsRunning => netManager.IsRunning;
+    public NetStatistics Statistics => transport.Statistics;
+    public bool IsRunning => transport.IsRunning;
     public bool IsProcessingPacket { get; private set; }
 
     protected NetworkManager(Settings settings)
     {
-        netManager = new NetManager(this)
-        {
-            DisconnectTimeout = 10000,
-            //ReconnectDelay = 1000, 
-            UnconnectedMessagesEnabled = true,
-            BroadcastReceiveEnabled = true,
+        Multiplayer.LogDebug(() => $"NetworkManager Constructor");
 
-        };
         netPacketProcessor = new NetPacketProcessor();
+        transport = new LiteNetLibTransport();
+
+        transport.OnConnectionRequest += OnConnectionRequest;
+        transport.OnPeerConnected += OnPeerConnected;
+        transport.OnPeerDisconnected += OnPeerDisconnected;
+        transport.OnNetworkReceive += OnNetworkReceive;
+        transport.OnNetworkError += OnNetworkError;
+
+        
         RegisterNestedTypes();
+
         OnSettingsUpdated(settings);
         Settings.OnSettingsUpdated += OnSettingsUpdated;
-        // ReSharper disable once VirtualMemberCallInConstructor
+
         Subscribe();
     }
 
@@ -55,27 +62,37 @@ public abstract class NetworkManager : INetEventListener, INatPunchListener
 
     private void OnSettingsUpdated(Settings settings)
     {
-        if (netManager == null)
-            return;
-        netManager.NatPunchEnabled = settings.EnableNatPunch;
-        netManager.AutoRecycle = settings.ReuseNetPacketReaders;
-        netManager.UseNativeSockets = settings.UseNativeSockets;
-        netManager.EnableStatistics = settings.ShowStats;
-        netManager.SimulatePacketLoss = settings.SimulatePacketLoss;
-        netManager.SimulateLatency = settings.SimulateLatency;
-        netManager.SimulationPacketLossChance = settings.SimulationPacketLossChance;
-        netManager.SimulationMinLatency = settings.SimulationMinLatency;
-        netManager.SimulationMaxLatency = settings.SimulationMaxLatency;
+        transport?.UpdateSettings(settings);
     }
 
     public void PollEvents()
     {
-        netManager.PollEvents();
+        //netManager.PollEvents();
+        transport?.PollEvents();
     }
+
+    public virtual bool Start()
+    {
+        return transport.Start();
+    }
+    public virtual bool Start(IPAddress ipv4, IPAddress ipv6, int port)
+    {
+        return transport.Start(ipv4, ipv6, port);
+    }
+    public virtual bool Start(int port)
+    {
+        return transport.Start(port);
+    }
+
+    protected virtual NetPeer Connect(string address, int port, NetDataWriter netDataWriter)
+    {
+        return transport.Connect(address, port, netDataWriter);
+    }
+
 
     public virtual void Stop()
     {
-        netManager.Stop(true);
+        transport.Stop(true);
         Settings.OnSettingsUpdated -= OnSettingsUpdated;
     }
 
@@ -103,22 +120,21 @@ public abstract class NetworkManager : INetEventListener, INatPunchListener
         peer?.Send(WriteNetSerializablePacket(packet), deliveryMethod);
     }
 
-    protected void SendUnconnectedPacket<T>(T packet, string ipAddress, int port) where T : class, new()
-    {
-        netManager.SendUnconnectedMessage(WritePacket(packet), ipAddress, port);
-    }
+    //protected void SendUnconnectedPacket<T>(T packet, string ipAddress, int port) where T : class, new()
+    //{
+    //    transport.SendUnconnectedMessage(WritePacket(packet), ipAddress, port);
+    //}
 
     protected abstract void Subscribe();
 
     #region Net Events
-
-    public void OnNetworkReceive(NetPeer peer, NetPacketReader reader, byte channelNumber, DeliveryMethod deliveryMethod)
+    public void OnNetworkReceive(NetPeer connection, NetPacketReader reader, byte channel, DeliveryMethod deliveryMethod)
     {
-        //Log($"NetworkManager.OnNetworkReceive()");
+        LogDebug(() => $"NetworkManager.OnNetworkReceive()");
         try
         {
             IsProcessingPacket = true;
-            netPacketProcessor.ReadAllPackets(reader, peer);
+            netPacketProcessor.ReadAllPackets(reader, connection);
         }
         catch (ParseException e)
         {
@@ -156,12 +172,9 @@ public abstract class NetworkManager : INetEventListener, INatPunchListener
     //Standard networking callbacks
     public abstract void OnPeerConnected(NetPeer peer);
     public abstract void OnPeerDisconnected(NetPeer peer, DisconnectInfo disconnectInfo);
+    public abstract void OnConnectionRequest(NetDataReader requestData, ConnectionRequest request);
     public abstract void OnNetworkLatencyUpdate(NetPeer peer, int latency);
-    public abstract void OnConnectionRequest(ConnectionRequest request);
 
-    //NAT punching callbacks
-    public abstract void OnNatIntroductionRequest(IPEndPoint localEndPoint, IPEndPoint remoteEndPoint, string token);
-    public abstract void OnNatIntroductionSuccess(IPEndPoint targetEndPoint, NatAddressType type, string token);
     #endregion
 
     #region Logging
