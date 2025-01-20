@@ -131,13 +131,13 @@ public abstract class NetworkManager
     protected abstract void Subscribe();
 
     #region Net Events
-    public void OnNetworkReceive(ITransportPeer connection, NetDataReader reader, byte channel, DeliveryMethod deliveryMethod)
+    public void OnNetworkReceive(ITransportPeer peer, NetDataReader reader, byte channel, DeliveryMethod deliveryMethod)
     {
         //LogDebug(() => $"NetworkManager.OnNetworkReceive()");
         try
         {
             IsProcessingPacket = true;
-            netPacketProcessor.ReadAllPackets(reader, null);
+            netPacketProcessor.ReadAllPackets(reader, peer);
         }
         catch (ParseException e)
         {

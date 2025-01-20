@@ -14,7 +14,7 @@ namespace Multiplayer.Networking.TransportLayers;
 public class SteamWorksTransport : ITransport
 {
     public NetStatistics Statistics => new NetStatistics();
-    public bool IsRunning => server != null;
+    public bool IsRunning { get; private set; }
 
     public event Action<NetDataReader, IConnectionRequest> OnConnectionRequest;
     public event Action<ITransportPeer> OnPeerConnected;
@@ -23,8 +23,8 @@ public class SteamWorksTransport : ITransport
     public event Action<IPEndPoint, SocketError> OnNetworkError;
     public event Action<ITransportPeer, int> OnNetworkLatencyUpdate;
 
-    private SteamSocketManager server;
-    private SteamConnectionManager client;
+    private readonly List<SteamServerManager> servers = [];
+    private SteamClientManager client;
 
 
     private readonly Dictionary<int, SteamPeer> peerIdToPeer = [];
@@ -47,10 +47,27 @@ public class SteamWorksTransport : ITransport
     public bool Start(int port)
     {
         Multiplayer.LogDebug(() => $"SteamWorksTransport.Start({port})");
-        server = SteamNetworkingSockets.CreateNormalSocket<SteamSocketManager>(NetAddress.AnyIp((ushort)port));
-        server.transport = this;
 
-        return server != null;
+        var server = SteamNetworkingSockets.CreateNormalSocket<SteamServerManager>(NetAddress.AnyIp((ushort)port));
+        if (server != null)
+        {
+            Multiplayer.LogDebug(() => $"SteamWorksTransport.Start({port}) Normal not null");
+            server.transport = this;
+            servers.Add(server);
+            IsRunning = true;
+        }
+
+        //server = SteamNetworkingSockets.CreateRelaySocket<SteamServerManager>();
+
+        //if (server != null)
+        //{
+        //    server.transport = this;
+        //    servers.AddItem(server);
+        //    IsRunning = true;
+        //    Multiplayer.Log($"SteamId: {Steamworks.Data.NetIdentity.LocalHost}");
+        //}
+
+        return IsRunning;
     }
 
     public bool Start(IPAddress ipv4, IPAddress ipv6, int port)
@@ -62,34 +79,75 @@ public class SteamWorksTransport : ITransport
     public void Stop(bool sendDisconnectPackets)
     {
         Multiplayer.LogDebug(() => $"SteamWorksTransport.Stop()");
-        if (server != null)
+
+        for (int i = servers.Count; i >= 0; --i)
         {
-            foreach (var connection in server.Connected)
+            if (servers[i] != null)
             {
-                connection.Close();
+                foreach (var connection in servers[i].Connected)
+                    connection.Close();
             }
-            server = null;
+
+            servers.RemoveAt(i);
         }
     }
 
     public void PollEvents()
     {
         SteamClient.RunCallbacks();
+
         client?.Receive();
-        server?.Receive();
+
+        foreach (var server in servers)
+        {
+            server?.Receive();
+        }
     }
 
     public ITransportPeer Connect(string address, int port, NetDataWriter data)
     {
         Multiplayer.LogDebug(() => $"SteamWorksTransport.Connect({address}, {port}, {data.Length})");
 
+        if (port < 0)
+            return ConnectRelay(address, data);
+        else
+            return ConnectNative(address, port, data);
+    }
+
+    public ITransportPeer ConnectNative(string address, int port, NetDataWriter data)
+    {
+        Multiplayer.LogDebug(() => $"SteamWorksTransport.ConnectNative({address}, {port}, {data.Length})");
+
         var add = NetAddress.From(address, (ushort)port);
 
-   
-        Multiplayer.LogDebug(() => $"SteamSocketManager.Connect packet: {BitConverter.ToString(data.Data)}");
+
+        //Multiplayer.LogDebug(() => $"SteamWorksTransport.Connect packet: {BitConverter.ToString(data.Data)}");
 
         // Create connection manager for client
-        client = SteamNetworkingSockets.ConnectNormal<SteamConnectionManager>(add); 
+        client = SteamNetworkingSockets.ConnectNormal<SteamClientManager>(add);
+        client.transport = this;
+        client.loginPacket = data;
+        client.peer = CreatePeer(client.Connection);
+
+        return client.peer;
+    }
+
+    public ITransportPeer ConnectRelay(string steamID, NetDataWriter data)
+    {
+        Multiplayer.LogDebug(() => $"SteamWorksTransport.ConnectRelay({steamID})");
+
+        SteamId id = new();
+        if (!ulong.TryParse(steamID, out id.Value))
+        {
+            Multiplayer.LogDebug(() => $"SteamWorksTransport.ConnectRelay({steamID}) failed to parse");
+            return null;
+        }
+
+
+        Multiplayer.LogDebug(() => $"SteamWorksTransport.ConnectRelay packet: {BitConverter.ToString(data.Data)}");
+
+        // Create connection manager for client
+        client = SteamNetworkingSockets.ConnectRelay<SteamClientManager>(id);
         client.transport = this;
         client.loginPacket = data;
         client.peer = CreatePeer(client.Connection);
@@ -112,36 +170,37 @@ public class SteamWorksTransport : ITransport
     #endregion
 
     #region SteamManagers
-    public class SteamSocketManager : SocketManager
+    public class SteamServerManager : SocketManager
     {
         public SteamWorksTransport transport;
 
         public override void OnConnecting(Connection connection, ConnectionInfo info)
         {
 
-            Multiplayer.LogDebug(() => $"SteamSocketManager.OnConnecting({connection}, {info})");
+            Multiplayer.LogDebug(() => $"SteamServerManager.OnConnecting({connection}, {info})");
             connection.Accept();
         }
 
         public override void OnConnected(Connection connection, ConnectionInfo info)
         {
-            Multiplayer.LogDebug(() => $"SteamSocketManager.OnConnected({connection}, {info})");
+            Multiplayer.LogDebug(() => $"SteamServerManager.OnConnected({connection}, {info})");
             base.OnConnected(connection, info);
 
             var peer = transport.CreatePeer(connection);
             peer.connectionRequest = new SteamConnectionRequest(connection, info, peer);
+            transport?.OnPeerConnected?.Invoke(peer);
         }
 
         public override void OnDisconnected(Steamworks.Data.Connection connection, Steamworks.Data.ConnectionInfo info)
         {
-            Multiplayer.LogDebug(() => $"SteamSocketManager.OnDisconnected({connection}, {info})");
+            Multiplayer.LogDebug(() => $"SteamServerManager.OnDisconnected({connection}, {info})");
             base.OnDisconnected(connection, info);
             throw new NotImplementedException();
         }
 
         public override void OnMessage(Steamworks.Data.Connection connection, Steamworks.Data.NetIdentity identity, IntPtr data, int size, long messageNum, long recvTime, int channel)
         {
-            Multiplayer.LogDebug(() => $"SteamSocketManager.OnMessage({connection}, {identity}, , {size}, {messageNum}, {recvTime}, {channel})");
+            Multiplayer.LogDebug(() => $"SteamServerManager.OnMessage({connection}, {identity}, , {size}, {messageNum}, {recvTime}, {channel})");
 
             var peer = transport.GetPeer(connection);
 
@@ -149,10 +208,10 @@ public class SteamWorksTransport : ITransport
             Marshal.Copy(data, buffer, 0, size);
 
 
-            Multiplayer.LogDebug(() => $"SteamSocketManager.Received packet: {BitConverter.ToString(buffer)}");
+            //Multiplayer.LogDebug(() => $"SteamServerManager.Received packet: {BitConverter.ToString(buffer)}");
 
-            var reader = new NetDataReader(buffer,0,size);
-            if(peer.connectionRequest != null)
+            var reader = new NetDataReader(buffer, 0, size);
+            if (peer.connectionRequest != null)
             {
                 transport?.OnConnectionRequest?.Invoke(reader, peer.connectionRequest);
                 peer.connectionRequest = null;
@@ -160,16 +219,22 @@ public class SteamWorksTransport : ITransport
             }
 
             transport?.OnNetworkReceive?.Invoke(peer, reader, (byte)channel, DeliveryMethod.ReliableOrdered);
+
+            //base.OnMessage(connection,identity,data,size,messageNum,recvTime,channel);
         }
 
         public override void OnConnectionChanged(Steamworks.Data.Connection connection, Steamworks.Data.ConnectionInfo info)
         {
-            Multiplayer.LogDebug(() => $"SteamSocketManager.OnConnectionChanged({connection}, {info})");
+            Multiplayer.LogDebug(() => $"SteamServerManager.OnConnectionChanged({connection}, {info})");
             base.OnConnectionChanged(connection, info);
+            if (transport.GetPeer(connection) is SteamPeer peer)
+            {
+                peer.OnConnectionStatusChanged(info.State);
+            }
         }
     }
 
-    public class SteamConnectionManager : ConnectionManager
+    public class SteamClientManager : ConnectionManager
     {
         public SteamWorksTransport transport;
         public NetDataWriter loginPacket;
@@ -177,29 +242,34 @@ public class SteamWorksTransport : ITransport
 
         public override void OnConnected(ConnectionInfo info)
         {
-            Multiplayer.LogDebug(() => $"SteamConnectionManager.OnConnected({info})");
+            Multiplayer.LogDebug(() => $"SteamClientManager.OnConnected({info})");
+            base.OnConnected(info);
             peer.Send(loginPacket, DeliveryMethod.ReliableUnordered);
+            transport?.OnPeerConnected?.Invoke(peer);
         }
 
         public override void OnConnecting(ConnectionInfo info)
         {
-            Multiplayer.LogDebug(() => $"SteamConnectionManager.OnConnecting({info})");
+            Multiplayer.LogDebug(() => $"SteamClientManager.OnConnecting({info})");
+            base.OnConnecting(info);
         }
 
         public override void OnDisconnected(ConnectionInfo info)
         {
-            Multiplayer.LogDebug(() => $"SteamConnectionManager.ConnectionOnDisconnected({info})");
+            Multiplayer.LogDebug(() => $"SteamClientManager.ConnectionOnDisconnected({info})");
+            //base.OnDisconnected(info);
         }
 
         public override void OnMessage(IntPtr data, int size, long messageNum, long recvTime, int channel)
         {
-            Multiplayer.LogDebug(() => $"SteamConnectionManager.Connection(,{size}, {messageNum}, {recvTime}, {channel})");
+            Multiplayer.LogDebug(() => $"SteamClientManager.Connection(,{size}, {messageNum}, {recvTime}, {channel})");
 
             byte[] buffer = new byte[size];
             Marshal.Copy(data, buffer, 0, size);
 
             var reader = new NetDataReader(buffer, 0, size);
             transport?.OnNetworkReceive(peer, reader, (byte)channel, DeliveryMethod.ReliableOrdered);
+            //base.OnMessage(data, size, messageNum, recvTime, channel);
         }
     }
     #endregion
@@ -262,7 +332,7 @@ public class SteamPeer : ITransportPeer
 
     public void Send(NetDataWriter writer, DeliveryMethod deliveryMethod)
     {
-
+        Multiplayer.LogDebug(() => $"SteamPeer.Send({writer.Data.Length})\r\n{Environment.StackTrace}");
         // Map LiteNetLib delivery method to Steam's SendType
         SendType sendType = deliveryMethod switch
         {

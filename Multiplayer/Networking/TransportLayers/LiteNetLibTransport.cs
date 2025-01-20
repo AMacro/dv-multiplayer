@@ -71,7 +71,7 @@ public class LiteNetLibTransport : ITransport, INetEventListener
         var netPeer = netManager.Connect(address, port, data);
         var peer = new LiteNetLibPeer(netPeer);
 
-        Multiplayer.LogDebug(() => $"LiteNetLibTransport.Connect length: {data.Length}. packet: {BitConverter.ToString(data.Data)}");
+        //Multiplayer.LogDebug(() => $"LiteNetLibTransport.Connect length: {data.Length}. packet: {BitConverter.ToString(data.Data)}");
 
         netPeerToPeer[netPeer] = peer;
         return peer;
@@ -88,7 +88,7 @@ public class LiteNetLibTransport : ITransport, INetEventListener
     void INetEventListener.OnConnectionRequest(ConnectionRequest request)
     {
         //Multiplayer.LogDebug(() => $"LiteNetLibTransport.INetEventListener.OnConnectionRequest({request.RemoteEndPoint})");
-        OnConnectionRequest?.Invoke(request.Data, new LiteNetLibConnectionRequest(request));
+        OnConnectionRequest?.Invoke(request.Data, new LiteNetLibConnectionRequest(request, this));
     }
 
     void INetEventListener.OnPeerConnected(NetPeer netPeer)
@@ -114,10 +114,13 @@ public class LiteNetLibTransport : ITransport, INetEventListener
 
     void INetEventListener.OnNetworkReceive(NetPeer netPeer, NetPacketReader reader, byte channelNumber, DeliveryMethod deliveryMethod)
     {
-        Multiplayer.LogDebug(() => $"LiteNetLibTransport.OnNetworkReceive length: {reader.AvailableBytes}. packet: {BitConverter.ToString(reader.RawData)}");
+        //Multiplayer.LogDebug(() => $"LiteNetLibTransport.OnNetworkReceive({netPeer?.Id})");
 
         if (netPeerToPeer.TryGetValue(netPeer, out var peer))
+        {
+            //Multiplayer.LogDebug(() => $"LiteNetLibTransport.OnNetworkReceive({netPeer?.Id}) peer: {peer != null}");
             OnNetworkReceive?.Invoke(peer, reader, channelNumber, deliveryMethod);
+        }
     }
 
     void INetEventListener.OnNetworkError(IPEndPoint endPoint, SocketError socketError)
@@ -162,23 +165,31 @@ public class LiteNetLibTransport : ITransport, INetEventListener
             netPeerToPeer.Remove(pair.Key);
         }
     }
-
+    public void RegisterPeer(NetPeer netPeer, LiteNetLibPeer peer)
+    {
+        netPeerToPeer[netPeer] = peer;
+    }
 
 }
 
 public class LiteNetLibConnectionRequest : IConnectionRequest
 {
     private readonly ConnectionRequest request;
+    private readonly LiteNetLibTransport transport;
 
-    public LiteNetLibConnectionRequest(ConnectionRequest request)
+    public LiteNetLibConnectionRequest(ConnectionRequest request, LiteNetLibTransport transport)
     {
         this.request = request;
+        this.transport = transport;
     }
 
     public ITransportPeer Accept()
     {
-        var peer = request.Accept();
-        return new LiteNetLibPeer(peer);
+        var netPeer = request.Accept();
+        var peer = new LiteNetLibPeer(netPeer);
+        transport.RegisterPeer(netPeer, peer);
+
+        return peer;
     }
 
     public void Reject(NetDataWriter data = null)
