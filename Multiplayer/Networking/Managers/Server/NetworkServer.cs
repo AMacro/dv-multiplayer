@@ -553,7 +553,7 @@ public class NetworkServer : NetworkManager
         if (Multiplayer.Settings.Password != packet.Password)
         {
             LogWarning("Denied login due to invalid password!");
-            ClientboundServerDenyPacket denyPacket = new()
+            ClientboundLoginResponsePacket denyPacket = new()
             {
                 ReasonKey = Locale.DISCONN_REASON__INVALID_PASSWORD_KEY
             };
@@ -564,7 +564,7 @@ public class NetworkServer : NetworkManager
         if (packet.BuildMajorVersion != BuildInfo.BUILD_VERSION_MAJOR)
         {
             LogWarning($"Denied login to incorrect game version! Got: {packet.BuildMajorVersion}, expected: {BuildInfo.BUILD_VERSION_MAJOR}");
-            ClientboundServerDenyPacket denyPacket = new()
+            ClientboundLoginResponsePacket denyPacket = new()
             {
                 ReasonKey = Locale.DISCONN_REASON__GAME_VERSION_KEY,
                 ReasonArgs = [BuildInfo.BUILD_VERSION_MAJOR.ToString(), packet.BuildMajorVersion.ToString()]
@@ -576,7 +576,7 @@ public class NetworkServer : NetworkManager
         if (PlayerCount >= Multiplayer.Settings.MaxPlayers || isSinglePlayer && PlayerCount >= 1)
         {
             LogWarning("Denied login due to server being full!");
-            ClientboundServerDenyPacket denyPacket = new()
+            ClientboundLoginResponsePacket denyPacket = new()
             {
                 ReasonKey = Locale.DISCONN_REASON__FULL_SERVER_KEY
             };
@@ -591,7 +591,7 @@ public class NetworkServer : NetworkManager
             ModInfo[] extra = clientMods.Except(serverMods).ToArray();
 
             LogWarning($"Denied login due to mod mismatch! {missing.Length} missing, {extra.Length} extra");
-            ClientboundServerDenyPacket denyPacket = new()
+            ClientboundLoginResponsePacket denyPacket = new()
             {
                 ReasonKey = Locale.DISCONN_REASON__MODS_KEY,
                 Missing = missing,
@@ -612,6 +612,13 @@ public class NetworkServer : NetworkManager
         };
 
         serverPlayers.Add(serverPlayer.Id, serverPlayer);
+
+        ClientboundLoginResponsePacket acceptPacket = new()
+        {
+            Accepted = true,
+        };
+
+        SendPacket(peer, acceptPacket, DeliveryMethod.ReliableUnordered);
     }
 
     private void OnServerboundSaveGameDataRequestPacket(ServerboundSaveGameDataRequestPacket packet, ITransportPeer peer)
@@ -630,6 +637,12 @@ public class NetworkServer : NetworkManager
 
     private void OnServerboundClientReadyPacket(ServerboundClientReadyPacket packet, ITransportPeer peer)
     {
+        if(peer == null)
+        {
+            LogError($"OnServerboundClientReadyPacket() peer is null!");
+            return;
+        }
+
         byte peerId = (byte)peer.Id;
 
         // Allow clients to connect before the server is fully loaded

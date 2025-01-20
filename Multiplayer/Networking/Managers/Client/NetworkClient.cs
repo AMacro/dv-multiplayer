@@ -110,7 +110,7 @@ public class NetworkClient : NetworkManager
 
     protected override void Subscribe()
     {
-        netPacketProcessor.SubscribeReusable<ClientboundServerDenyPacket>(OnClientboundServerDenyPacket);
+        netPacketProcessor.SubscribeReusable<ClientboundLoginResponsePacket>(OnClientboundLoginResponsePacket);
         netPacketProcessor.SubscribeReusable<ClientboundPlayerJoinedPacket>(OnClientboundPlayerJoinedPacket);
         netPacketProcessor.SubscribeReusable<ClientboundPlayerDisconnectPacket>(OnClientboundPlayerDisconnectPacket);
         netPacketProcessor.SubscribeReusable<ClientboundPlayerKickPacket>(OnClientboundPlayerKickPacket);
@@ -168,10 +168,6 @@ public class NetworkClient : NetworkManager
     public override void OnPeerConnected(ITransportPeer peer)
     {
         serverPeer = peer;
-        if (NetworkLifecycle.Instance.IsHost(peer))
-            SendReadyPacket();
-        else
-            SendSaveGameDataRequest();
     }
 
     public override void OnPeerDisconnected(ITransportPeer peer, DisconnectInfo disconnectInfo)
@@ -238,16 +234,22 @@ public class NetworkClient : NetworkManager
 
     #region Listeners 
 
-    private void OnClientboundServerDenyPacket(ClientboundServerDenyPacket packet)
+    private void OnClientboundLoginResponsePacket(ClientboundLoginResponsePacket packet)
     {
 
-        /*
-        NetworkLifecycle.Instance.QueueMainMenuEvent(() =>
+        if (packet.Accepted)
         {
-            Popup popup = MainMenuThingsAndStuff.Instance.ShowOkPopup();
-            if (popup == null)
-                return;
-        */
+            Log($"Received player accepted packet");
+            
+            if (NetworkLifecycle.Instance.IsHost(SelfPeer))
+                SendReadyPacket();
+            else
+                SendSaveGameDataRequest();
+
+            return;
+        }
+
+
         string text = Locale.Get(packet.ReasonKey, packet.ReasonArgs);
 
         if (packet.Missing.Length != 0 || packet.Extra.Length != 0)
@@ -264,8 +266,6 @@ public class NetworkClient : NetworkManager
                 text += Locale.Get(Locale.DISCONN_REASON__MODS_EXTRA_KEY, placeholders: string.Join("\n - ", packet.Extra));
         }
 
-        //popup.labelTMPro.text = text;
-        //});
         Log($"Received player deny packet: {text}");
         onDisconnect(DisconnectReason.ConnectionRejected, text);
     }
