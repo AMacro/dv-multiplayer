@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using DV;
+using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.Player;
 using UnityEngine;
 using Object = UnityEngine.Object;
@@ -43,6 +44,7 @@ public class ClientPlayerManager
     {
         if (!playerMap.TryGetValue(id, out NetworkedPlayer networkedPlayer))
             return;
+
         OnPlayerDisconnected?.Invoke(id, networkedPlayer);
         Object.Destroy(networkedPlayer.gameObject);
         playerMap.Remove(id);

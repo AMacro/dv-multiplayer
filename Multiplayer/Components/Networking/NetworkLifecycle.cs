@@ -87,18 +87,6 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
         StartCoroutine(PollEvents());
     }
 
-    //private static void RegisterPackets()
-    //{
-    //    IReadOnlyDictionary<Type, byte> packetMappings = NetPacketProcessor.RegisterPacketTypes();
-    //    Multiplayer.LogDebug(() =>
-    //    {
-    //        StringBuilder stringBuilder = new($"Registered {packetMappings.Count} packets. Mappings:\n");
-    //        foreach (KeyValuePair<Type, byte> kvp in packetMappings)
-    //            stringBuilder.AppendLine($"{kvp.Value}: {kvp.Key}");
-    //        return stringBuilder;
-    //    });
-    //}
-
     private void OnSettingsUpdated(Settings settings)
     {
         if (!IsClientRunning && !IsServerRunning)
