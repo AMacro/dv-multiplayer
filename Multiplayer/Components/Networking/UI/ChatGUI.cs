@@ -249,7 +249,7 @@ public class ChatGUI : MonoBehaviour
 
     private void ChatInputChange(string message)
     {
-        Multiplayer.Log($"ChatInputChange({message})");
+        //Multiplayer.LogDebug(() => $"ChatInputChange({message})");
 
         //allow the user to clear text
         if(Input.GetKeyDown(KeyCode.Backspace) || Input.GetKeyDown(KeyCode.Delete))
@@ -257,8 +257,8 @@ public class ChatGUI : MonoBehaviour
         
         if (CheckForWhisper(message, out string localMessage, out string recipient))
         {
-            Multiplayer.Log($"ChatInputChange: message: \"{message}\", localMessage: \"{(localMessage == null ? "null" : localMessage)}" +
-                $"\", recipient: \"{(recipient == null ? "null" : recipient)}\"");
+            //Multiplayer.LogDebug(()=>$"ChatInputChange: message: \"{message}\", localMessage: \"{(localMessage == null ? "null" : localMessage)}" +
+            //    $"\", recipient: \"{(recipient == null ? "null" : recipient)}\"");
 
             if (localMessage == null || localMessage == string.Empty)
             {
@@ -315,7 +315,7 @@ public class ChatGUI : MonoBehaviour
 
         if (message.StartsWith("/") && message.Length > (ChatManager.COMMAND_WHISPER_SHORT.Length + 2))
         {
-            Multiplayer.Log("CheckForWhisper() starts with /");
+            //Multiplayer.LogDebug(()=>"CheckForWhisper() starts with /");
             string command = message.Substring(1).Split(' ')[0];
             switch (command)
             {
