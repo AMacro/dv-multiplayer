@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
-using static DV.UI.ATutorialsMenuProvider;
 
 namespace Multiplayer.Networking.TransportLayers;
 
@@ -16,7 +15,7 @@ public class LiteNetLibTransport : ITransport, INetEventListener
 
     public event Action<NetDataReader, IConnectionRequest> OnConnectionRequest;
     public event Action<ITransportPeer> OnPeerConnected;
-    public event Action<ITransportPeer, DisconnectInfo> OnPeerDisconnected;
+    public event Action<ITransportPeer, DisconnectReason> OnPeerDisconnected;
     public event Action<ITransportPeer, NetDataReader, byte, DeliveryMethod> OnNetworkReceive;
     public event Action<IPEndPoint, SocketError> OnNetworkError;
     public event Action<ITransportPeer, int> OnNetworkLatencyUpdate;
@@ -105,7 +104,7 @@ public class LiteNetLibTransport : ITransport, INetEventListener
         if(!netPeerToPeer.TryGetValue(netPeer, out var peer))
             return;
 
-        OnPeerDisconnected?.Invoke(peer, disconnectInfo);
+        OnPeerDisconnected?.Invoke(peer, disconnectInfo.Reason);
 
         netPeerToPeer.Remove(netPeer);
         CleanupPeerDictionaries();

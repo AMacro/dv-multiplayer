@@ -96,6 +96,14 @@ public abstract class NetworkManager
     public virtual void Stop()
     {
         transport.Stop(true);
+
+        transport.OnConnectionRequest -= OnConnectionRequest;
+        transport.OnPeerConnected -= OnPeerConnected;
+        transport.OnPeerDisconnected -= OnPeerDisconnected;
+        transport.OnNetworkReceive -= OnNetworkReceive;
+        transport.OnNetworkError -= OnNetworkError;
+        transport.OnNetworkLatencyUpdate -= OnNetworkLatencyUpdate;
+
         Settings.OnSettingsUpdated -= OnSettingsUpdated;
     }
 
@@ -141,7 +149,7 @@ public abstract class NetworkManager
         }
         catch (ParseException e)
         {
-            Multiplayer.LogWarning($"Failed to parse packet: {e.Message}");
+            Multiplayer.LogWarning($"[{GetType()}] Failed to parse packet: {e.Message}\r\n{e.StackTrace}");
         }
         finally
         {
@@ -174,7 +182,7 @@ public abstract class NetworkManager
 
     //Standard networking callbacks
     public abstract void OnPeerConnected(ITransportPeer peer);
-    public abstract void OnPeerDisconnected(ITransportPeer peer, DisconnectInfo disconnectInfo);
+    public abstract void OnPeerDisconnected(ITransportPeer peer, DisconnectReason disconnectInfo);
     public abstract void OnConnectionRequest(NetDataReader requestData, IConnectionRequest request);
     public abstract void OnNetworkLatencyUpdate(ITransportPeer peer, int latency);
 

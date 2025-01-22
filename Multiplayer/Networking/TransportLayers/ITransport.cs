@@ -25,7 +25,7 @@ public interface ITransport
     // Events
     event Action<NetDataReader, IConnectionRequest> OnConnectionRequest;
     event Action<ITransportPeer> OnPeerConnected;
-    event Action<ITransportPeer, DisconnectInfo> OnPeerDisconnected;
+    event Action<ITransportPeer, DisconnectReason> OnPeerDisconnected;
     event Action<ITransportPeer, NetDataReader, byte, DeliveryMethod> OnNetworkReceive;
     event Action<IPEndPoint, SocketError> OnNetworkError;
     event Action<ITransportPeer, int> OnNetworkLatencyUpdate;

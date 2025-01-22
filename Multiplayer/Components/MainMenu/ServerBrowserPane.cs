@@ -859,35 +859,33 @@ namespace Multiplayer.Components.MainMenu
         {
             connectionState = ConnectionState.Failed;
 
-            connectingPopup?.RequestClose(PopupClosedByAction.Abortion, null);
+            if (connectingPopup != null)
+            {
+                connectingPopup.RequestClose(PopupClosedByAction.Abortion, null);
+                connectingPopup = null;  // Clear the reference
+            }
 
-            if(this.gridView != null)
-                IndexChanged(this.gridView);
+            if (gameObject != null && gameObject.activeInHierarchy)
+            {
+                if (gridView != null)
+                    IndexChanged(gridView);
 
-            buttonDirectIP?.ToggleInteractable(true);
+                if (buttonDirectIP != null && buttonDirectIP.gameObject != null)
+                    buttonDirectIP.ToggleInteractable(true);
+            }
         }
 
         private void OnDisconnect(DisconnectReason reason, string message)
         {
-            Multiplayer.LogError($"Connection failed! {reason}, \"{message}\"");
+            Multiplayer.Log($"Disconnected due to: {reason}, \"{message}\"");
 
-            switch (reason)
+            string displayMessage = message;
+
+            if (string.IsNullOrEmpty(message))
             {
-                case DisconnectReason.UnknownHost:
-                    if (message == null || message.Length == 0)
-                    {
-                        message = "Unknown Host"; //TODO: add translations
-                    }
-                    break;
-                case DisconnectReason.DisconnectPeerCalled:
-                    if (message == null || message.Length == 0)
-                    {
-                        message = "Player Kicked"; //TODO: add translations
-                    }
-                    break;
-                case DisconnectReason.ConnectionFailed:
-
-                    //Check our connectionState
+                //fallback for no message (server initiated disconnects should have a message)               
+                if (reason == DisconnectReason.ConnectionFailed)
+                {
                     switch (connectionState)
                     {
                         case ConnectionState.AttemptingIPv6:
@@ -911,44 +909,25 @@ namespace Multiplayer.Components.MainMenu
                             message = "Host Unreachable"; //TODO: add translations
                             break;
                     }
-                    break;
+                }
 
-                case DisconnectReason.ConnectionRejected:        
-                    if (message == null || message.Length == 0)
-                    {
-                        message = "Rejected!"; //TODO: add translations
-                    }
-                    break;
-                case DisconnectReason.RemoteConnectionClose:
-                    if (message == null || message.Length == 0)
-                    {
-                        message = "Server Shutting Down"; //TODO: add translations
-                    }
-                    break;
-
-                case DisconnectReason.Timeout:
-                    if (message == null || message.Length == 0)
-                    {
-                        message = "Server Timed out"; //TODO: add translations
-                    }
-                    break;
+                displayMessage = GetDisplayMessageForDisconnect(reason);
+                AttemptFail();
+            }
+            else
+            {
+                connectionState = ConnectionState.NotConnected;
             }
 
-            //Multiplayer.LogError($"OnDisconnect() Calling AF");
-            AttemptFail();
-
-            //Multiplayer.LogError($"OnDisconnect() Queuing");
             NetworkLifecycle.Instance.QueueMainMenuEvent(() =>
             {
-            
-                Multiplayer.LogError($"OnDisconnect() Adding PU");
-                MainMenuThingsAndStuff.Instance.ShowOkPopup(message, ()=>{ });
-
-                //Multiplayer.LogError($"OnDisconnect() Done!");
+                Multiplayer.LogDebug(() => "OnDisconnect() Queuing");
+                MainMenuThingsAndStuff.Instance?.ShowOkPopup(displayMessage, () => { });
             });
         }
 
         IEnumerator GetRequest(string uri)
+        private string GetDisplayMessageForDisconnect(DisconnectReason reason)
         {
             using UnityWebRequest webRequest = UnityWebRequest.Get(uri);
             // Request and wait for the desired page.
@@ -958,12 +937,22 @@ namespace Multiplayer.Components.MainMenu
             int page = pages.Length - 1;
 
             if (webRequest.isNetworkError)
+            return reason switch 
             {
                 Multiplayer.LogError(pages[page] + ": Error: " + webRequest.error);
             }
             else
             {
                 Multiplayer.Log(pages[page] + ":\nReceived: " + webRequest.downloadHandler.text);
+                DisconnectReason.UnknownHost => "Unknown Host",
+                DisconnectReason.DisconnectPeerCalled => "Player Kicked",
+                DisconnectReason.ConnectionFailed => "Host Unreachable",
+                DisconnectReason.ConnectionRejected => "Rejected!",
+                DisconnectReason.RemoteConnectionClose => "Server Shutting Down",
+                DisconnectReason.Timeout => "Server Timed Out",
+                _ => "Connection Failed"
+            };
+        }
 
                 LobbyServerData[] response;
 

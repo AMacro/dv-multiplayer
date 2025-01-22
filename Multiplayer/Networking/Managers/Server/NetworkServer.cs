@@ -106,6 +106,14 @@ public class NetworkServer : NetworkManager
             UnityEngine.Object.Destroy(lobbyServerManager);
         }
 
+        //Alert all clients (except h
+        var packet =  WritePacket(new ClientboundDisconnectPacket());
+        foreach (var peer in Peers.Values)
+        {
+            if (peer != SelfPeer)
+                peer?.Disconnect(packet);
+        }
+
         base.Stop();
     }
 
@@ -196,20 +204,21 @@ public class NetworkServer : NetworkManager
     {
     }
 
-    public override void OnPeerDisconnected(ITransportPeer peer, DisconnectInfo disconnectInfo)
+    public override void OnPeerDisconnected(ITransportPeer peer, DisconnectReason disconnectReason)
     {
         byte id = (byte)peer.Id;
-        Log($"Player {(serverPlayers.TryGetValue(id, out ServerPlayer player) ? player : id)} disconnected: {disconnectInfo.Reason}");
+        Log($"Player {(serverPlayers.TryGetValue(id, out ServerPlayer player) ? player : id)} disconnected: {disconnectReason}");
 
         if (WorldStreamingInit.isLoaded)
             SaveGameManager.Instance.UpdateInternalData();
 
         serverPlayers.Remove(id);
         Peers.Remove(id);
-        SendPacketToAll(WritePacket(new ClientboundPlayerDisconnectPacket
+
+        SendPacketToAll(new ClientboundPlayerDisconnectPacket
         {
             Id = id
-        }), DeliveryMethod.ReliableUnordered);
+        }, DeliveryMethod.ReliableUnordered);
 
         PlayerDisconnect?.Invoke(id);
     }
@@ -244,7 +253,7 @@ public class NetworkServer : NetworkManager
     {
         NetDataWriter writer = WritePacket(packet);
         foreach (KeyValuePair<byte, ITransportPeer> kvp in Peers)
-            kvp.Value.Send(writer, deliveryMethod);
+            kvp.Value?.Send(writer, deliveryMethod);
     }
 
     private void SendPacketToAll<T>(T packet, DeliveryMethod deliveryMethod, ITransportPeer excludePeer) where T : class, new()
@@ -277,7 +286,8 @@ public class NetworkServer : NetworkManager
 
     public void KickPlayer(ITransportPeer peer)
     {
-        peer.Disconnect(WritePacket(new ClientboundPlayerKickPacket()));
+        //peer.Send(WritePacket(new ClientboundDisconnectPacket()),DeliveryMethod.ReliableUnordered);
+        peer.Disconnect(WritePacket(new ClientboundDisconnectPacket { Kicked = true }));
     }
     public void SendGameParams(GameParams gameParams)
     {
@@ -637,11 +647,6 @@ public class NetworkServer : NetworkManager
 
     private void OnServerboundClientReadyPacket(ServerboundClientReadyPacket packet, ITransportPeer peer)
     {
-        if(peer == null)
-        {
-            LogError($"OnServerboundClientReadyPacket() peer is null!");
-            return;
-        }
 
         byte peerId = (byte)peer.Id;
 

@@ -51,6 +51,7 @@ public class NetworkClient : NetworkManager
     protected override string LogPrefix => "[Client]";
 
     private Action<DisconnectReason, string> onDisconnect;
+    private string disconnectMessage;
 
     public ITransportPeer SelfPeer { get; private set; }
     public readonly ClientPlayerManager ClientPlayerManager;
@@ -111,11 +112,14 @@ public class NetworkClient : NetworkManager
     protected override void Subscribe()
     {
         netPacketProcessor.SubscribeReusable<ClientboundLoginResponsePacket>(OnClientboundLoginResponsePacket);
+        netPacketProcessor.SubscribeReusable<ClientboundDisconnectPacket>(OnClientboundDisconnectPacket);
+
         netPacketProcessor.SubscribeReusable<ClientboundPlayerJoinedPacket>(OnClientboundPlayerJoinedPacket);
         netPacketProcessor.SubscribeReusable<ClientboundPlayerDisconnectPacket>(OnClientboundPlayerDisconnectPacket);
-        netPacketProcessor.SubscribeReusable<ClientboundPlayerKickPacket>(OnClientboundPlayerKickPacket);
+
         netPacketProcessor.SubscribeReusable<ClientboundPlayerPositionPacket>(OnClientboundPlayerPositionPacket);
         netPacketProcessor.SubscribeReusable<ClientboundPingUpdatePacket>(OnClientboundPingUpdatePacket);
+
         netPacketProcessor.SubscribeReusable<ClientboundTickSyncPacket>(OnClientboundTickSyncPacket);
         netPacketProcessor.SubscribeReusable<ClientboundServerLoadingPacket>(OnClientboundServerLoadingPacket);
         netPacketProcessor.SubscribeReusable<ClientboundBeginWorldSyncPacket>(OnClientboundBeginWorldSyncPacket);
@@ -170,8 +174,11 @@ public class NetworkClient : NetworkManager
         serverPeer = peer;
     }
 
-    public override void OnPeerDisconnected(ITransportPeer peer, DisconnectInfo disconnectInfo)
+    public override void OnPeerDisconnected(ITransportPeer peer, DisconnectReason disconnectReason)
     {
+
+        LogDebug(()=>$"OnPeerDisconnected({peer.Id}, {disconnectReason}) disconnect message: {disconnectMessage}");
+
         NetworkLifecycle.Instance.Stop();
 
         TrainStress.globalIgnoreStressCalculation = false;
@@ -186,37 +193,7 @@ public class NetworkClient : NetworkManager
             MainMenu.GoBackToMainMenu();
         }
 
-
-        if (disconnectInfo.Reason == DisconnectReason.ConnectionRejected ||
-            disconnectInfo.Reason == DisconnectReason.RemoteConnectionClose)
-        {
-            netPacketProcessor.ReadAllPackets(disconnectInfo.AdditionalData);
-            return;
-        }
-
-        onDisconnect(disconnectInfo.Reason, null);
-
-        //string message = $"{disconnectInfo.Reason}";
-        /*
-        switch (disconnectInfo.Reason)
-        {
-            case DisconnectReason.DisconnectPeerCalled:
-            case DisconnectReason.ConnectionRejected:
-                netPacketProcessor.ReadAllPackets(disconnectInfo.AdditionalData);
-                return;
-            case DisconnectReason.RemoteConnectionClose:
-                netPacketProcessor.ReadAllPackets(disconnectInfo.AdditionalData);
-                return;
-        }*/
-
-        /*
-        NetworkLifecycle.Instance.QueueMainMenuEvent(() =>
-        {
-            Popup popup = MainMenuThingsAndStuff.Instance.ShowOkPopup();
-            if (popup == null)
-                return;
-            popup.labelTMPro.text = text;
-        });*/
+        onDisconnect(disconnectReason, disconnectMessage);
     }
 
     public override void OnNetworkLatencyUpdate(ITransportPeer peer, int latency)
@@ -226,7 +203,8 @@ public class NetworkClient : NetworkManager
 
     public override void OnConnectionRequest(NetDataReader dataReader, IConnectionRequest request)
     {
-        // todo
+        // Clients don't receive incomming requests.
+        request.Reject();
     }
 
     #endregion
@@ -278,17 +256,26 @@ public class NetworkClient : NetworkManager
         ClientPlayerManager.UpdatePosition(packet.Id, packet.Position, Vector3.zero, packet.Rotation, false, packet.CarID != 0, packet.CarID);
     }
 
+    //For other player left the game
     private void OnClientboundPlayerDisconnectPacket(ClientboundPlayerDisconnectPacket packet)
     {
-        Log($"Received player disconnect packet (Id: {packet.Id})");
+        Log($"Received player disconnect packet for player id: {packet.Id}");
         ClientPlayerManager.RemovePlayer(packet.Id);
     }
 
-    private void OnClientboundPlayerKickPacket(ClientboundPlayerKickPacket packet)
-    {
 
-        string text = "You were kicked!"; //to be localised //Locale.Get(packet.ReasonKey, packet.ReasonArgs);
-        onDisconnect(DisconnectReason.ConnectionRejected, text);
+    //For server shutting down / player kicked
+    private void OnClientboundDisconnectPacket(ClientboundDisconnectPacket packet)
+    {
+        if (packet.Kicked)
+        {
+            Log($"Player was kicked!");
+            disconnectMessage = "You were kicked!";
+        }
+        else
+        {
+            disconnectMessage = "Server Shutting Down";
+        }
     }
     private void OnClientboundPlayerPositionPacket(ClientboundPlayerPositionPacket packet)
     {
