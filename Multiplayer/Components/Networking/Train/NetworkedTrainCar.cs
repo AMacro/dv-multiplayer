@@ -8,7 +8,6 @@ using DV.Simulation.Brake;
 using DV.Simulation.Cars;
 using DV.ThingTypes;
 using JetBrains.Annotations;
-using LiteNetLib;
 using LocoSim.Definitions;
 using LocoSim.Implementations;
 using Multiplayer.Components.Networking.Player;
@@ -177,7 +176,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             foreach (KeyValuePair<string, Port> kvp in simulationFlow.fullPortIdToPort)
                 if (kvp.Value.valueType == PortValueType.CONTROL || NetworkLifecycle.Instance.IsHost())
                     kvp.Value.ValueUpdatedInternally += _ => { Common_OnPortUpdated(kvp.Value); };
-
+                
             dirtyFuses = new HashSet<string>(simulationFlow.fullFuseIdToFuse.Count);
             foreach (KeyValuePair<string, Fuse> kvp in simulationFlow.fullFuseIdToFuse)
                 kvp.Value.StateUpdated += _ => { Common_OnFuseUpdated(kvp.Value); };
@@ -219,6 +218,8 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
             StartCoroutine(Server_WaitForLogicCar());
         }
+
+        NetworkLifecycle.Instance?.Client.SendTrainSyncRequest(NetId);
     }
     public void OnDisable()
     {
@@ -332,10 +333,10 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         foreach (string portId in simulationFlow.fullPortIdToPort.Keys)
         {
             dirtyPorts.Add(portId);
-            if (simulationFlow.TryGetPort(portId, out Port port))
-            {
-                lastSentPortValues[portId] = port.value;
-            }
+            //if (simulationFlow.TryGetPort(portId, out Port port))
+            //{
+            //    lastSentPortValues[portId] = port.value;
+            //}
         }
 
         foreach (string fuseId in simulationFlow.fullFuseIdToFuse.Keys)
@@ -644,13 +645,15 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             if(simulationFlow.TryGetPort(portId, out Port port))
             {
                 float value = port.Value;
-                portValues[i++] = value;
+                portValues[i] = value;
                 lastSentPortValues[portId] = value;
             }
             else
             {
-                Multiplayer.LogWarning($"SendPorts() [{CurrentID}, {NetId}] Failed to find port \"{portId}\"");
+                Multiplayer.LogWarning($"Failed to send port \"{portId}\" for [{CurrentID}, {NetId}]");
             }
+
+            i++;
         }
 
         dirtyPorts.Clear();
@@ -666,11 +669,16 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         int i = 0;
         string[] fuseIds = dirtyFuses.ToArray();
         bool[] fuseValues = new bool[fuseIds.Length];
+
         foreach (string fuseId in dirtyFuses)
+        {
             if(simulationFlow.TryGetFuse(fuseId, out Fuse fuse))
-                fuseValues[i++] = fuse.State;
+                fuseValues[i] = fuse.State;
             else
                 Multiplayer.LogWarning($"SendFuses() [{CurrentID}, {NetId}] Failed to find fuse \"{fuseId}\"");
+
+            i++;
+        }
 
         dirtyFuses.Clear();
 
@@ -711,10 +719,24 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             return;
         if (float.IsNaN(port.prevValue) && float.IsNaN(port.Value))
             return;
-        if (!lastSentPortValues.TryGetValue(port.id, out float lastSentvalue) ||
-            Mathf.Abs(lastSentvalue - port.Value) > MAX_PORT_DELTA ||
-            (port.Value == 0 && lastSentvalue != 0))
-            dirtyPorts.Add(port.id);
+
+        bool hasLastSent = lastSentPortValues.TryGetValue(port.id, out float lastSentValue);
+        float delta = Mathf.Abs(lastSentValue - port.Value);
+
+        if (port.valueType == PortValueType.STATE)
+        {
+            if (!hasLastSent || lastSentValue != port.Value)
+            {
+                dirtyPorts.Add(port.id);
+            }
+        }
+        else
+        {
+            if (!hasLastSent || delta > MAX_PORT_DELTA || (port.Value == 0 && lastSentValue != 0))
+            {
+                dirtyPorts.Add(port.id);
+            }
+        }
     }
 
     private void Common_OnPaintThemeChange(TrainCarPaint paintController)
@@ -735,6 +757,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     {
         if (UnloadWatcher.isUnloading || NetworkLifecycle.Instance.IsProcessingPacket)
             return;
+
         dirtyFuses.Add(fuse.id);
     }
 
@@ -743,13 +766,11 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         if (!hasSimFlow)
             return;
 
-        //string log = $"CommonTrainPortsPacket({TrainCar.ID})";
         for (int i = 0; i < packet.PortIds.Length; i++)
         {
-            if(simulationFlow.TryGetPort(packet.PortIds[i], out Port port))
+            if (simulationFlow.TryGetPort(packet.PortIds[i], out Port port))
             {
                 float value = packet.PortValues[i];
-                // before = port.value;
 
                 if (port.type == PortType.EXTERNAL_IN)
                     port.ExternalValueUpdate(value);
@@ -774,8 +795,6 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
                 fuse.ChangeState(packet.FuseValues[i]);
             else
                 Multiplayer.LogWarning($"UpdateFuses() [{CurrentID}, {NetId}] Failed to find fuse \"{packet.FuseIds[i]}\", Value: {packet.FuseValues[i]}");
-
-        //simulationFlow.fullFuseIdToFuse[packet.FuseIds[i]].ChangeState(packet.FuseValues[i]);
     }
 
     public void Common_ReceiveCouplerInteraction(CommonCouplerInteractionPacket packet)
