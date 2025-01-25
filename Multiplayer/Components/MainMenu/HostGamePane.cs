@@ -268,7 +268,8 @@ public class HostGamePane : MonoBehaviour
         port = go.GetComponent<TMP_InputField>();
         port.characterValidation = TMP_InputField.CharacterValidation.Integer;
         port.characterLimit = MAX_PORT_LEN;
-        port.placeholder.GetComponent<TMP_Text>().text = (Multiplayer.Settings.Port >= MIN_PORT && Multiplayer.Settings.Port <= MAX_PORT) ?  Multiplayer.Settings.Port.ToString() : DEFAULT_PORT.ToString();
+        port.placeholder.GetComponent<TMP_Text>().text = "7777";
+        port.text = (Multiplayer.Settings.Port >= MIN_PORT && Multiplayer.Settings.Port <= MAX_PORT) ?  Multiplayer.Settings.Port.ToString() : DEFAULT_PORT.ToString();
 
         
         go = this.gameObject.UpdateButton("ButtonTextIcon Save", "ButtonTextIcon Start", Locale.SERVER_HOST_START_KEY, null, playSprite);
