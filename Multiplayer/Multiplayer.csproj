@@ -16,6 +16,7 @@
         <Publicize Include="DV.Simulation" IncludeCompilerGeneratedMembers="false" />
         <Publicize Include="DV.Utils:DV.Utils.SingletonBehaviour`1._instance" />
         <Publicize Include="DV.UI" IncludeCompilerGeneratedMembers="false" />
+        <Publicize Include="Facepunch.Steamworks.Win64" IncludeCompilerGeneratedMembers="false" />
     </ItemGroup>
     <!-- Derail Valley References -->
     <ItemGroup>
