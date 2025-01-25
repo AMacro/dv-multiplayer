@@ -10,7 +10,6 @@ using Multiplayer.Utils;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
-using UnityEngine.Networking;
 using System.Linq;
 using Multiplayer.Networking.Data;
 using DV;
@@ -19,47 +18,15 @@ using LiteNetLib;
 using System.Collections.Generic;
 using Steamworks;
 using Steamworks.Data;
-using Multiplayer.Networking.Managers.Client;
-
 
 namespace Multiplayer.Components.MainMenu
 {
     public class ServerBrowserPane : MonoBehaviour
     {
-        private class PingRecord
-        {
-            int ping1;
-            int ping2;
-            int received;
-
-            public PingRecord()
-            {
-                ping1 = -1;
-                ping2 = -1;
-            }
-
-            public int Avg()
-            {
-                if (received >= 2 && ping1 >-1 && ping2 > -1)
-                    return (ping1 + ping2) / 2;
-                else
-                    return Math.Max(ping1, ping2);
-            }
-
-            public void AddPing(int ping)
-            {
-                //Multiplayer.Log($"AddPing() ping1 {ping1}, ping2 {ping2}, new {ping}, {received}");
-                ping1 = ping2;
-                ping2 = ping;
-
-                if(received < 2)
-                    received++;
-            }
-        }
-
         private enum ConnectionState
         {
             NotConnected,
+            AttemptingSteamRelay,
             AttemptingIPv6,
             AttemptingIPv6Punch,
             AttemptingIPv4,
@@ -79,21 +46,10 @@ namespace Multiplayer.Components.MainMenu
         private string serverIDOnRefresh;
         private IServerBrowserGameDetails selectedServer;
 
-        //ping tracking
-        private readonly List<IServerBrowserGameDetails> serversToPing = [];
-        private readonly Dictionary<string, (PingRecord IPv4Ping, PingRecord IPv6Ping)> serverPings = [];
 
+        //ping tracking
         private float pingTimer = 0f;
         private const float PING_INTERVAL = 2f; // base interval to refresh all pings
-        private const float PING_BATCH_INTERVAL = 0.5f; //gap bwetween ping batches
-        private const int SERVERS_PER_BATCH = 10;
-
-        //LAN tracking
-        private readonly List<IServerBrowserGameDetails> localServers = [];
-        private const int LAN_TIMEOUT = 60;         //How long to hold a LAN server without a response
-        private const int DISCOVERY_TIMEOUT = 1;    //how long to wait for servers to respond
-        private bool localRefreshComplete;
-        private float discoveryTimer = 0f;
 
         //Button variables
         private ButtonDV buttonJoin;
@@ -112,11 +68,11 @@ namespace Multiplayer.Components.MainMenu
         private const int REFRESH_MIN_TIME = 10; //Stop refresh spam
         private bool remoteRefreshComplete;
 
-        private ServerBrowserClient serverBrowserClient;
-
         //connection parameters
         private string address;
         private int portNumber;
+        private Lobby? selectedLobby;
+        private static Lobby? joinedLobby;
         string password = null;
         bool direct = false;
 
@@ -131,7 +87,10 @@ namespace Multiplayer.Components.MainMenu
 
         public void Awake()
         {
-            //Multiplayer.Log("MultiplayerPane Awake()");
+            Multiplayer.Log("MultiplayerPane Awake()");
+            joinedLobby?.Leave();
+            joinedLobby = null;
+
             CleanUI();
             BuildUI();
 
@@ -154,12 +113,6 @@ namespace Multiplayer.Components.MainMenu
             buttonDirectIP.ToggleInteractable(true);
             buttonRefresh.ToggleInteractable(true);
 
-            //Start the server browser network client
-            serverBrowserClient = new ServerBrowserClient(Multiplayer.Settings);
-            serverBrowserClient.OnPing += this.OnPing;
-            serverBrowserClient.OnDiscovery += this.OnDiscovery;
-            serverBrowserClient.Start();
-
             RefreshAction();
         }
 
@@ -167,32 +120,14 @@ namespace Multiplayer.Components.MainMenu
         public void OnDisable()
         {
             this.SetupListeners(false);
-
-            if (serverBrowserClient != null)
-            {
-                serverBrowserClient.OnPing -= this.OnPing;
-                serverBrowserClient.Stop();
-                serverBrowserClient = null;
-            }
-        }
-
-        public void OnDestroy()
-        {
-            if (serverBrowserClient == null)
-                return;
-
-            serverBrowserClient.OnPing -= this.OnPing;
-            serverBrowserClient.Stop();
         }
 
         public void Update()
         {
-            //Poll for any LAN discovery or ping packets
-            serverBrowserClient?.PollEvents();
+            SteamClient.RunCallbacks();
 
             //Handle server refresh interval
             timePassed += Time.deltaTime;
-            discoveryTimer += Time.deltaTime;
 
             if (!serverRefreshing)
             {              
@@ -205,30 +140,21 @@ namespace Multiplayer.Components.MainMenu
                     buttonRefresh.ToggleInteractable(true);
                 }
             }
-            else if(localRefreshComplete && remoteRefreshComplete)
+            else if(remoteRefreshComplete)
             {
-                ExpireLocalServers();   //remove any that have not been seen in a while
                 RefreshGridView();
                 IndexChanged(gridView); //Revalidate any selected servers
-
-                localRefreshComplete = false;
                 remoteRefreshComplete = false;
                 serverRefreshing = false;
                 timePassed = 0;
             }
-            else
-            {
-                if (discoveryTimer >= DISCOVERY_TIMEOUT)
-                    localRefreshComplete = true;
-            }
-
 
             //Handle pinging servers
             pingTimer += Time.deltaTime;
 
-            if (pingTimer >= (serversToPing.Count > 0 ? PING_BATCH_INTERVAL : GetPingInterval()))
+            if (pingTimer >= PING_INTERVAL)
             {
-                PingNextBatch();
+                UpdatePings();
                 pingTimer = 0f;
             }
         }
@@ -427,15 +353,9 @@ namespace Multiplayer.Components.MainMenu
             buttonJoin.ToggleInteractable(false);
             buttonRefresh.ToggleInteractable(false);
 
-            StartCoroutine(GetRequest($"{Multiplayer.Settings.LobbyServerAddress}/list_game_servers"));
-
             if (DVSteamworks.Success)
                 ListActiveLobbies();
 
-
-            //Send a message to find local peers
-            discoveryTimer = 0f;
-            serverBrowserClient?.SendDiscoveryRequest();
         }
         private void JoinAction()
         {
@@ -446,17 +366,22 @@ namespace Multiplayer.Components.MainMenu
 
                 //not making a direct connection
                 direct = false;
-                portNumber = selectedServer.port;
-                password = null; //clear the password
-
-                if (selectedServer.HasPassword)
+                portNumber = -1;
+                var lobby = GetLobbyFromServer(selectedServer);
+                if (lobby != null)
                 {
-                    ShowPasswordPopup();
-                    return;
-                }
+                    selectedLobby = (Lobby)lobby;
+                    password = null; //clear the password
 
-                AttemptConnection();
-               
+                    if (selectedServer.HasPassword)
+                    {
+                        ShowPasswordPopup();
+                        return;
+                    }
+
+                    AttemptConnection();
+
+                }
             }
         }
 
@@ -470,19 +395,17 @@ namespace Multiplayer.Components.MainMenu
             direct = true;
             password = null;
 
+            //ShowSteamID();
             ShowIpPopup();
         }
 
         private void IndexChanged(AGridView<IServerBrowserGameDetails> gridView)
         {
-            //Debug.Log($"Index: {gridView.SelectedModelIndex}");
             if (serverRefreshing)
                 return;
 
             if (gridView.SelectedModelIndex >= 0)
             {
-                //Multiplayer.Log($"Selected server: {gridViewModel[gridView.SelectedModelIndex].Name}");
-
                 selectedServer = gridViewModel[gridView.SelectedModelIndex];
                 
                 UpdateDetailsPane();
@@ -521,7 +444,6 @@ namespace Multiplayer.Components.MainMenu
 
             if (selectedServer != null)
             {
-                //Multiplayer.Log("Prepping Data");
                 serverName.text = selectedServer.Name;
 
                 //note: built-in localisations have a trailing colon e.g. 'Game mode:'
@@ -615,6 +537,34 @@ namespace Multiplayer.Components.MainMenu
                 }
             };
         }
+
+        //private void ShowSteamID()
+        //{
+        //    var popup = MainMenuThingsAndStuff.Instance.ShowRenamePopup();
+        //    if (popup == null)
+        //    {
+        //        Multiplayer.LogError("Popup not found.");
+        //        return;
+        //    }
+
+        //    popup.labelTMPro.text = "SteamID";
+        //    //popup.GetComponentInChildren<TMP_InputField>().text = Multiplayer.Settings.LastRemoteIP;
+
+        //    popup.Closed += result =>
+        //    {
+        //        if (result.closedBy == PopupClosedByAction.Abortion)
+        //        {
+        //            buttonDirectIP.ToggleInteractable(true);
+        //            IndexChanged(gridView); //re-enable the join button if a valid gridview item is selected
+        //            return;
+        //        }
+
+        //        steamId = popup.GetComponentInChildren<TMP_InputField>().text;
+        //        Multiplayer.LogDebug(() => $"Attempting to connecto SteamID: {steamId}");
+
+        //        ShowPasswordPopup();
+        //    };
+        //}
 
         private void ShowPortPopup()
         {
@@ -713,18 +663,25 @@ namespace Multiplayer.Components.MainMenu
             loc.UpdateLocalization();
 
 
-            popup.labelTMPro.text = $"Connecting, please wait...\r\nAttempt: {attempt}"; //to be localised
+            popup.labelTMPro.text = $"Connecting, please wait..."; //to be localised
 
-            popup.Closed += _ =>
+            popup.Closed += (PopupResult result) =>
             {
                 connectionState = ConnectionState.Aborted;
             };
             
         }
-        private void AttemptConnection()
+        
+        #region workflow
+        private void UpdatePings()
+        {
+            UpdatePingsSteam();
+        }
+
+        private async void AttemptConnection()
         {
 
-            Multiplayer.Log($"AttemptConnection Direct: {direct}, Address: {address}");
+            Multiplayer.Log($"AttemptConnection Direct: {direct}, Address: {address}, Lobby: {selectedLobby?.Id.ToString()}");
 
             attempt = 0;
             connectionState = ConnectionState.NotConnected;
@@ -732,128 +689,143 @@ namespace Multiplayer.Components.MainMenu
 
             if (!direct)
             {
-                if (selectedServer.ipv6 != null && selectedServer.ipv6 != string.Empty)
+                if(selectedLobby != null)
                 {
-                    address = selectedServer.ipv6;
-                }
-                else
-                {
-                    address = selectedServer.ipv4;
-                }
-            }
+                    joinedLobby = selectedLobby; //store the lobby for when we disconnect
 
-            Multiplayer.Log($"AttemptConnection address: {address}");
+                    connectionState = ConnectionState.AttemptingSteamRelay;
 
-            if (IPAddress.TryParse(address, out IPAddress IPaddress))
-            {
-                Multiplayer.Log($"AttemptConnection tryParse: {IPaddress.AddressFamily}");
+                    var joinResult = await joinedLobby?.Join();
+                    if (joinResult == RoomEnter.Success)
+                    {
+                        string hostId = ((Lobby)joinedLobby).Owner.Id.Value.ToString();
+                        NetworkLifecycle.Instance.StartClient(hostId, -1, password, false, OnDisconnect);
+                    }
+                    else
+                    {
+                        Multiplayer.LogDebug(() => "AttemptConnection() Leaving Lobby");
+                        joinedLobby?.Leave();
+                        joinedLobby = null;
+                        Multiplayer.Log($"Failed to join lobby: {joinResult}");
+                        AttemptFail();
+                    }
 
-                if (IPaddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
-                {
-                    AttemptIPv4();
-                }
-                else if(IPaddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
-                {
-                    AttemptIPv6();
-                }
-
-                return;
-            }
-
-            Multiplayer.LogError($"IP address invalid: {address}");
-
-            AttemptFail();
-        }
-
-        private void AttemptIPv6()
-        {
-            Multiplayer.Log($"AttemptIPv6() {address}");
-
-            if (connectionState == ConnectionState.Aborted)
-                return;
-
-            attempt++;
-            if (connectingPopup != null)
-                connectingPopup.labelTMPro.text = $"Connecting, please wait...\r\nAttempt: {attempt}";
-
-            Multiplayer.Log($"AttemptIPv6() starting attempt");
-            connectionState = ConnectionState.AttemptingIPv6; 
-            SingletonBehaviour<NetworkLifecycle>.Instance.StartClient(address, portNumber, password, false, OnDisconnect);
-
-        }
-        private void AttemptIPv6Punch()
-        {
-            Multiplayer.Log($"AttemptIPv6Punch() {address}");
-
-            if (connectionState == ConnectionState.Aborted)
-                return;
-
-            attempt++;
-            if(connectingPopup != null)
-                connectingPopup.labelTMPro.text = $"Connecting, please wait...\r\nAttempt: {attempt}";
-
-            //punching not implemented we'll just try again for now
-            connectionState = ConnectionState.AttemptingIPv6Punch;
-            SingletonBehaviour<NetworkLifecycle>.Instance.StartClient(address, portNumber, password, false, OnDisconnect);
- 
-        }
-        private void AttemptIPv4()
-        {
-            Multiplayer.Log($"AttemptIPv4() {address}, {connectionState}");
-
-            if (connectionState == ConnectionState.Aborted)
-                return;
-
-            attempt++;
-            if (connectingPopup != null)
-                connectingPopup.labelTMPro.text = $"Connecting, please wait...\r\nAttempt: {attempt}";
-
-            if (!direct)
-            {
-                if(selectedServer.ipv4 == null || selectedServer.ipv4 == string.Empty)
-                {
-                    AttemptFail();
-                    return;
-                }
-
-                address = selectedServer.ipv4;
-            }
-
-            Multiplayer.Log($"AttemptIPv4() {address}");
-
-            if (IPAddress.TryParse(address, out IPAddress IPaddress))
-            {
-                Multiplayer.Log($"AttemptIPv4() TryParse passed");
-                if (IPaddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
-                {
-                    Multiplayer.Log($"AttemptIPv4() starting attempt");
-                    connectionState = ConnectionState.AttemptingIPv4;
-                    SingletonBehaviour<NetworkLifecycle>.Instance.StartClient(address, portNumber, password, false, OnDisconnect);
                     return;
                 }
             }
 
-            Multiplayer.Log($"AttemptIPv4() TryParse failed");
-            AttemptFail();
-            string message = "Host Unreachable";
-            MainMenuThingsAndStuff.Instance.ShowOkPopup(message, () => { });
+            //Multiplayer.Log($"AttemptConnection address: {address}");
+
+            //if (IPAddress.TryParse(address, out IPAddress IPaddress))
+            //{
+            //    Multiplayer.Log($"AttemptConnection tryParse: {IPaddress.AddressFamily}");
+
+            //    if (IPaddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+            //    {
+            //        AttemptIPv4();
+            //    }
+            //    else if (IPaddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+            //    {
+            //        AttemptIPv6();
+            //    }
+
+            //    return;
+            //}
+
+            //Multiplayer.LogError($"IP address invalid: {address}");
+
+            //AttemptFail();
         }
 
-        private void AttemptIPv4Punch()
-        {
-            Multiplayer.Log($"AttemptIPv4Punch() {address}");
+        //private void AttemptIPv6()
+        //{
+        //    Multiplayer.Log($"AttemptIPv6() {address}");
 
-            if (connectionState == ConnectionState.Aborted)
-                return;
+        //    if (connectionState == ConnectionState.Aborted)
+        //        return;
 
-            attempt++;
-            if (connectingPopup != null)
-                connectingPopup.labelTMPro.text = $"Connecting, please wait...\r\nAttempt: {attempt}";
+        //    attempt++;
+        //    if (connectingPopup != null)
+        //        connectingPopup.labelTMPro.text = $"Connecting, please wait...\r\nAttempt: {attempt}";
 
-            //punching not implemented we'll just try again for now
-            connectionState = ConnectionState.AttemptingIPv4Punch;
-            SingletonBehaviour<NetworkLifecycle>.Instance.StartClient(address, portNumber, password, false, OnDisconnect);
-        }
+        //    Multiplayer.Log($"AttemptIPv6() starting attempt");
+        //    connectionState = ConnectionState.AttemptingIPv6;
+        //    SingletonBehaviour<NetworkLifecycle>.Instance.StartClient(address, portNumber, password, false, OnDisconnect);
+
+        //}
+        //private void AttemptIPv6Punch()
+        //{
+        //    Multiplayer.Log($"AttemptIPv6Punch() {address}");
+
+        //    if (connectionState == ConnectionState.Aborted)
+        //        return;
+
+        //    attempt++;
+        //    if (connectingPopup != null)
+        //        connectingPopup.labelTMPro.text = $"Connecting, please wait...\r\nAttempt: {attempt}";
+
+        //    //punching not implemented we'll just try again for now
+        //    connectionState = ConnectionState.AttemptingIPv6Punch;
+        //    SingletonBehaviour<NetworkLifecycle>.Instance.StartClient(address, portNumber, password, false, OnDisconnect);
+
+        //}
+        //private void AttemptIPv4()
+        //{
+        //    Multiplayer.Log($"AttemptIPv4() {address}, {connectionState}");
+
+        //    if (connectionState == ConnectionState.Aborted)
+        //        return;
+
+        //    attempt++;
+        //    if (connectingPopup != null)
+        //        connectingPopup.labelTMPro.text = $"Connecting, please wait...\r\nAttempt: {attempt}";
+
+        //    if (!direct)
+        //    {
+        //        if (selectedServer.ipv4 == null || selectedServer.ipv4 == string.Empty)
+        //        {
+        //            AttemptFail();
+        //            return;
+        //        }
+
+        //        address = selectedServer.ipv4;
+        //    }
+
+        //    Multiplayer.Log($"AttemptIPv4() {address}");
+
+        //    if (IPAddress.TryParse(address, out IPAddress IPaddress))
+        //    {
+        //        Multiplayer.Log($"AttemptIPv4() TryParse passed");
+        //        if (IPaddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+        //        {
+        //            Multiplayer.Log($"AttemptIPv4() starting attempt");
+        //            connectionState = ConnectionState.AttemptingIPv4;
+        //            SingletonBehaviour<NetworkLifecycle>.Instance.StartClient(address, portNumber, password, false, OnDisconnect);
+        //            return;
+        //        }
+        //    }
+
+        //    Multiplayer.Log($"AttemptIPv4() TryParse failed");
+        //    AttemptFail();
+        //    string message = "Host Unreachable";
+        //    MainMenuThingsAndStuff.Instance.ShowOkPopup(message, () => { });
+        //}
+
+        //private void AttemptIPv4Punch()
+        //{
+        //    Multiplayer.Log($"AttemptIPv4Punch() {address}");
+
+        //    if (connectionState == ConnectionState.Aborted)
+        //        return;
+
+        //    attempt++;
+        //    if (connectingPopup != null)
+        //        connectingPopup.labelTMPro.text = $"Connecting, please wait...\r\nAttempt: {attempt}";
+
+        //    //punching not implemented we'll just try again for now
+        //    connectionState = ConnectionState.AttemptingIPv4Punch;
+        //    SingletonBehaviour<NetworkLifecycle>.Instance.StartClient(address, portNumber, password, false, OnDisconnect);
+        //}
 
         private void AttemptFail()
         {
@@ -881,35 +853,35 @@ namespace Multiplayer.Components.MainMenu
 
             string displayMessage = message;
 
+            Multiplayer.LogDebug(() => "OnDisconnect() Leaving Lobby");
+            joinedLobby?.Leave();
+            joinedLobby = null;
+
             if (string.IsNullOrEmpty(message))
             {
                 //fallback for no message (server initiated disconnects should have a message)               
-                if (reason == DisconnectReason.ConnectionFailed)
-                {
-                    switch (connectionState)
-                    {
-                        case ConnectionState.AttemptingIPv6:
-                            if (Multiplayer.Settings.EnableNatPunch)
-                                AttemptIPv6Punch();
-                            else
-                                AttemptIPv4();
-                            return;
-                        case ConnectionState.AttemptingIPv6Punch:
-                            AttemptIPv4();
-                            return;
-                        case ConnectionState.AttemptingIPv4:
-                            if (Multiplayer.Settings.EnableNatPunch)
-                                AttemptIPv4Punch();
-                            else
-                                AttemptFail();
-                                message = "Host Unreachable"; //TODO: add translations
-                            return;
-                        case ConnectionState.AttemptingIPv4Punch:
-                            AttemptFail();
-                            message = "Host Unreachable"; //TODO: add translations
-                            break;
-                    }
-                }
+                //if (reason == DisconnectReason.ConnectionFailed)
+                //{
+                //    switch (connectionState)
+                //    {
+                //        case ConnectionState.AttemptingIPv6:
+                //            if (Multiplayer.Settings.EnableNatPunch)
+                //                AttemptIPv6Punch();
+                //            else
+                //                AttemptIPv4();
+                //            return;
+                //        case ConnectionState.AttemptingIPv6Punch:
+                //            AttemptIPv4();
+                //            return;
+                //        case ConnectionState.AttemptingIPv4:
+                //            if (Multiplayer.Settings.EnableNatPunch)
+                //            {
+                //                AttemptIPv4Punch();
+                //                return;
+                //            }
+                //            break;
+                //    }
+                //}
 
                 displayMessage = GetDisplayMessageForDisconnect(reason);
                 AttemptFail();
@@ -926,24 +898,10 @@ namespace Multiplayer.Components.MainMenu
             });
         }
 
-        IEnumerator GetRequest(string uri)
         private string GetDisplayMessageForDisconnect(DisconnectReason reason)
         {
-            using UnityWebRequest webRequest = UnityWebRequest.Get(uri);
-            // Request and wait for the desired page.
-            yield return webRequest.SendWebRequest();
-
-            string[] pages = uri.Split('/');
-            int page = pages.Length - 1;
-
-            if (webRequest.isNetworkError)
-            return reason switch 
+            return reason switch
             {
-                Multiplayer.LogError(pages[page] + ": Error: " + webRequest.error);
-            }
-            else
-            {
-                Multiplayer.Log(pages[page] + ":\nReceived: " + webRequest.downloadHandler.text);
                 DisconnectReason.UnknownHost => "Unknown Host",
                 DisconnectReason.DisconnectPeerCalled => "Player Kicked",
                 DisconnectReason.ConnectionFailed => "Host Unreachable",
@@ -953,61 +911,89 @@ namespace Multiplayer.Components.MainMenu
                 _ => "Connection Failed"
             };
         }
+        #endregion
 
-                LobbyServerData[] response;
 
-                response = Newtonsoft.Json.JsonConvert.DeserializeObject<LobbyServerData[]>(webRequest.downloadHandler.text);
+        #region steam lobby
+        private async void ListActiveLobbies()
+        {
+            lobbies = await SteamMatchmaking.LobbyList.WithMaxResults(100)
+                                                      //.WithKeyValue(SteamworksUtils.MP_MOD_KEY, string.Empty)
+                                                      .RequestAsync();
 
-                Multiplayer.Log($"Serverbrowser servers: {response.Length}");
+            Multiplayer.LogDebug(() => $"ListActiveLobbies() lobbies found: {lobbies?.Count()}");
 
-                foreach (LobbyServerData server in response)
+            remoteServers.Clear();
+
+            if (lobbies != null)
+            {
+                var myLoc = SteamNetworkingUtils.LocalPingLocation;
+
+                foreach (var lobby in lobbies)
                 {
-                    Multiplayer.Log($"Server name: \"{server.Name}\", IPv4: {server.ipv4}, IPv6: {server.ipv6}, Port: {server.port}");
+                    LobbyServerData server = SteamworksUtils.GetLobbyData(lobby);
+
+                    server.id = lobby.Id.ToString();
+
+                    server.CurrentPlayers = lobby.MemberCount;
+                    server.MaxPlayers = lobby.MaxMembers;
+
+                    remoteServers.Add(server);
+
+                    Multiplayer.LogDebug(() => $"ListActiveLobbies() lobby {server.Name}, {lobby.MemberCount}/{lobby.MaxMembers}");
+                    
                 }
-
-                remoteServers.AddRange(response);
-
             }
-
             remoteRefreshComplete = true;
         }
 
-        private async void ListActiveLobbies()
+        private void UpdatePingsSteam()
         {
-            lobbies = await SteamMatchmaking.LobbyList.WithMaxResults(100).RequestAsync();
-            foreach (var lobby in lobbies)
+            foreach (var server in gridViewModel)
             {
-                var name = lobby.GetData("Server Name");
-                var difficulty = lobby.GetData("Difficulty");
-                Multiplayer.Log($"Steamworks Lobby Server name: \"{name}\", Difficulty: {difficulty}");
-            }
+                if (server is LobbyServerData lobbyServer)
+                {
+                    if (ulong.TryParse(server.id,out ulong id))
+                    {
+                        Lobby? lobby = lobbies.FirstOrDefault(l => l.Id.Value == id);
+                        if (lobby != null)
+                        {
+                            string strLoc = ((Lobby)lobby).GetData(SteamworksUtils.LOBBY_NET_LOCATION_KEY);
+                            NetPingLocation? location = NetPingLocation.TryParseFromString(strLoc);
 
+                            if (location != null)
+                                server.Ping = SteamNetworkingUtils.EstimatePingTo((NetPingLocation)location) / 2; //normalise to one way ping
+                        }
+                    }
+
+                    UpdateElement(lobbyServer);
+                }
+            }
         }
 
+        private Lobby? GetLobbyFromServer(IServerBrowserGameDetails server)
+        {
+            if (ulong.TryParse(server.id, out ulong id))
+                return lobbies.FirstOrDefault(l => l.Id.Value == id);
+
+            return null;
+        }
+        #endregion
         private void RefreshGridView()
         {
 
-            bool startPing = gridViewModel.Count == 0;
-
             var allServers = new List<IServerBrowserGameDetails>();
-            allServers.AddRange(localServers);
-            allServers.AddRange(remoteServers.Where(r => !localServers.Any(l => l.id == r.id)));
+            allServers.AddRange(remoteServers);
 
             // Get all active IDs
             List<string> activeIDs = allServers.Select(s => s.id).Distinct().ToList();
 
-            //Multiplayer.Log($"RefreshGridView() Active servers: {activeIDs.Count}\r\n{string.Join("\r\n", activeIDs)}");
-
             // Find servers to remove
             List<IServerBrowserGameDetails> removeList = gridViewModel.Where(gv => !activeIDs.Contains(gv.id)).ToList();
-            //Multiplayer.Log($"RefreshGridView() Remove List: {removeList.Count}\r\n{string.Join("\r\n", removeList.Select(l => l.id))}");
 
             // Remove expired servers
             foreach (var remove in removeList)
             {
-                //Multiplayer.Log($"RefreshGridView() Removing: {remove.id}");
-                if (serverPings.ContainsKey(remove.id))
-                    serverPings.Remove(remove.id);
                 gridViewModel.Remove(remove);
             }
 
@@ -1058,17 +1044,6 @@ namespace Multiplayer.Components.MainMenu
                 }
                 serverIDOnRefresh = null;
             }
-
-            //trigger ping to start
-            if (startPing && gridViewModel.Count() > 0)
-                PingNextBatch();
-        }
-        private void SetButtonsActive(params GameObject[] buttons)
-        {
-            foreach (var button in buttons)
-            {
-                button.SetActive(true);
-            }
         }
 
         private string ExtractDomainName(string input)
@@ -1090,138 +1065,5 @@ namespace Multiplayer.Components.MainMenu
 
             return input;
         }
-
-        #region Network Utils
-        private void OnPing(string serverId, int ping, bool isIPv4)
-        {
-            //Multiplayer.Log($"OnPing() Ping: {ping}, {(isIPv4?"IPv4" : "IPv6")}");
-
-            if (!serverPings.ContainsKey(serverId))
-                serverPings[serverId] = (new PingRecord(), new PingRecord());
-
-            if (isIPv4)
-                serverPings[serverId].IPv4Ping.AddPing(ping);
-            else
-                serverPings[serverId].IPv6Ping.AddPing(ping);
-
-            var server = gridViewModel.FirstOrDefault(s => s.id == serverId);
-            if (server != null)
-            {
-                server.Ping = GetBestPing(serverPings[serverId].IPv4Ping.Avg(), serverPings[serverId].IPv6Ping.Avg());
-                UpdateElement(server);
-            }
-        }
-        private void SendPing(IServerBrowserGameDetails server)
-        {
-            //Ensure we are using the same MP mod version, don't ping other versions
-            Multiplayer.LogDebug(()=>$"SendPing: {server.Name}, {server.MultiplayerVersion}, {Multiplayer.Ver}");
-            if (server.MultiplayerVersion != Multiplayer.Ver)
-                return;
-
-            // For LAN servers, prioritize the local IP addresses
-            string ipv4 = server.LocalIPv4 ?? server.ipv4;
-            string ipv6 = server.LocalIPv6 ?? server.ipv6;
-
-            serverBrowserClient.SendUnconnectedPingPacket(server.id, ipv4, ipv6, server.port);
-        }
-
-        private float GetPingInterval() 
-        {
-            int serverCount = gridViewModel.Count;
-            if (serverCount < 10) return PING_INTERVAL;
-            if (serverCount < 50) return PING_INTERVAL * 2;
-            if (serverCount < 100) return PING_INTERVAL * 4;
-            return PING_INTERVAL * 10;
-        }
-
-        private void PingNextBatch()
-        {
-            if (serversToPing.Count == 0)
-            {
-                serversToPing.AddRange(gridViewModel);
-            }
-
-            var batch = serversToPing.Take(SERVERS_PER_BATCH).ToList();
-            foreach (var server in batch)
-            {
-                SendPing(server);
-            }
-            serversToPing.RemoveRange(0, batch.Count);
-
-            if (serversToPing.Count == 0)
-                pingTimer = 0;  //Get ready to start from the beginning
-        }
-
-        private int GetBestPing(int ipv4Ping, int ipv6Ping)
-        {
-            if (ipv4Ping > -1 && ipv6Ping > -1)
-            {
-                return Math.Min(ipv4Ping, ipv6Ping);
-            }
-            else if (ipv4Ping > -1)
-            {
-                return ipv4Ping;
-            }
-            else if (ipv6Ping > -1)
-            {
-                return ipv6Ping;
-            }
-            return -1; // No ping available
-        }
-
-        private void OnDiscovery(IPEndPoint endpoint, LobbyServerData data)
-        {
-            if (data == null || endpoint == null)
-                return;
-
-            Multiplayer.Log($"Discovery - Endpoint: {endpoint}, EP Family: {endpoint.AddressFamily}, LocalIPv4: {data?.LocalIPv4}, LocalIPv6: {data?.LocalIPv6}");
-
-            // Set local IP based on endpoint address type first
-            if (endpoint.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
-            {
-                data.LocalIPv4 = endpoint.Address.ToString();
-                Multiplayer.Log($"Setting LocalIPv4 to {data.LocalIPv4}");
-            }
-            else if (endpoint.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
-            {
-                data.LocalIPv6 = endpoint.Address.ToString();
-                Multiplayer.Log($"Setting LocalIPv6 to {data.LocalIPv6}");
-            }
-
-            // Then handle server list management
-            if (!string.IsNullOrEmpty(data.id))
-            {
-                IServerBrowserGameDetails existing = localServers.FirstOrDefault(element => element.id == data.id);
-                if (existing != default(IServerBrowserGameDetails))
-                {
-                    localServers.Remove(existing);
-                }  
-
-                data.LastSeen = (int)Time.time;
-                localServers.Add(data);
-
-                existing = gridViewModel.FirstOrDefault(element => element.id == data.id);
-                if (existing != default(IServerBrowserGameDetails))
-                {
-                    existing.LastSeen = (int)Time.time;
-                    existing.LocalIPv4 = data.LocalIPv4;
-                    existing.LocalIPv6 = data.LocalIPv6;
-                }
-            }
-        }
-
-        private void ExpireLocalServers()
-        {
-            List<IServerBrowserGameDetails> timedOut = localServers.Where(s => (s.LastSeen + LAN_TIMEOUT) < Time.time ).ToList();
-
-            foreach (IServerBrowserGameDetails expired in timedOut)
-            {
-                if (serverPings.ContainsKey(expired.id))
-                        serverPings.Remove(expired.id);
-
-                localServers.Remove(expired);
-            }
-        }
-        #endregion
     }
 }

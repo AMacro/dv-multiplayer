@@ -58,14 +58,16 @@ public class SteamWorksTransport : ITransport
         }
 
         server = SteamNetworkingSockets.CreateRelaySocket<SteamServerManager>();
-
+        
         if (server != null)
         {
             server.transport = this;
             servers.Add(server);
             IsRunning = true;
+
             Multiplayer.Log($"SteamId: {Steamworks.Data.NetIdentity.LocalHost}");
         }
+        
 
         return IsRunning;
     }

@@ -134,7 +134,7 @@ public class Settings : UnityModManager.ModSettings, IDrawable
 
         if (Multiplayer.Settings.UseSteamName)
         {
-            if (SteamWorksUtils.GetSteamUser(out string steamUsername, out ulong steamId))
+            if (SteamworksUtils.GetSteamUser(out string steamUsername, out ulong steamId))
             {
                 Multiplayer.Settings.LastSteamName = steamUsername;
                 Multiplayer.Settings.SteamId = steamId;

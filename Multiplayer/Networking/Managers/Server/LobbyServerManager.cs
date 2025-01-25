@@ -16,6 +16,8 @@ using System.Net;
 using System.Linq;
 using Steamworks;
 using Steamworks.Data;
+using Multiplayer.Utils;
+using Multiplayer.Networking.TransportLayers;
 
 namespace Multiplayer.Networking.Managers.Server;
 public class LobbyServerManager : MonoBehaviour
@@ -38,7 +40,9 @@ public class LobbyServerManager : MonoBehaviour
     private string server_id;
     private string private_key;
 
-    private Lobby lobby;
+    //Steam Lobby
+    public static readonly string[] EXCLUDE_PARAMS = {"id", "ipv4", "ipv6", "port", "LocalIPv4", "LocalIPv6", "Ping", "isPublic", "LastSeen", "CurrentPlayers", "MaxPlayers"};
+    private Lobby? lobby;
 
     private bool initialised = false;
     private bool sendUpdates = false;
@@ -51,82 +55,23 @@ public class LobbyServerManager : MonoBehaviour
     private readonly NetDataWriter cachedWriter = new();
     public static int[] discoveryPorts = [8888, 8889, 8890];
 
-    #region
+    #region Unity
     public void Awake()
     {
         server = NetworkLifecycle.Instance.Server;
 
         Multiplayer.Log($"LobbyServerManager New({server != null})");
-
-        if (DVSteamworks.Success)
-        {
-            CreateLobby();
-        }
-    }
-
-    public async void CreateLobby()
-    {
-        // Check if the user is a legitimate Steam user
-        if (!IsLegitimateSteamUser())
-        {
-            server.Log("User is suspected to be using a pirated copy. Lobby creation aborted.");
-            return;
-        }
-
-        // Specify the lobby type (public, private, etc.)
-        var result = await SteamMatchmaking.CreateLobbyAsync(server.serverData.MaxPlayers);
-
-        if (result.HasValue)
-        {
-            // Lobby was created successfully
-            server.Log("Steam Lobby created successfully!");
-            lobby = result.Value;
-            lobby.SetPublic();
-            lobby.SetJoinable(true);
-            lobby.SetData("Server Name", server.serverData.Name);
-            lobby.SetData("Difficulty", server.serverData.Difficulty.ToString());
-        }
-        else
-        {
-            // Handle failure
-            server.Log("Failed to create lobby.");
-        }
-    }
-
-    private bool IsLegitimateSteamUser()
-    {
-        // Check if the Steam client is valid
-        if (SteamClient.IsValid)
-        {
-            // Verify the Steam ID is valid
-            if (SteamClient.SteamId.IsValid)
-            {
-
-                // Check if the game is installed using the App ID
-                bool isInstalled = SteamApps.IsAppInstalled(DVSteamworks.APP_ID);
-
-                if (isInstalled)
-                {
-                    System.Console.WriteLine($"Steam ID {SteamClient.SteamId} is valid and the game is installed.");
-                    return true;
-                }
-                else
-                {
-                    // Log the piracy suspicion
-                    server.Log($"Suspicion: Steam ID {SteamClient.SteamId} does not have the game installed. Potential piracy detected.");
-                }
-            }
-        }
-
-        // If Steam client or Steam ID is not valid, log as suspicious
-        System.Console.WriteLine("Steam client is invalid or pirated Steam account detected.");
-        server.Log("Suspicion: Invalid Steam client or pirated Steam account detected.");
-
-        return false;
     }
 
     public IEnumerator Start()
     {
+        //Create a steam lobby
+        if (DVSteamworks.Success)
+        {
+            CreateSteamLobby();
+        }
+
+        //Register with old php lobby server (provides stats and makes the lobby visible, but not joinable to users on old versions)
         server.serverData.ipv6 = GetStaticIPv6Address();
         server.serverData.LocalIPv4 = GetLocalIPv4Address();
 
@@ -169,11 +114,9 @@ public class LobbyServerManager : MonoBehaviour
         StopAllCoroutines();
         StartCoroutine(RemoveFromLobbyServer($"{Multiplayer.Settings.LobbyServerAddress}/{ENDPOINT_REMOVE_SERVER}"));
 
-        if (lobby.Id.IsValid)
-        {
-            lobby.SetJoinable(false);
-            lobby.Leave();
-        }
+
+        lobby?.SetJoinable(false);
+        lobby?.Leave();
 
         discoveryManager?.Stop();
     }
@@ -189,6 +132,11 @@ public class LobbyServerManager : MonoBehaviour
                 timePassed = 0f;
                 server.serverData.CurrentPlayers = server.PlayerCount;
                 StartCoroutine(UpdateLobbyServer($"{Multiplayer.Settings.LobbyServerAddress}/{ENDPOINT_UPDATE_SERVER}"));
+
+                if(lobby != null)
+                {
+                    SteamworksUtils.SetLobbyData((Lobby)lobby, server.serverData, EXCLUDE_PARAMS);
+                }
             }
         }else if (!server.serverData.isPublic || !sendUpdates)
         {
@@ -199,6 +147,40 @@ public class LobbyServerManager : MonoBehaviour
         discoveryManager?.PollEvents();
     }
 
+    #endregion
+
+    #region Steam Lobby
+    public async void CreateSteamLobby()
+    {
+
+        // Specify the lobby type (public, private, etc.)
+        var result = await SteamMatchmaking.CreateLobbyAsync(server.serverData.MaxPlayers);
+
+        if (result.HasValue)
+        {
+            // Lobby was created successfully
+            lobby = result.Value;
+
+            server.Log("Steam Lobby created successfully!");
+            server.LogDebug(() => $"Steam lobby ID: {lobby?.Id}");
+
+            lobby?.SetData(SteamworksUtils.LOBBY_MP_MOD_KEY, string.Empty); //We'll add this in for filtering
+            lobby?.SetData(SteamworksUtils.LOBBY_NET_LOCATION_KEY, SteamNetworkingUtils.LocalPingLocation.ToString()); //for ping estimation
+
+            SteamworksUtils.SetLobbyData((Lobby)lobby, server.serverData, EXCLUDE_PARAMS);
+
+            //todo implement public/private/friends
+            if (server.serverData.isPublic)
+                lobby?.SetPublic();
+
+            lobby?.SetJoinable(true);
+        }
+        else
+        {
+            // Handle failure
+            server.LogError("Failed to create lobby.");
+        }
+    }
     #endregion
 
     #region Lobby Server
@@ -461,7 +443,7 @@ public class LobbyServerManager : MonoBehaviour
                                 BroadcastReceiveEnabled = true,
                                 
                             };
-        packetProcessor = new NetPacketProcessor(discoveryManager);
+        packetProcessor = new NetPacketProcessor();
 
         discoveryListener.NetworkReceiveUnconnectedEvent += OnNetworkReceiveUnconnected;
 
