@@ -31,7 +31,7 @@ public class NetworkedTurntable : IdMonoBehaviour<byte, NetworkedTurntable>
 
     private void OnTick(uint tick)
     {
-        if (Mathf.Approximately(lastYRotation, TurntableRailTrack.targetYRotation) || UnloadWatcher.isUnloading)
+        if (Mathf.Approximately(lastYRotation, TurntableRailTrack.targetYRotation))
             return;
 
         lastYRotation = TurntableRailTrack.targetYRotation;

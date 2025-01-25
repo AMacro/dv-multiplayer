@@ -28,11 +28,8 @@ public class NetworkedJunction : IdMonoBehaviour<ushort, NetworkedJunction>
 
     public void Switch(byte mode, byte selectedBranch)
     {
-        //Junction.selectedBranch = (byte)(selectedBranch - 1); // Junction#Switch increments this before processing
-        //Junction.Switch((Junction.SwitchMode)mode);
-
-        //B99
-        Junction.Switch((Junction.SwitchMode)mode, selectedBranch);
+        Junction.selectedBranch = selectedBranch - 1; // Junction#Switch increments this before processing
+        Junction.Switch((Junction.SwitchMode)mode);
     }
 
     public static bool Get(ushort netId, out NetworkedJunction obj)

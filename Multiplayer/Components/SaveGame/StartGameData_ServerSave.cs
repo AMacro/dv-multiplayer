@@ -1,14 +1,6 @@
 using System;
 using System.Collections;
-using System.ComponentModel;
-using System.Linq;
-using DV;
-using DV.CabControls;
-using DV.Common;
 using DV.UserManagement;
-using DV.Utils;
-using Multiplayer.Components.Networking;
-using Multiplayer.Components.Networking.World;
 using Multiplayer.Networking.Packets.Clientbound;
 using Multiplayer.Patches.SaveGame;
 using Newtonsoft.Json.Linq;
@@ -21,8 +13,6 @@ public class StartGameData_ServerSave : AStartGameData
     private SaveGameData saveGameData;
 
     private ClientboundSaveGameDataPacket packet;
-
-    public override bool IsStartingNewSession => false;
 
     public void SetFromPacket(ClientboundSaveGameDataPacket packet)
     {
@@ -45,24 +35,6 @@ public class StartGameData_ServerSave : AStartGameData
         saveGameData.SetBool(SaveGameKeys.Damage_Popup_Shown, true);
 
         CareerManagerDebtControllerPatch.HasDebt = packet.HasDebt;
-
-        Multiplayer.LogDebug(() =>
-        {
-            string unlockedGen = string.Join(", ", UnlockablesManager.Instance.UnlockedGeneralLicenses);
-            string packetGen = string.Join(", ", packet.AcquiredGeneralLicenses);
-
-            string unlockedJob = string.Join(", ", UnlockablesManager.Instance.UnlockedJobLicenses);
-            string packetJob = string.Join(", ", packet.AcquiredJobLicenses);
-
-            return $"StartGameData_ServerSave.SetFromPacket() UnlockedGen: {{{unlockedGen}}}, PacketGen: {{{packetGen}}},  UnlockedJob: {{{unlockedJob}}}, PacketJob: {{{packetJob}}}";
-        });
-
-
-        //For clients we need to have a session - new users may not have a session and this may also be causing problems with licenses syncing
-        if (NetworkLifecycle.Instance.IsHost())
-            return;
-
-        Client_GameSession.SetCurrent(new Client_GameSession(packet.GameMode, DifficultyToUse));
     }
 
     public override void Initialize()
@@ -79,7 +51,6 @@ public class StartGameData_ServerSave : AStartGameData
 
     public override IEnumerator DoLoad(Transform playerContainer)
     {
-
         Transform playerTransform = playerContainer.transform;
         playerTransform.position = PlayerManager.IsPlayerPositionValid(packet.Position) ? packet.Position : LevelInfo.Instance.defaultSpawnPosition;
         playerTransform.eulerAngles = new Vector3(0, packet.Rotation, 0);
@@ -88,8 +59,8 @@ public class StartGameData_ServerSave : AStartGameData
 
         if (saveGameData.GetString(SaveGameKeys.Game_mode) == "FreeRoam")
             LicenseManager.Instance.GrabAllGameModeSpecificUnlockables(SaveGameKeys.Game_mode);
-        //else
-        StartingItemsController.Instance.AddStartingItems(saveGameData, true);
+        else
+            StartingItemsController.Instance.AddStartingItems(saveGameData, true);
 
         // if (packet.Debt_existing_locos != null)
         //     LocoDebtController.Instance.LoadExistingLocosDebtsSaveData(packet.Debt_existing_locos.Select(JObject.Parse).ToArray());
@@ -122,4 +93,3 @@ public class StartGameData_ServerSave : AStartGameData
 
     public override void MakeCurrent(){}
 }
-

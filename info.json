@@ -1,12 +1,9 @@
 {
-    "Id":  "Multiplayer",
-    "Version":  "0.1.9.9",
-    "DisplayName":  "Multiplayer",
-    "Author":  "Insprill, Macka, Morm",
-    "EntryMethod":  "Multiplayer.Multiplayer.Load",
-    "ManagerVersion":  "0.27.3",
-    "LoadAfter":  [
-                      "RemoteDispatch"
-                  ],
-    "Repository":  "https://www.andrewcraigmackenzie.com/unitymods/Releases.json"
+  "Id": "Multiplayer",
+  "Version": "0.1.0",
+  "DisplayName": "Multiplayer",
+  "Author": "Insprill",
+  "EntryMethod": "Multiplayer.Multiplayer.Load",
+  "ManagerVersion": "0.27.3",
+  "LoadAfter": [ "RemoteDispatch" ]
 }

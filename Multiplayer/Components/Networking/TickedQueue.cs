@@ -32,18 +32,13 @@ public abstract class TickedQueue<T> : MonoBehaviour
 
     private void OnTick(uint tick)
     {
-        if (snapshots.Count == 0 || UnloadWatcher.isUnloading)
+        if (snapshots.Count == 0)
             return;
         while (snapshots.Count > 0)
         {
             (uint snapshotTick, T snapshot) = snapshots.Dequeue();
             Process(snapshot, snapshotTick);
         }
-    }
-
-    public void Clear()
-    {
-        snapshots.Clear();
     }
 
     protected abstract void Process(T snapshot, uint snapshotTick);

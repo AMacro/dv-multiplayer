@@ -6,13 +6,8 @@ using DV.Scenarios.Common;
 using DV.Utils;
 using LiteNetLib;
 using LiteNetLib.Utils;
-using Multiplayer.Components.Networking.UI;
-using Multiplayer.Networking.Data;
-using Multiplayer.Networking.Managers;
-using Multiplayer.Networking.Managers.Client;
-using Multiplayer.Networking.Managers.Server;
+using Multiplayer.Networking.Listeners;
 using Multiplayer.Utils;
-using Newtonsoft.Json;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -23,11 +18,6 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
 {
     public const byte TICK_RATE = 24;
     private const float TICK_INTERVAL = 1.0f / TICK_RATE;
-
-    public LobbyServerData serverData;
-    public bool IsPublicGame { get; set; } = false;
-    public bool IsSinglePlayer { get; set; } = true;
-
 
     public NetworkServer Server { get; private set; }
     public NetworkClient Client { get; private set; }
@@ -51,7 +41,7 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
     /// </summary>
     public bool IsHost(NetPeer peer)
     {
-        return Server?.IsRunning == true && Client?.IsRunning == true && Client?.SelfPeer?.Id == peer?.Id;
+        return Server?.IsRunning == true && Client?.IsRunning == true && Client?.selfPeer?.Id == peer?.Id;
     }
 
     /// <summary>
@@ -60,7 +50,7 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
     /// </summary>
     public bool IsHost()
     {
-        return IsHost(Client?.SelfPeer);
+        return IsHost(Client?.selfPeer);
     }
 
     private readonly Queue<Action> mainMenuLoadedQueue = new();
@@ -77,8 +67,6 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
         {
             if (scene.buildIndex != (int)DVScenes.MainMenu)
                 return;
-
-            playerList.UnRegisterListeners();
             TriggerMainMenuEventLater();
         };
         StartCoroutine(PollEvents());
@@ -123,40 +111,25 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
         mainMenuLoadedQueue.Enqueue(action);
     }
 
-    public bool StartServer(IDifficulty difficulty)
+    public bool StartServer(int port, IDifficulty difficulty)
     {
-        int port = Multiplayer.Settings.Port;
-
         if (Server != null)
             throw new InvalidOperationException("NetworkManager already exists!");
-
-        if (!IsSinglePlayer)
-        {
-            if(serverData != null)
-            {
-                port = serverData.port;
-            }
-        }
-
         Multiplayer.Log($"Starting server on port {port}");
-        NetworkServer server = new(difficulty, Multiplayer.Settings, IsSinglePlayer, serverData);
-
-        //reset for next game
-        IsSinglePlayer = true;
-        serverData = null;
-
+        NetworkServer server = new(difficulty, Multiplayer.Settings);
         if (!server.Start(port))
             return false;
         Server = server;
-        StartClient("localhost", port, Multiplayer.Settings.Password, IsSinglePlayer, null/* (DisconnectReason dr,string msg) =>{ }*/);
+        StartClient("localhost", port, Multiplayer.Settings.Password);
         return true;
     }
-    public void StartClient(string address, int port, string password, bool isSinglePlayer, Action<DisconnectReason,string> onDisconnect )
+
+    public void StartClient(string address, int port, string password)
     {
         if (Client != null)
             throw new InvalidOperationException("NetworkManager already exists!");
         NetworkClient client = new(Multiplayer.Settings);
-        client.Start(address, port, password, isSinglePlayer, onDisconnect);
+        client.Start(address, port, password);
         Client = client;
         OnSettingsUpdated(Multiplayer.Settings); // Show stats if enabled
     }
@@ -213,7 +186,7 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
 
     public void Stop()
     {
-        Stats?.Hide();
+        if (Stats != null) Stats.Hide();
         Server?.Stop();
         Client?.Stop();
         Server = null;
@@ -233,5 +206,4 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
         gameObject.AddComponent<NetworkLifecycle>();
         DontDestroyOnLoad(gameObject);
     }
-
 }

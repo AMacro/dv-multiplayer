@@ -1,24 +1,25 @@
-using DV;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 
 namespace Multiplayer.Components.Networking.Player;
 
-public class NetworkedMapMarkersController : MonoBehaviour
+public class NetworkedWorldMap : MonoBehaviour
 {
+    private WorldMap worldMap;
     private MapMarkersController markersController;
     private GameObject textPrefab;
-    private readonly Dictionary<byte, WorldMapIndicatorRefs> playerIndicators = [];
+    private readonly Dictionary<byte, WorldMapIndicatorRefs> playerIndicators = new();
 
     private void Awake()
     {
+        worldMap = GetComponent<WorldMap>();
         markersController = GetComponent<MapMarkersController>();
-        textPrefab = markersController.GetComponentInChildren<TMP_Text>().gameObject;
-        foreach (NetworkedPlayer networkedPlayer in NetworkLifecycle.Instance.Client.ClientPlayerManager.Players)
+        textPrefab = worldMap.GetComponentInChildren<TMP_Text>().gameObject;
+        foreach (NetworkedPlayer networkedPlayer in NetworkLifecycle.Instance.Client.PlayerManager.Players)
             OnPlayerConnected(networkedPlayer.Id, networkedPlayer);
-        NetworkLifecycle.Instance.Client.ClientPlayerManager.OnPlayerConnected += OnPlayerConnected;
-        NetworkLifecycle.Instance.Client.ClientPlayerManager.OnPlayerDisconnected += OnPlayerDisconnected;
+        NetworkLifecycle.Instance.Client.PlayerManager.OnPlayerConnected += OnPlayerConnected;
+        NetworkLifecycle.Instance.Client.PlayerManager.OnPlayerDisconnected += OnPlayerDisconnected;
         NetworkLifecycle.Instance.OnTick += OnTick;
     }
 
@@ -29,22 +30,22 @@ public class NetworkedMapMarkersController : MonoBehaviour
         NetworkLifecycle.Instance.OnTick -= OnTick;
         if (UnloadWatcher.isUnloading)
             return;
-        NetworkLifecycle.Instance.Client.ClientPlayerManager.OnPlayerConnected -= OnPlayerConnected;
-        NetworkLifecycle.Instance.Client.ClientPlayerManager.OnPlayerDisconnected -= OnPlayerDisconnected;
+        NetworkLifecycle.Instance.Client.PlayerManager.OnPlayerConnected -= OnPlayerConnected;
+        NetworkLifecycle.Instance.Client.PlayerManager.OnPlayerDisconnected -= OnPlayerDisconnected;
     }
 
     private void OnPlayerConnected(byte id, NetworkedPlayer player)
     {
-        Transform root = new GameObject($"MapMarkerPlayer({player.Username})") {
+        Transform root = new GameObject($"{player.Username}'s Indicator") {
             transform = {
-                parent = this.transform,
+                parent = worldMap.playerIndicator.parent,
                 localPosition = Vector3.zero,
                 localEulerAngles = Vector3.zero
             }
         }.transform;
         WorldMapIndicatorRefs refs = root.gameObject.AddComponent<WorldMapIndicatorRefs>();
 
-        GameObject indicator = Instantiate(markersController.playerMarkerPrefab.gameObject, root);
+        GameObject indicator = Instantiate(worldMap.playerIndicator.gameObject, root);
         indicator.transform.localPosition = Vector3.zero;
         refs.indicator = indicator.transform;
 
@@ -53,8 +54,6 @@ public class NetworkedMapMarkersController : MonoBehaviour
         textGo.transform.localEulerAngles = new Vector3(90f, 0, 0);
         refs.text = textGo.GetComponent<RectTransform>();
         TMP_Text text = textGo.GetComponent<TMP_Text>();
-
-        text.name = "Player Name";
         text.text = player.Username;
         text.alignment = TextAlignmentOptions.Center;
         text.fontSize /= 1.25f;
@@ -75,47 +74,29 @@ public class NetworkedMapMarkersController : MonoBehaviour
 
     private void OnTick(uint obj)
     {
-        if (markersController == null || UnloadWatcher.isUnloading)
+        if (!worldMap.initialized)
             return;
         UpdatePlayers();
     }
 
     public void UpdatePlayers()
     {
-        if (playerIndicators == null)
-        {
-            Multiplayer.LogDebug(() => $"NetworkedWorldMap.UpdatePlayers() playerIndicators: {playerIndicators != null}, count: {playerIndicators?.Count}");
-            return;
-        }
-
         foreach (KeyValuePair<byte, WorldMapIndicatorRefs> kvp in playerIndicators)
         {
-            if(kvp.Value == null)
-                Multiplayer.LogDebug(() => $"NetworkedWorldMap.UpdatePlayers() key: {kvp.Key}, value is null: {kvp.Value == null}");
-
-            if (!NetworkLifecycle.Instance.Client.ClientPlayerManager.TryGetPlayer(kvp.Key, out NetworkedPlayer networkedPlayer))
+            if (!NetworkLifecycle.Instance.Client.PlayerManager.TryGetPlayer(kvp.Key, out NetworkedPlayer networkedPlayer))
             {
                 Multiplayer.LogWarning($"Player indicator for {kvp.Key} exists but {nameof(NetworkedPlayer)} does not!");
                 OnPlayerDisconnected(kvp.Key, null);
                 continue;
             }
 
-            if(kvp.Value == null)
-            {
-                Multiplayer.LogWarning($"NetworkedWorldMap.UpdatePlayers() key: {kvp.Key}, value is null skipping");
-                continue;
-            }
-
             WorldMapIndicatorRefs refs = kvp.Value;
 
-            bool active = Globals.G.gameParams.PlayerMarkerDisplayed;
+            bool active = worldMap.gameParams.PlayerMarkerDisplayed;
             if (refs.gameObject.activeSelf != active)
                 refs.gameObject.SetActive(active);
             if (!active)
-            {
-                Multiplayer.LogDebug(() => $"NetworkedWorldMap.UpdatePlayers() key: {kvp.Key}, is NOT active");
                 return;
-            }
 
             Transform playerTransform = networkedPlayer.transform;
 
@@ -123,7 +104,7 @@ public class NetworkedMapMarkersController : MonoBehaviour
             if (normalized != Vector3.zero)
                 refs.indicator.localRotation = Quaternion.LookRotation(normalized);
 
-            Vector3 position = markersController.GetMapPosition(playerTransform.position - WorldMover.currentMove, true);
+            Vector3 position = markersController.GetMapPosition(playerTransform.position - WorldMover.currentMove, worldMap.triggerExtentsXZ);
             refs.indicator.localPosition = position;
             refs.text.localPosition = position with { y = position.y + 0.025f };
         }

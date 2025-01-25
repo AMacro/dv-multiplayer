@@ -1,7 +1,6 @@
 using HarmonyLib;
 using Multiplayer.Components.Networking;
 using Multiplayer.Utils;
-using System;
 using UnityEngine;
 
 namespace Multiplayer.Patches.Player;
@@ -9,8 +8,6 @@ namespace Multiplayer.Patches.Player;
 [HarmonyPatch(typeof(CustomFirstPersonController))]
 public static class CustomFirstPersonControllerPatch
 {
-    private const float ROTATION_THRESHOLD = 0.001f;
-
     private static CustomFirstPersonController fps;
 
     private static Vector3 lastPosition;
@@ -19,10 +16,9 @@ public static class CustomFirstPersonControllerPatch
 
     private static bool isJumping;
     private static bool isOnCar;
-    private static TrainCar car;
 
-    [HarmonyPatch(nameof(CustomFirstPersonController.Awake))]
     [HarmonyPostfix]
+    [HarmonyPatch(nameof(CustomFirstPersonController.Awake))]
     private static void CharacterMovement(CustomFirstPersonController __instance)
     {
         fps = __instance;
@@ -37,7 +33,6 @@ public static class CustomFirstPersonControllerPatch
     {
         if (UnloadWatcher.isQuitting)
             return;
-
         NetworkLifecycle.Instance.OnTick -= OnTick;
         PlayerManager.CarChanged -= OnCarChanged;
     }
@@ -45,34 +40,24 @@ public static class CustomFirstPersonControllerPatch
     private static void OnCarChanged(TrainCar trainCar)
     {
         isOnCar = trainCar != null;
-        car = trainCar;
+        NetworkLifecycle.Instance.Client.SendPlayerCar(!isOnCar ? (ushort)0 : trainCar.GetNetId());
     }
 
     private static void OnTick(uint tick)
     {
-        if(UnloadWatcher.isUnloading)
-            return;
-
-        Vector3 position = isOnCar ? PlayerManager.PlayerTransform.localPosition : PlayerManager.PlayerTransform.GetWorldAbsolutePosition();
+        Vector3 position = isOnCar ? PlayerManager.PlayerTransform.localPosition : PlayerManager.GetWorldAbsolutePlayerPosition();
         float rotationY = (isOnCar ? PlayerManager.PlayerTransform.localEulerAngles : PlayerManager.PlayerTransform.eulerAngles).y;
 
-        //bool positionOrRotationChanged = lastPosition != position || !Mathf.Approximately(lastRotationY, rotationY);
-
-        bool positionOrRotationChanged = Vector3.Distance(lastPosition, position) > 0 || Math.Abs(lastRotationY - rotationY) > ROTATION_THRESHOLD;
-
+        bool positionOrRotationChanged = lastPosition != position || !Mathf.Approximately(lastRotationY, rotationY);
         if (!positionOrRotationChanged && sentFinalPosition)
             return;
 
         lastPosition = position;
         lastRotationY = rotationY;
         sentFinalPosition = !positionOrRotationChanged;
-
-        ushort carNetID = isOnCar ? car.GetNetId() : (ushort)0;
-
-        NetworkLifecycle.Instance.Client.SendPlayerPosition(lastPosition, PlayerManager.PlayerTransform.InverseTransformDirection(fps.m_MoveDir), lastRotationY, carNetID, isJumping, isOnCar, isJumping || sentFinalPosition);
+        NetworkLifecycle.Instance.Client.SendPlayerPosition(lastPosition, PlayerManager.PlayerTransform.InverseTransformDirection(fps.m_MoveDir), lastRotationY, isJumping, isOnCar, isJumping || sentFinalPosition);
         isJumping = false;
     }
-
 
     [HarmonyPostfix]
     [HarmonyPatch(nameof(CustomFirstPersonController.SetJumpParameters))]
