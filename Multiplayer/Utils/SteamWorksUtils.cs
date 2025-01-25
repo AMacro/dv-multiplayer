@@ -74,4 +74,56 @@ public static class SteamworksUtils
 
         return data;
     }
+
+    public static ulong GetLobbyIdFromArgs()
+    {
+        string[] args = Environment.GetCommandLineArgs();
+
+        for (int i = 0; i < args.Length - 1; i++)
+        {
+            if (args[i] == "+connect_lobby")
+            {
+                return ulong.Parse(args[i + 1]);
+            }
+        }
+
+        return 0;
+    }
+
+    public static void JoinFromCommandLine()
+    {
+        if (hasJoinedCL)
+            return;
+        hasJoinedCL = true;
+
+        SteamMatchmaking.OnLobbyDataChanged += OnLobbyDataChanged;
+
+        var id = GetLobbyIdFromArgs();
+        var sId = new SteamId
+        {
+            Value = id
+        };
+
+        var lobby = new Lobby(sId);
+        var ret = lobby.Refresh();
+    }
+
+    private static void OnLobbyDataChanged(Lobby lobby)
+    {
+        SteamMatchmaking.OnLobbyDataChanged -= OnLobbyDataChanged;
+
+        NetworkLifecycle.Instance.QueueMainMenuEvent(() =>
+        {
+            Multiplayer.Log($"OnLobbyDataChanged({lobby.Id}) count: {lobby.Data?.Count()}");
+
+            foreach (var item in lobby.Data)
+            {
+                Multiplayer.Log($"OnEnablePost Data: {item.Key}, Value: {item.Value}"); 
+            }
+
+            ServerBrowserPane.lobbyToJoin = lobby;
+            MainMenuThingsAndStuff.Instance.SwitchToMenu((byte)RightPaneController_Patch.joinMenuIndex);
+        });
+    }
+
 }

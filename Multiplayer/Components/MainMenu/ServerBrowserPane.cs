@@ -73,6 +73,7 @@ namespace Multiplayer.Components.MainMenu
         private int portNumber;
         private Lobby? selectedLobby;
         private static Lobby? joinedLobby;
+        public static Lobby? lobbyToJoin;
         string password = null;
         bool direct = false;
 
@@ -96,6 +97,32 @@ namespace Multiplayer.Components.MainMenu
 
             SetupServerBrowser();
             RefreshGridView();
+
+            //For invites
+            Multiplayer.Log($"Invite from command line: {lobbyToJoin != null}");
+            if (lobbyToJoin != null)
+            {
+                direct = false;
+                selectedLobby = lobbyToJoin;
+
+                foreach(var item in lobbyToJoin?.Data)
+                {
+                    Multiplayer.Log($"Invite from command line ({lobbyToJoin?.Id}) Data: {item.Key}, {item.Value}");
+                }
+                string hasPass = lobbyToJoin?.GetData(SteamworksUtils.LOBBY_HAS_PASSWORD);
+                Multiplayer.Log($"Invite from command line ({lobbyToJoin?.Id}) hasPass: {hasPass}");
+
+                if (string.IsNullOrEmpty(hasPass))
+                {
+                    Multiplayer.Log($"Invite from command line ({lobbyToJoin?.Id}) Attempting...");
+                    AttemptConnection();
+                }
+                else
+                {
+                    Multiplayer.Log($"Invite from command line ({lobbyToJoin?.Id}) Ask Password...");
+                    ShowPasswordPopup();
+                }
+            }
         }
 
         public void OnEnable()

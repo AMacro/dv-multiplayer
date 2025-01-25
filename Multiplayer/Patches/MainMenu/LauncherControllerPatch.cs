@@ -68,12 +68,12 @@ public static class LauncherController_Patch
     [HarmonyPatch(typeof(LauncherController), "SetData", new Type[] { typeof(ISaveGame), typeof(AUserProfileProvider) , typeof(AScenarioProvider) , typeof(LauncherController.UpdateRequest) })]
     private static void SetData(LauncherController __instance, ISaveGame saveGame, AUserProfileProvider userProvider, AScenarioProvider scenarioProvider, LauncherController.UpdateRequest updateCallback)
     {
-        if (RightPaneController_OnEnable_Patch.hgpInstance == null)
+        if (RightPaneController_Patch.hgpInstance == null)
             return;
 
-        RightPaneController_OnEnable_Patch.hgpInstance.saveGame = saveGame;
-        RightPaneController_OnEnable_Patch.hgpInstance.userProvider = userProvider;
-        RightPaneController_OnEnable_Patch.hgpInstance.scenarioProvider = scenarioProvider;
+        RightPaneController_Patch.hgpInstance.saveGame = saveGame;
+        RightPaneController_Patch.hgpInstance.userProvider = userProvider;
+        RightPaneController_Patch.hgpInstance.scenarioProvider = scenarioProvider;
   
 
     }
@@ -82,12 +82,12 @@ public static class LauncherController_Patch
     [HarmonyPatch(typeof(LauncherController), "SetData", new Type[] { typeof(UIStartGameData), typeof(AUserProfileProvider), typeof(AScenarioProvider), typeof(LauncherController.UpdateRequest) })]
     private static void SetData(LauncherController __instance, UIStartGameData startGameData, AUserProfileProvider userProvider, AScenarioProvider scenarioProvider, LauncherController.UpdateRequest updateCallback)
     {
-        if (RightPaneController_OnEnable_Patch.hgpInstance == null)
+        if (RightPaneController_Patch.hgpInstance == null)
             return;
 
-        RightPaneController_OnEnable_Patch.hgpInstance.startGameData = startGameData;
-        RightPaneController_OnEnable_Patch.hgpInstance.userProvider = userProvider;
-        RightPaneController_OnEnable_Patch.hgpInstance.scenarioProvider = scenarioProvider;
+        RightPaneController_Patch.hgpInstance.startGameData = startGameData;
+        RightPaneController_Patch.hgpInstance.userProvider = userProvider;
+        RightPaneController_Patch.hgpInstance.scenarioProvider = scenarioProvider;
        
     }
 
@@ -95,7 +95,7 @@ public static class LauncherController_Patch
     {
         //Debug.Log("Host button clicked.");
 
-        RightPaneController_OnEnable_Patch.uIMenuController.SwitchMenu(RightPaneController_OnEnable_Patch.hostMenuIndex);
+        RightPaneController_Patch.uIMenuController.SwitchMenu(RightPaneController_Patch.hostMenuIndex);
 
     }
 }
