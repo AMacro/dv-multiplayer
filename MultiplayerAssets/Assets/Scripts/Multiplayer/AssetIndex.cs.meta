@@ -1,3 +1,17 @@
 fileFormatVersion: 2
 guid: 6ab658f490174d2e96148e7e6e27ad3a
-timeCreated: 1689643659
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences:
+  - playerPrefab: {instanceID: 0}
+  - multiplayerIcon: {fileID: 21300000, guid: 981b3e40e34126c43a32b7a54238d2d6, type: 3}
+  - lockIcon: {fileID: 21300000, guid: b8a707a2b12db584fad32aed46912dd0, type: 3}
+  - refreshIcon: {fileID: 21300000, guid: 7c3f2166549e6e144ae26c8d527d59b0, type: 3}
+  - connectIcon: {fileID: 21300000, guid: dad0fda7f8df3cd41a278a839fe12d23, type: 3}
+  - lanIcon: {fileID: 21300000, guid: 8386cff9a47c8a2409ad12ae6ae2233e, type: 3}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

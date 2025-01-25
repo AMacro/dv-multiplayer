@@ -1,0 +1,25 @@
+<!-- 
+	Update DvInstallDir and UnityInstallDir paths to your local install directories
+		Do not use trailing slashes
+	
+	If using code signing:
+		Update SignToolPath to the directory of signtool.exe
+		Update Cert-Thumb to the thumbprint of your code signing certificate, otherwise leave blank
+		
+	Save this updated file as 'Directory.Build.targets'
+		
+-->
+<Project>
+    <PropertyGroup>
+        <DvInstallDir>C:\Program Files (x86)\Steam\steamapps\common\Derail Valley</DvInstallDir>
+        <UnityInstallDir>C:\Program Files\Unity\Hub\Editor\2019.4.40f1\Editor</UnityInstallDir>
+        <ReferencePath>
+            $(DvInstallDir)\DerailValley_Data\Managed\;
+            $(DvInstallDir)\DerailValley_Data\Managed\UnityModManager\;
+            $(UnityInstallDir)\Data\Managed\
+        </ReferencePath>
+        <AssemblySearchPaths>$(AssemblySearchPaths);$(ReferencePath);</AssemblySearchPaths>
+		<SignToolPath>C:\Program Files (x86)\Microsoft SDKs\ClickOnce\SignTool\</SignToolPath>
+		<Cert-Thumb>7cf2b8a98a09ffd407ada2e94f200af24a0e68bc</Cert-Thumb>
+    </PropertyGroup>
+</Project>

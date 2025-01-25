@@ -1,0 +1,11 @@
+# Enable the RewriteEngine
+RewriteEngine On
+
+# Uncomment below to force HTTPS
+# RewriteCond %{HTTPS} off
+# RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# Redirect all non-existing paths to index.php
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.php [QSA,L]

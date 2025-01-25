@@ -9,7 +9,7 @@ namespace Multiplayer.Components;
 public abstract class IdMonoBehaviour<T, I> : MonoBehaviour where T : struct where I : MonoBehaviour
 {
     private static readonly IdPool<T> idPool = new();
-    private static readonly Dictionary<T, IdMonoBehaviour<T, I>> indexToObject = new();
+    private static readonly Dictionary<T, IdMonoBehaviour<T, I>> indexToObject = [];
 
     private T _netId;
 
@@ -32,7 +32,16 @@ public abstract class IdMonoBehaviour<T, I> : MonoBehaviour where T : struct whe
             return true;
         obj = null;
         if ((netId as dynamic).CompareTo(default(T)) != 0)
-            Multiplayer.LogDebug(() => $"Got invalid NetId {netId} while processing packet {NetPacketProcessor.CurrentlyProcessingPacket}");
+            Multiplayer.LogDebug(() => $"Got invalid NetId {netId} while processing packet {NetworkLifecycle.Instance.IsProcessingPacket}");
+        return false;
+    }
+
+    protected static bool TryGet(T netId, out IdMonoBehaviour<T, I> obj)
+    {
+        if (indexToObject.TryGetValue(netId, out obj))
+            return true;
+
+        obj = null;
         return false;
     }
 

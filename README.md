@@ -14,9 +14,11 @@
     A <a href="https://store.steampowered.com/app/588030">Derail Valley</a> mod that adds multiplayer.
     <br />
     <br />
-    <a href="https://github.com/Insprill/dv-multiplayer/issues">Report Bug</a>
+    <a href="https://github.com/AMacro/dv-multiplayer/issues">Report Bug</a>
     ·
-    <a href="https://github.com/Insprill/dv-multiplayer/issues">Request Feature</a>
+    <a href="https://github.com/AMacro/dv-multiplayer/issues">Request Feature</a>
+    ·
+    <a href="https://discord.com/channels/332511223536943105/1234574186161377363" target="blank" rel="noopener noreferrer">Discord</a>
   </p>
 </div>
 
@@ -31,11 +33,16 @@
     <li><a href="#roadmap">Roadmap</a></li>
     <li><a href="#building">Building</a></li>
     <li><a href="#contributing">Contributing</a></li>
+    <li><a href="#translations">Translations</a></li>
     <li><a href="#license">License</a></li>
   </ol>
 </details>
 
+# Important!
+At present, assume all other mods are incompatible!
+Some mods may work, but many do cause issues and break multiplayer capabilities.
 
+Our primary focus is to have the vanilla game working in multiplayer; once this is achieved we will then work on compatibility with other mods.
 
 
 <!-- ABOUT THE PROJECT -->
@@ -46,6 +53,7 @@ Multiplayer is a Derail Valley mod that adds multiplayer to the game, allowing y
 
 It works by having one player host a game, and then other players can join that game.
 
+This fork is a continuation of [Insprill's](https://github.com/Insprill/dv-multiplayer) amazing efforts.
 
 
 
@@ -82,6 +90,21 @@ If you're new to contributing to open-source projects, you can follow [this][con
 
 
 
+<!-- TRANSLATIONS -->
+
+## Translations
+
+Special thanks to those who have assisted with translations - Apologies if I've missed you, drop me a line and I'll update this section.
+If you'd like to help with translations, please create a pull request or send a message on our [Discord channel](https://discord.com/channels/332511223536943105/1234574186161377363).
+| **Translator** | **Language** |
+| :------------ | :------------ 
+| Ádi | Hungarian   |
+| My Name Is BorING | Chinese (Simplified) |
+| Harfeur | French |
+
+
+
+
 <!-- LICENSE -->
 
 ## License
@@ -109,4 +132,4 @@ See [LICENSE][license-url] for more information.
 [contributing-quickstart-url]: https://docs.github.com/en/get-started/quickstart/contributing-to-projects
 [asset-studio-url]: https://github.com/Perfare/AssetStudio
 [mapify-building-docs]: https://dv-mapify.readthedocs.io/en/latest/contributing/building/
-[project-board-url]: https://github.com/users/Insprill/projects/8
+[project-board-url]: https://github.com/users/AMacro/projects/2

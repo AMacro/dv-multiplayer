@@ -11,8 +11,8 @@ public readonly struct ModInfo
 {
     public readonly string Id;
     public readonly string Version;
-
-    private ModInfo(string id, string version)
+      
+    public ModInfo(string id, string version)
     {
         Id = id;
         Version = version;
@@ -37,6 +37,7 @@ public readonly struct ModInfo
     public static ModInfo[] FromModEntries(IEnumerable<UnityModManager.ModEntry> modEntries)
     {
         return modEntries
+            .Where(entry => entry.Enabled)  //We only care if it's enabled
             .OrderBy(entry => entry.Info.Id)
             .Select(entry => new ModInfo(entry.Info.Id, entry.Info.Version))
             .ToArray();

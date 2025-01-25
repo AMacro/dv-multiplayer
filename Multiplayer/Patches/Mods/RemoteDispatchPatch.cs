@@ -45,7 +45,7 @@ public static class RemoteDispatchPatch
         if (!NetworkLifecycle.Instance.IsClientRunning)
             return;
 
-        foreach (NetworkedPlayer player in NetworkLifecycle.Instance.Client.PlayerManager.Players)
+        foreach (NetworkedPlayer player in NetworkLifecycle.Instance.Client.ClientPlayerManager.Players)
         {
             JObject data = new();
 

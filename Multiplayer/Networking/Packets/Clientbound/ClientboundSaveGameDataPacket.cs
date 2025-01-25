@@ -43,6 +43,17 @@ public class ClientboundSaveGameDataPacket
 
         JObject playerData = NetworkedSaveGameManager.Instance.Server_GetPlayerData(data, player.Guid);
 
+        Multiplayer.LogDebug(() =>
+        {
+            string unlockedGen = string.Join(", ", UnlockablesManager.Instance.UnlockedGeneralLicenses);
+            string packetGen = string.Join(", ", data.GetStringArray(SaveGameKeys.Licenses_General));
+
+            string unlockedJob = string.Join(", ", UnlockablesManager.Instance.UnlockedJobLicenses);
+            string packetJob = string.Join(", ", data.GetStringArray(SaveGameKeys.Licenses_Jobs));
+
+            return $"ClientboundSaveGameDataPacket.CreatePacket() UnlockedGen: {{{unlockedGen}}}, PacketGen: {{{packetGen}}},  UnlockedJob: {{{unlockedJob}}}, PacketJob: {{{packetJob}}}";
+        });
+
         return new ClientboundSaveGameDataPacket {
             GameMode = data.GetString(SaveGameKeys.Game_mode),
             SerializedDifficulty = difficulty.ToString(Formatting.None),

@@ -6,7 +6,7 @@ using DV.Utils;
 using JetBrains.Annotations;
 using Multiplayer.Components.Networking;
 using Multiplayer.Networking.Data;
-using Multiplayer.Networking.Listeners;
+using Multiplayer.Networking.Managers.Server;
 using Newtonsoft.Json.Linq;
 
 namespace Multiplayer.Components.SaveGame;
@@ -24,6 +24,7 @@ public class NetworkedSaveGameManager : SingletonBehaviour<NetworkedSaveGameMana
         Inventory.Instance.MoneyChanged += Server_OnMoneyChanged;
         LicenseManager.Instance.LicenseAcquired += Server_OnLicenseAcquired;
         LicenseManager.Instance.JobLicenseAcquired += Server_OnJobLicenseAcquired;
+        LicenseManager.Instance.GarageUnlocked += Server_OnGarageUnlocked;
     }
 
     protected override void OnDestroy()
@@ -63,16 +64,17 @@ public class NetworkedSaveGameManager : SingletonBehaviour<NetworkedSaveGameMana
 
     public void Server_UpdateInternalData(SaveGameData data)
     {
-        JObject root = data.GetJObject(ROOT_KEY) ?? new JObject();
-        JObject players = root.GetJObject(PLAYERS_KEY) ?? new JObject();
+        JObject root = data.GetJObject(ROOT_KEY) ?? [];
+        JObject players = root.GetJObject(PLAYERS_KEY) ?? [];
 
         foreach (ServerPlayer player in NetworkLifecycle.Instance.Server.ServerPlayers)
         {
             if (player.Id == NetworkServer.SelfId || !player.IsLoaded)
                 continue;
-            JObject playerData = new();
+            JObject playerData = [];
             playerData.SetVector3(SaveGameKeys.Player_position, player.AbsoluteWorldPosition);
             playerData.SetFloat(SaveGameKeys.Player_rotation, player.WorldRotationY);
+            //store inventory see StorageSerializer.SaveStorage()
             players.SetJObject(player.Guid.ToString(), playerData);
         }
 
