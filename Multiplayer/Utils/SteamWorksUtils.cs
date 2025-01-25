@@ -1,3 +1,4 @@
+using DV.Localization;
 using DV.UIFramework;
 using Multiplayer.Components.MainMenu;
 using Multiplayer.Components.Networking;
@@ -124,6 +125,48 @@ public static class SteamworksUtils
             ServerBrowserPane.lobbyToJoin = lobby;
             MainMenuThingsAndStuff.Instance.SwitchToMenu((byte)RightPaneController_Patch.joinMenuIndex);
         });
+    }
+
+    public static void OnLobbyInviteRequest(Friend friend, Lobby lobby)
+    {
+        Multiplayer.Log($"Received lobby invite: {lobby.Id}");
+
+        if (NetworkLifecycle.Instance.IsServerRunning ||  NetworkLifecycle.Instance.IsClientRunning)
+            return;
+
+        NetworkLifecycle.Instance.QueueMainMenuEvent(() =>
+        {
+            var popup = MainMenuThingsAndStuff.Instance.ShowYesNoPopup();
+
+            if (popup == null)
+            {
+                Multiplayer.LogError("OnLobbyInviteRequest() Popup not found.");
+                return;
+            }
+
+            popup.labelTMPro.text = $"{friend.Name} invited you to play!\r\nDo you wish to join?";
+
+            Localize locPos = popup.positiveButton.GetComponentInChildren<Localize>();
+            locPos.key = "yes";
+            locPos.UpdateLocalization();
+
+            Localize locNeg = popup.negativeButton.GetComponentInChildren<Localize>();
+            locNeg.key = "no";
+            locNeg.UpdateLocalization();
+
+            popup.Closed += (PopupResult result) =>
+            {
+                Multiplayer.LogDebug(()=>$"OnLobbyInviteRequest() Popup closed by {result.closedBy}");
+                if (result.closedBy == PopupClosedByAction.Positive)
+                {
+                    MainMenuThingsAndStuff.Instance.SwitchToMenu((byte)RightPaneController_Patch.joinMenuIndex);
+                    ServerBrowserPane.lobbyToJoin = lobby;
+                }
+            }; 
+
+        });
+
+        NetworkLifecycle.Instance.TriggerMainMenuEventLater();
     }
 
 }

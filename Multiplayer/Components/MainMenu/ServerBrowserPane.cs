@@ -97,32 +97,6 @@ namespace Multiplayer.Components.MainMenu
 
             SetupServerBrowser();
             RefreshGridView();
-
-            //For invites
-            Multiplayer.Log($"Invite from command line: {lobbyToJoin != null}");
-            if (lobbyToJoin != null)
-            {
-                direct = false;
-                selectedLobby = lobbyToJoin;
-
-                foreach(var item in lobbyToJoin?.Data)
-                {
-                    Multiplayer.Log($"Invite from command line ({lobbyToJoin?.Id}) Data: {item.Key}, {item.Value}");
-                }
-                string hasPass = lobbyToJoin?.GetData(SteamworksUtils.LOBBY_HAS_PASSWORD);
-                Multiplayer.Log($"Invite from command line ({lobbyToJoin?.Id}) hasPass: {hasPass}");
-
-                if (string.IsNullOrEmpty(hasPass))
-                {
-                    Multiplayer.Log($"Invite from command line ({lobbyToJoin?.Id}) Attempting...");
-                    AttemptConnection();
-                }
-                else
-                {
-                    Multiplayer.Log($"Invite from command line ({lobbyToJoin?.Id}) Ask Password...");
-                    ShowPasswordPopup();
-                }
-            }
         }
 
         public void OnEnable()
@@ -183,6 +157,32 @@ namespace Multiplayer.Components.MainMenu
             {
                 UpdatePings();
                 pingTimer = 0f;
+            }
+
+            if (lobbyToJoin != null && lobbyToJoin?.Data?.Count() > 0)
+            {
+                //For invites
+                Multiplayer.Log($"Player Invite initiated");
+                if (lobbyToJoin != null)
+                {
+                    direct = false;
+                    selectedLobby = lobbyToJoin;
+                    lobbyToJoin = null;
+
+                    string hasPass = selectedLobby?.GetData(SteamworksUtils.LOBBY_HAS_PASSWORD);
+                    Multiplayer.Log($"Player Invite ({selectedLobby?.Id}) Has Password: {hasPass}");
+
+                    if (string.IsNullOrEmpty(hasPass))
+                    {
+                        Multiplayer.Log($"Player Invite ({selectedLobby?.Id}) Attempting connection...");
+                        AttemptConnection();
+                    }
+                    else
+                    {
+                        Multiplayer.Log($"Player Invite ({selectedLobby?.Id}) Ask Password...");
+                        ShowPasswordPopup();
+                    }
+                }
             }
         }
 
@@ -741,45 +741,46 @@ namespace Multiplayer.Components.MainMenu
                 }
             }
 
-            //Multiplayer.Log($"AttemptConnection address: {address}");
+            Multiplayer.Log($"AttemptConnection address: {address}");
 
-            //if (IPAddress.TryParse(address, out IPAddress IPaddress))
-            //{
-            //    Multiplayer.Log($"AttemptConnection tryParse: {IPaddress.AddressFamily}");
+            if (IPAddress.TryParse(address, out IPAddress IPaddress))
+            {
+                Multiplayer.Log($"AttemptConnection tryParse: {IPaddress.AddressFamily}");
 
-            //    if (IPaddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
-            //    {
-            //        AttemptIPv4();
-            //    }
-            //    else if (IPaddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
-            //    {
-            //        AttemptIPv6();
-            //    }
+                if (IPaddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                {
+                    AttemptIPv4();
+                }
+                else if (IPaddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+                {
+                    AttemptIPv6();
+                }
 
-            //    return;
-            //}
+                return;
+            }
 
-            //Multiplayer.LogError($"IP address invalid: {address}");
+            Multiplayer.LogError($"IP address invalid: {address}");
 
-            //AttemptFail();
+            AttemptFail();
         }
 
-        //private void AttemptIPv6()
-        //{
-        //    Multiplayer.Log($"AttemptIPv6() {address}");
+        private void AttemptIPv6()
+        {
+            Multiplayer.Log($"AttemptIPv6() {address}");
 
-        //    if (connectionState == ConnectionState.Aborted)
-        //        return;
+            if (connectionState == ConnectionState.Aborted)
+                return;
 
-        //    attempt++;
-        //    if (connectingPopup != null)
-        //        connectingPopup.labelTMPro.text = $"Connecting, please wait...\r\nAttempt: {attempt}";
+            attempt++;
+            if (connectingPopup != null)
+                connectingPopup.labelTMPro.text = $"Connecting, please wait...\r\nAttempt: {attempt}";
 
-        //    Multiplayer.Log($"AttemptIPv6() starting attempt");
-        //    connectionState = ConnectionState.AttemptingIPv6;
-        //    SingletonBehaviour<NetworkLifecycle>.Instance.StartClient(address, portNumber, password, false, OnDisconnect);
+            Multiplayer.Log($"AttemptIPv6() starting attempt");
+            connectionState = ConnectionState.AttemptingIPv6;
+            SingletonBehaviour<NetworkLifecycle>.Instance.StartClient(address, portNumber, password, false, OnDisconnect);
 
-        //}
+        }
+
         //private void AttemptIPv6Punch()
         //{
         //    Multiplayer.Log($"AttemptIPv6Punch() {address}");
@@ -796,47 +797,47 @@ namespace Multiplayer.Components.MainMenu
         //    SingletonBehaviour<NetworkLifecycle>.Instance.StartClient(address, portNumber, password, false, OnDisconnect);
 
         //}
-        //private void AttemptIPv4()
-        //{
-        //    Multiplayer.Log($"AttemptIPv4() {address}, {connectionState}");
+        private void AttemptIPv4()
+        {
+            Multiplayer.Log($"AttemptIPv4() {address}, {connectionState}");
 
-        //    if (connectionState == ConnectionState.Aborted)
-        //        return;
+            if (connectionState == ConnectionState.Aborted)
+                return;
 
-        //    attempt++;
-        //    if (connectingPopup != null)
-        //        connectingPopup.labelTMPro.text = $"Connecting, please wait...\r\nAttempt: {attempt}";
+            attempt++;
+            if (connectingPopup != null)
+                connectingPopup.labelTMPro.text = $"Connecting, please wait...\r\nAttempt: {attempt}";
 
-        //    if (!direct)
-        //    {
-        //        if (selectedServer.ipv4 == null || selectedServer.ipv4 == string.Empty)
-        //        {
-        //            AttemptFail();
-        //            return;
-        //        }
+            if (!direct)
+            {
+                if (selectedServer.ipv4 == null || selectedServer.ipv4 == string.Empty)
+                {
+                    AttemptFail();
+                    return;
+                }
 
-        //        address = selectedServer.ipv4;
-        //    }
+                address = selectedServer.ipv4;
+            }
 
-        //    Multiplayer.Log($"AttemptIPv4() {address}");
+            Multiplayer.Log($"AttemptIPv4() {address}");
 
-        //    if (IPAddress.TryParse(address, out IPAddress IPaddress))
-        //    {
-        //        Multiplayer.Log($"AttemptIPv4() TryParse passed");
-        //        if (IPaddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
-        //        {
-        //            Multiplayer.Log($"AttemptIPv4() starting attempt");
-        //            connectionState = ConnectionState.AttemptingIPv4;
-        //            SingletonBehaviour<NetworkLifecycle>.Instance.StartClient(address, portNumber, password, false, OnDisconnect);
-        //            return;
-        //        }
-        //    }
+            if (IPAddress.TryParse(address, out IPAddress IPaddress))
+            {
+                Multiplayer.Log($"AttemptIPv4() TryParse passed");
+                if (IPaddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                {
+                    Multiplayer.Log($"AttemptIPv4() starting attempt");
+                    connectionState = ConnectionState.AttemptingIPv4;
+                    SingletonBehaviour<NetworkLifecycle>.Instance.StartClient(address, portNumber, password, false, OnDisconnect);
+                    return;
+                }
+            }
 
-        //    Multiplayer.Log($"AttemptIPv4() TryParse failed");
-        //    AttemptFail();
-        //    string message = "Host Unreachable";
-        //    MainMenuThingsAndStuff.Instance.ShowOkPopup(message, () => { });
-        //}
+            Multiplayer.Log($"AttemptIPv4() TryParse failed");
+            AttemptFail();
+            string message = "Host Unreachable";
+            MainMenuThingsAndStuff.Instance.ShowOkPopup(message, () => { });
+        }
 
         //private void AttemptIPv4Punch()
         //{
