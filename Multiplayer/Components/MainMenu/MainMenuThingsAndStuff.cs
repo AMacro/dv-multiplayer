@@ -1,4 +1,5 @@
 using System;
+using DV.UI;
 using DV.UIFramework;
 using DV.Utils;
 using JetBrains.Annotations;
@@ -9,13 +10,18 @@ namespace Multiplayer.Components.MainMenu
     public class MainMenuThingsAndStuff : SingletonBehaviour<MainMenuThingsAndStuff>
     {
         public PopupManager popupManager;
-        public Popup renamePopupPrefab;
-        public Popup okPopupPrefab;
+        //public Popup renamePopupPrefab;
+        //public Popup okPopupPrefab;
+        //public Popup yesNoPopupPrefab;
         public UIMenuController uiMenuController;
+        public PopupNotificationReferences references;
 
         protected override void Awake()
         {
             bool shouldDestroy = false;
+
+            popupManager = GameObject.FindObjectOfType<PopupManager>();
+            references = GameObject.FindObjectOfType<PopupNotificationReferences>();
 
             // Check if PopupManager is assigned
             if (popupManager == null)
@@ -24,19 +30,19 @@ namespace Multiplayer.Components.MainMenu
                 shouldDestroy = true;
             }
 
-            // Check if renamePopupPrefab is assigned
-            if (renamePopupPrefab == null)
-            {
-                Multiplayer.LogError($"{nameof(renamePopupPrefab)} is null! Destroying self.");
-                shouldDestroy = true;
-            }
+            //// Check if renamePopupPrefab is assigned
+            //if (renamePopupPrefab == null)
+            //{
+            //    Multiplayer.LogError($"{nameof(renamePopupPrefab)} is null! Destroying self.");
+            //    shouldDestroy = true;
+            //}
 
-            // Check if okPopupPrefab is assigned
-            if (okPopupPrefab == null)
-            {
-                Multiplayer.LogError($"{nameof(okPopupPrefab)} is null! Destroying self.");
-                shouldDestroy = true;
-            }
+            //// Check if okPopupPrefab is assigned
+            //if (okPopupPrefab == null)
+            //{
+            //    Multiplayer.LogError($"{nameof(okPopupPrefab)} is null! Destroying self.");
+            //    shouldDestroy = true;
+            //}
 
             // Check if uiMenuController is assigned
             if (uiMenuController == null)
@@ -72,14 +78,35 @@ namespace Multiplayer.Components.MainMenu
         public Popup ShowRenamePopup()
         {
             Multiplayer.Log("public Popup ShowRenamePopup() ...");
-            return ShowPopup(renamePopupPrefab);
+            return ShowPopup(references.popupTextInput);
         }
 
         // Show the OK popup if possible
         [CanBeNull]
         public Popup ShowOkPopup()
         {
-            return ShowPopup(okPopupPrefab);
+            return ShowPopup(references.popupOk);
+        }
+
+        // Show the Yes No popup if possible
+        [CanBeNull]
+        public Popup ShowYesNoPopup()
+        {
+            return ShowPopup(references.popupYesNo);
+        }
+
+        // Show the Wait Spinner popup if possible
+        [CanBeNull]
+        public Popup ShowSpinnerPopup()
+        {
+            return ShowPopup(references.popupWaitSpinner);
+        }
+        
+        // Show the Slider popup if possible
+        [CanBeNull]
+        public Popup ShowSliderPopup()
+        {
+            return ShowPopup(references.popupSlider);
         }
 
         // Generic method to show a popup if the PopupManager can show it

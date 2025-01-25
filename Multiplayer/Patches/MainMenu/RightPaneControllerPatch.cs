@@ -49,7 +49,7 @@ public static class RightPaneController_Patch
         __instance.menuController.controlledMenus.Add(multiplayerPane.GetComponent<UIMenu>());
         joinMenuIndex = __instance.menuController.controlledMenus.Count - 1;
         UIMenuRequester mpButtonReq = MainMenuController_Awake_Patch.multiplayerButton.GetComponent<UIMenuRequester>();
-        mpButtonReq.requestedMenuIndex =joinMenuIndex;
+        mpButtonReq.requestedMenuIndex = joinMenuIndex;
 
         // Clean up unnecessary components and child objects
         GameObject.Destroy(multiplayerPane.GetComponent<SaveLoadController>());
@@ -59,11 +59,13 @@ public static class RightPaneController_Patch
         // Create and initialize MainMenuThingsAndStuff
         MainMenuThingsAndStuff.Create(manager =>
         {
+            /*
             PopupManager popupManager = null;
             __instance.FindPopupManager(ref popupManager);
+
             manager.popupManager = popupManager;
             manager.renamePopupPrefab = __instance.continueLoadNewController.career.renamePopupPrefab;
-            manager.okPopupPrefab = __instance.continueLoadNewController.career.okPopupPrefab;
+            manager.okPopupPrefab = __instance.continueLoadNewController.career.okPopupPrefab;*/
             manager.uiMenuController = __instance.menuController;
         });
 
@@ -103,5 +105,7 @@ public static class RightPaneController_Patch
     {
         if (Environment.GetCommandLineArgs().Contains("+connect_lobby"))
             SteamworksUtils.JoinFromCommandLine();
+
+        SteamMatchmaking.OnLobbyInvite += SteamworksUtils.OnLobbyInviteRequest;
     }
 }

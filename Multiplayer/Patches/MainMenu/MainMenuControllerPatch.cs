@@ -51,17 +51,6 @@ namespace Multiplayer.Patches.MainMenu
         }
 
         /// <summary>
-        /// Resets the tooltip for a given button.
-        /// </summary>
-        /// <param name="button">The button to reset the tooltip for.</param>
-        //private static void ResetTooltip(GameObject button)
-        //{
-        //    UIElementTooltip tooltip = button.GetComponent<UIElementTooltip>();
-        //    tooltip.disabledKey = null;
-        //    tooltip.enabledKey = null;
-        //}
-
-        /// <summary>
         /// Sets the icon for the Multiplayer button.
         /// </summary>
         /// <param name="button">The button to set the icon for.</param>

@@ -122,7 +122,7 @@ public class HostGamePane : MonoBehaviour
             return;
         }
         
-        GameObject inputPrefab = MainMenuThingsAndStuff.Instance.renamePopupPrefab.gameObject.FindChildByName("TextFieldTextIcon");
+        GameObject inputPrefab = MainMenuThingsAndStuff.Instance.references.popupTextInput.gameObject.FindChildByName("TextFieldTextIcon");
         if (inputPrefab == null)
         {
             Multiplayer.LogError("TextFieldTextIcon not found!");
