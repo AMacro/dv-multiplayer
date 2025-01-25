@@ -1,12 +1,7 @@
-using System;
+﻿using System;
 using System.IO;
-using System.Linq;
-using System.Reflection;
-using DV;
-using DV.UIFramework;
 using HarmonyLib;
 using JetBrains.Annotations;
-using Multiplayer.Components.MainMenu;
 using Multiplayer.Components.Networking;
 using Multiplayer.Editor;
 using Multiplayer.Patches.Mods;
@@ -14,7 +9,6 @@ using Multiplayer.Patches.World;
 using UnityChan;
 using UnityEngine;
 using UnityModManagerNet;
-using Steamworks;
 
 namespace Multiplayer;
 
@@ -22,35 +16,19 @@ public static class Multiplayer
 {
     private const string LOG_FILE = "multiplayer.log";
 
-    public static UnityModManager.ModEntry ModEntry;
+    private static UnityModManager.ModEntry ModEntry;
     public static Settings Settings;
 
     private static AssetBundle assetBundle;
     public static AssetIndex AssetIndex { get; private set; }
-    public static string Ver {
-        get {
-            AssemblyInformationalVersionAttribute info = (AssemblyInformationalVersionAttribute)typeof(Multiplayer).Assembly.
-                                                            GetCustomAttributes(typeof(AssemblyInformationalVersionAttribute), false)
-                                                            .FirstOrDefault();
-
-            if (info == null || Settings.ForceJson)
-                return ModEntry.Info.Version;
-
-            return info.InformationalVersion.Split('+')[0];
-        }
-    }
-    
-
-    public static bool specLog = false;
 
     [UsedImplicitly]
     private static bool Load(UnityModManager.ModEntry modEntry)
     {
         ModEntry = modEntry;
-        Settings = Settings.Load(modEntry);//Settings.Load<Settings>(modEntry);
+        Settings = Settings.Load<Settings>(modEntry);
         ModEntry.OnGUI = Settings.Draw;
         ModEntry.OnSaveGUI = Settings.Save;
-        ModEntry.OnLateUpdate = LateUpdate;
 
         Harmony harmony = null;
 
@@ -59,8 +37,6 @@ public static class Multiplayer
             File.Delete(LOG_FILE);
 
             Locale.Load(ModEntry.Path);
-
-            Log($"Multiplayer JSON Version: {ModEntry.Info.Version}, Internal Version: {Ver}\r\nGame version: {BuildInfo.BUILD_VERSION_MAJOR.ToString()}\r\nBuilbot version: {BuildInfo.BUILDBOT_INFO.ToString()}");
 
             Log("Patching...");
             harmony = new Harmony(ModEntry.Info.Id);
@@ -73,13 +49,6 @@ public static class Multiplayer
                 Log("Found RemoteDispatch, patching...");
                 RemoteDispatchPatch.Patch(harmony, remoteDispatch.Assembly);
             }
-
-            //UnityModManager.ModEntry passengerJobs = UnityModManager.FindMod("PassengerJobs");
-            //if (passengerJobs?.Enabled == true)
-            //{
-            //    Log("Found PassengerJobs, initialising...");
-            //    PassengerJobsMod.Init();
-            //}
 
             if (!LoadAssets())
                 return false;
@@ -130,48 +99,6 @@ public static class Multiplayer
         return true;
     }
 
-    private static void LateUpdate(UnityModManager.ModEntry modEntry, float deltaTime)
-    {
-        if (ModEntry.NewestVersion != null && ModEntry.NewestVersion.ToString() != "")
-        {
-            Log($"Multiplayer Latest Version: {ModEntry.NewestVersion}");
-
-            ModEntry.OnLateUpdate -= Multiplayer.LateUpdate;
-
-            if (ModEntry.NewestVersion > ModEntry.Version)
-            {
-                if (MainMenuThingsAndStuff.Instance != null)
-                {
-                    Popup update =  MainMenuThingsAndStuff.Instance.ShowOkPopup();
-
-                    if (update == null)
-                        return;
-
-                    update.labelTMPro.text = "Multiplayer Mod Update Available!\r\n\r\n"+
-                                                $"<align=left>Latest version:\t\t{ModEntry.NewestVersion}\r\n" +
-                                                $"Installed version:\t\t<color=\"red\">{ModEntry.Version}</color>\r\n\r\n" +
-                                                "Run Unity Mod Manager Installer to apply the update.</align>";
-
-                    Vector3 currPos = update.labelTMPro.transform.localPosition;
-                    Vector2 size = update.labelTMPro.rectTransform.sizeDelta;
-
-                    float delta = size.y - update.labelTMPro.preferredHeight;
-                    currPos.y -= delta *2 ;
-                    size.y = update.labelTMPro.preferredHeight;
-
-                    update.labelTMPro.transform.localPosition = currPos;
-                    update.labelTMPro.rectTransform.sizeDelta = size;
-
-                    currPos = update.positiveButton.transform.localPosition;
-                    currPos.y += delta * 2;
-                    update.positiveButton.transform.localPosition = currPos;
-
-
-                }
-            }
-        }
-    }
-
     #region Logging
 
     public static void LogDebug(Func<object> resolver)
@@ -203,7 +130,7 @@ public static class Multiplayer
 
     private static void WriteLog(string msg)
     {
-        string str = $"[{DateTime.Now.ToUniversalTime():HH:mm:ss.fff}] {msg}";
+        string str = $"[{DateTime.Now:HH:mm:ss.fff}] {msg}";
         if (Settings.EnableLogFile)
             File.AppendAllLines(LOG_FILE, new[] { str });
         ModEntry.Logger.Log(str);

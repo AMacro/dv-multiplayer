@@ -306,5 +306,3 @@ MultiplayerAssets/ProjectSettings/*
 !MultiplayerAssets/ProjectSettings/ProjectVersion.txt
 # Packages
 !MultiplayerAssets/Packages
-/Lobby Servers/Rust Server/target
-*.pem

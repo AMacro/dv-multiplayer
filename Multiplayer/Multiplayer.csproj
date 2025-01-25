@@ -1,23 +1,19 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
         <TargetFramework>net48</TargetFramework>
         <LangVersion>latest</LangVersion>
         <RootNamespace>Multiplayer</RootNamespace>
-        <InformationalVersion>0.1.10.0</InformationalVersion>
     </PropertyGroup>
+
     <ItemGroup>
-        <PackageReference Include="Krafs.Publicizer" Version="2.3.0">
-            <PrivateAssets>all</PrivateAssets>
-            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-        </PackageReference>
-        <PackageReference Include="LiteNetLib" Version="1.3.1" />
+        <PackageReference Include="Krafs.Publicizer" Version="2.2.1" />
         <Publicize Include="Assembly-CSharp" IncludeCompilerGeneratedMembers="false" />
         <Publicize Include="DV.CharacterController" IncludeCompilerGeneratedMembers="false" />
         <Publicize Include="DV.Simulation" IncludeCompilerGeneratedMembers="false" />
         <Publicize Include="DV.Utils:DV.Utils.SingletonBehaviour`1._instance" />
-        <Publicize Include="DV.UI" IncludeCompilerGeneratedMembers="false" />
     </ItemGroup>
-    <!-- Derail Valley References -->
+
+    <!-- Derail Valley -->
     <ItemGroup>
         <Reference Include="Assembly-CSharp" />
         <Reference Include="CommandTerminal" />
@@ -43,18 +39,21 @@
         <Reference Include="DV.UserManagement" />
         <Reference Include="DV.Utils" />
         <Reference Include="DV.WeatherSystem" />
-        <Reference Include="Stateless" />
-        <Reference Include="RootMotion" />
     </ItemGroup>
+
     <!-- Mod Loader -->
     <ItemGroup>
-        <PackageReference Include="UnityModManager" Version="0.31.1" />
+        <PackageReference Include="UnityModManager" Version="0.27.0" />
     </ItemGroup>
-    <!-- Third-Party References -->
+
+    <!-- Third-Party -->
     <ItemGroup>
         <PackageReference Include="ErrorProne.NET.Structs" Version="0.4.0-beta.1" />
         <PackageReference Include="Humanizer.Core" Version="2.14.1" />
         <Reference Include="I2.Localization" />
+        <Reference Include="LiteNetLib">
+            <HintPath>../build/LiteNetLib.dll</HintPath>
+        </Reference>
         <Reference Include="MultiplayerEditor">
             <HintPath>../build/MultiplayerEditor.dll</HintPath>
         </Reference>
@@ -65,40 +64,30 @@
         <Reference Include="UnityChan">
             <HintPath>../build/UnityChan.dll</HintPath>
         </Reference>
-        <Reference Include="Facepunch.Steamworks.Win64" />
     </ItemGroup>
-    <!-- Unity References -->
+
+    <!-- Unity -->
     <ItemGroup>
         <Reference Include="Unity.TextMeshPro" />
         <Reference Include="UnityEngine" />
         <Reference Include="UnityEngine.AssetBundleModule" />
         <Reference Include="UnityEngine.AudioModule" />
-        <Reference Include="UnityEngine.AnimationModule" />
         <Reference Include="UnityEngine.CoreModule" />
         <Reference Include="UnityEngine.IMGUIModule" />
         <Reference Include="UnityEngine.JSONSerializeModule" />
         <Reference Include="UnityEngine.PhysicsModule" />
         <Reference Include="UnityEngine.UI" />
-        <Reference Include="UnityEngine.UIModule" />
-        <Reference Include="UnityEngine.TextRenderingModule" />
-        <Reference Include="UnityEngine.UnityWebRequestModule" />
-        <Reference Include="UnityEngine.InputLegacyModule" />
     </ItemGroup>
-    <Target Name="PostBuildMacros">
-        <GetAssemblyIdentity AssemblyFiles="$(TargetPath)">
-            <Output TaskParameter="Assemblies" ItemName="Targets" />
-        </GetAssemblyIdentity>
-        <ItemGroup>
-            <VersionNumber Include="$(InformationalVersion.Split('+')[0] )" />
-        </ItemGroup>
-    </Target>
-    <Target Name="PostBuild" AfterTargets="PostBuildEvent" DependsOnTargets="PostBuildMacros">
-        <!-- Sign Assemblies if in 'Release' -->
-        <Exec Condition="$(ConfigurationName) == 'Release' AND $(Cert-Thumb) != ''" Command="&quot;$(SignToolPath)SignTool.exe&quot; sign /sha1 $(Cert-Thumb) /fd SHA256 /t http://timestamp.sectigo.com &quot;$(TargetPath)&quot; &quot;$(OutDir)/LiteNetLib.dll&quot;" />
+    <ItemGroup>
+        <Compile Remove="Patches\World\WorldStreamingInitPatch.cs" />
+    </ItemGroup>
+
+    <Target Name="PostBuild" AfterTargets="PostBuildEvent">
         <!-- Copy to build folder -->
-        <Copy SourceFiles="../info.json;../locale.csv;../LICENSE;$(TargetPath);$(OutDir)/Humanizer.dll;$(OutDir)/LiteNetLib.dll" DestinationFolder="../build/" />
-        <!-- Update Json, copy to game directory and make package if in 'Release' -->
-        <Exec Condition="$(ConfigurationName) == 'Release'" Command="powershell -executionpolicy bypass -Command &quot;(../post-build.ps1 -Ver '@(VersionNumber)' -Target '$(TargetPath)' -GameDir '$(DvInstallDir)\Mods\Multiplayer')&quot;" />
-        <Exec Condition="$(ConfigurationName) == 'Debug'" Command="powershell -executionpolicy bypass -Command &quot;(../post-build.ps1 -Ver '@(VersionNumber)' -NoArchive -Target '$(TargetPath)' -GameDir '$(DvInstallDir)\Mods\Multiplayer')&quot;" />
+        <Copy SourceFiles="../info.json;../locale.csv;../LICENSE;$(TargetPath);$(OutDir)/Humanizer.dll" DestinationFolder="../build/" />
+
+        <!-- Copy to game install folder -->
+        <Exec Condition="Exists('$(DvInstallDir)') And '$(OS)' == 'Windows_NT'" Command="powershell -executionpolicy bypass -Command &quot;(../package.ps1 -NoArchive -OutputDirectory '$(DvInstallDir)\Mods')&quot;" />
+        <Exec Condition="Exists('$(DvInstallDir)') And '$(OS)' != 'Windows_NT'" Command="pwsh  -Command &quot;(../package.ps1 -NoArchive -OutputDirectory '$(DvInstallDir)/Mods')&quot;" />
     </Target>
 </Project>

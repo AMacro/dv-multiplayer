@@ -19,9 +19,8 @@ public static class CargoModelControllerPatch
     private static IEnumerator AddCargoOnceInitialized(CargoModelController controller)
     {
         NetworkedTrainCar networkedTrainCar;
-        while (!controller.trainCar.TryNetworked(out networkedTrainCar))
+        while ((networkedTrainCar = controller.trainCar.Networked()) == null)
             yield return null;
-
         AddCargo(controller, networkedTrainCar);
     }
 

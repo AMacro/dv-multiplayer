@@ -1,5 +1,5 @@
 using Multiplayer.Components.Networking.Train;
-using Multiplayer.Networking.Data.Train;
+using Multiplayer.Networking.Data;
 
 namespace Multiplayer.Networking.Packets.Clientbound.Train;
 

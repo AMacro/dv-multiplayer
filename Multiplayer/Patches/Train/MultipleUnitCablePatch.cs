@@ -24,8 +24,8 @@ public static class MultipleUnitCable_Disconnect_Patch
     {
         if (NetworkLifecycle.Instance.IsProcessingPacket || UnloadWatcher.isUnloading)
             return;
-
-        if (__instance.muModule.train.TryNetworked(out NetworkedTrainCar networkedTrainCar) && networkedTrainCar.IsDestroying)
+        NetworkedTrainCar networkedTrainCar = __instance.muModule.train.Networked();
+        if (networkedTrainCar.IsDestroying)
             return;
         NetworkLifecycle.Instance.Client?.SendMuDisconnected(networkedTrainCar.NetId, __instance, playAudio);
     }

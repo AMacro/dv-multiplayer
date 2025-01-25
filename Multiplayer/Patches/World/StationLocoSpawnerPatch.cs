@@ -5,7 +5,7 @@ using DV.ThingTypes;
 using DV.Utils;
 using HarmonyLib;
 using Multiplayer.Components.Networking;
-using Multiplayer.Utils;
+using Multiplayer.Networking.Data;
 using UnityEngine;
 
 namespace Multiplayer.Patches.World;
@@ -37,8 +37,7 @@ public static class StationLocoSpawner_Start_Patch
         {
             yield return CHECK_DELAY;
 
-            
-            bool anyoneWithinRange = __instance.spawnTrackMiddleAnchor.transform.position.AnyPlayerSqrMag() < __instance.spawnLocoPlayerSqrDistanceFromTrack;
+            bool anyoneWithinRange = IsAnyoneWithinRange(__instance, __instance.spawnTrackMiddleAnchor.transform.position);
 
             switch (__instance.playerEnteredLocoSpawnRange)
             {
@@ -51,6 +50,14 @@ public static class StationLocoSpawner_Start_Patch
                     break;
             }
         }
+    }
+
+    private static bool IsAnyoneWithinRange(StationLocoSpawner stationLocoSpawner, Vector3 targetPosition)
+    {
+        foreach (ServerPlayer serverPlayer in NetworkLifecycle.Instance.Server.ServerPlayers)
+            if ((serverPlayer.WorldPosition - targetPosition).sqrMagnitude < stationLocoSpawner.spawnLocoPlayerSqrDistanceFromTrack)
+                return true;
+        return false;
     }
 
     private static void SpawnLocomotives(StationLocoSpawner stationLocoSpawner)
