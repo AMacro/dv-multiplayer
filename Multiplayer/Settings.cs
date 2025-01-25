@@ -1,5 +1,7 @@
-﻿using System;
+using System;
 using Humanizer;
+using Multiplayer.Utils;
+using Steamworks;
 using UnityEngine;
 using UnityModManagerNet;
 using Console = DV.Console;
@@ -14,20 +16,46 @@ public class Settings : UnityModManager.ModSettings, IDrawable
 
     public static Action<Settings> OnSettingsUpdated;
 
+    public int SettingsVer = 2;
+
     [Header("Player")]
-    [Draw("Username", Tooltip = "Your username in-game")]
+    [Draw("Use Steam Name", Tooltip = "Use your Steam name as your username in-game")]
+    public bool UseSteamName = true;
+    public string LastSteamName = string.Empty;
+    public ulong SteamId = 0;
+    [Draw("Username", Tooltip = "Your username in-game", VisibleOn = "UseSteamName|false")]
     public string Username = "Player";
     public string Guid = System.Guid.NewGuid().ToString();
 
     [Space(10)]
     [Header("Server")]
+    [Draw("Server Name", Tooltip = "Name of your server in the lobby browser.")]
+    public string ServerName = "";
     [Draw("Password", Tooltip = "The password required to join your server. Leave blank for no password.")]
     public string Password = "";
+    [Draw("Public Game", Tooltip = "Public servers are listed in the lobby browser")]
+    public bool PublicGame = true;
     [Draw("Max Players", Tooltip = "The maximum number of players that can join your server, including yourself.")]
     public int MaxPlayers = 4;
     [Draw("Port", Tooltip = "The port that your server will listen on. You generally don't need to change this.")]
     public int Port = 7777;
+    [Draw("Details", Tooltip = "Details shown in the server browser")]
+    public string Details = "";
 
+    [Space(10)]
+    [Header("Lobby Server")]
+    [Draw("Lobby Server address", Tooltip = "Address of lobby server for finding multiplayer games")]
+    public string LobbyServerAddress = "https://dv.mineit.space";//"http://localhost:8080";
+    [Draw("IPv4 Check Address", Tooltip = "Do not modify unless the service is unavailable")]
+    public string Ipv4AddressCheck = "https://api.ipify.org/";
+    [Header("Last Server Connected to by IP")]
+    [Draw("Last Remote IP", Tooltip = "The IP for the last server connected to by IP.")]
+    public string LastRemoteIP = "";
+    [Draw("Last Remote Port", Tooltip = "The port for the last server connected to by IP.")]
+    public int LastRemotePort = 7777;
+    [Draw("Last Remote Password", Tooltip = "The password for the last server connected to by IP.")]
+    public string LastRemotePassword = "";
+    
     [Space(10)]
     [Header("Preferences")]
     [Draw("Show Name Tags", Tooltip = "Whether to show player names above their heads.")]
@@ -65,7 +93,7 @@ public class Settings : UnityModManager.ModSettings, IDrawable
     public int SimulationMinLatency = 30;
     [Draw("Maximum Latency (ms)", VisibleOn = "SimulateLatency|true")]
     public int SimulationMaxLatency = 100;
-
+    public bool ForceJson = false;
     public void Draw(UnityModManager.ModEntry modEntry)
     {
         Settings self = this;
@@ -76,6 +104,7 @@ public class Settings : UnityModManager.ModSettings, IDrawable
 
     public override void Save(UnityModManager.ModEntry modEntry)
     {
+        LastSteamName = LastSteamName.Trim().Truncate(MAX_USERNAME_LENGTH);
         Username = Username.Trim().Truncate(MAX_USERNAME_LENGTH);
         Port = Mathf.Clamp(Port, 1024, 49151);
         MaxPlayers = Mathf.Clamp(MaxPlayers, 1, byte.MaxValue);
@@ -97,5 +126,72 @@ public class Settings : UnityModManager.ModSettings, IDrawable
         guid = System.Guid.NewGuid();
         Guid = guid.ToString();
         return guid;
+    }
+
+    public string GetUserName()
+    {
+        string username = Username;
+
+        if (Multiplayer.Settings.UseSteamName)
+        {
+            if (SteamWorksUtils.GetSteamUser(out string steamUsername, out ulong steamId))
+            {
+                Multiplayer.Settings.LastSteamName = steamUsername;
+                Multiplayer.Settings.SteamId = steamId;
+            }
+
+            if (Multiplayer.Settings.LastSteamName != string.Empty)
+                username = Multiplayer.Settings.LastSteamName;
+        }
+
+        return username;
+    }
+
+    public static Settings Load(UnityModManager.ModEntry modEntry)
+    {
+        Settings data = Settings.Load<Settings>(modEntry);
+
+            MigrateSettings(ref data);
+            
+            data.SettingsVer = GetCurrentVersion();
+
+            data.Save(modEntry);
+ 
+        return data;
+    }
+
+    private static int GetCurrentVersion()
+    {
+        return 2;
+    }
+
+    // Function to handle migrations based on the current version
+    private static void MigrateSettings(ref Settings data)
+    { 
+        switch (data.SettingsVer)
+        {
+            case 0:
+                //We want to disable Punch until it's fully implemented
+                data.EnableNatPunch = false;
+                data.SettingsVer = 1;
+
+                //Ensure http setting is upgraded to https if using the default lobby server
+                if(data.LobbyServerAddress == "http://dv.mineit.space")
+                    data.LobbyServerAddress = new Settings().LobbyServerAddress;
+
+                MigrateSettings(ref data);
+                break;
+            case 1: 
+                if (data.Ipv4AddressCheck == "http://checkip.dyndns.org")
+                    data.Ipv4AddressCheck = new Settings().Ipv4AddressCheck;
+
+                data.ShowAdvancedSettings = true;
+                data.DebugLogging = true;
+                data.ShowPingInNameTags = true;
+                break;
+            default:
+                break;
+        }
+
     }
 }

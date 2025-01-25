@@ -19,7 +19,7 @@ public static class SaveGameManager_FindStartGameData_Patch
 
     private static void StartServer(IDifficulty difficulty)
     {
-        if (NetworkLifecycle.Instance.StartServer(Multiplayer.Settings.Port, difficulty))
+        if (NetworkLifecycle.Instance.StartServer(difficulty))
             return;
 
         NetworkLifecycle.Instance.QueueMainMenuEvent(() =>

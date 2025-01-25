@@ -1,0 +1,7 @@
+{
+  "port": 8080,
+  "timeout": 120,
+  "ssl_enabled": false,
+  "ssl_cert_path": "cert.pem",
+  "ssl_key_path": "key.pem"
+}

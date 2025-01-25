@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using JetBrains.Annotations;
@@ -104,5 +104,23 @@ public static class UnityExtensions
     public static T GetOrAddComponent<T>(this Component component) where T : Component
     {
         return component.gameObject.GetOrAddComponent<T>();
+    }
+
+    public static uint ColorToUInt32(this Color color)
+    {
+        uint r = (uint)(color.r * 255);
+        uint g = (uint)(color.g * 255);
+        uint b = (uint)(color.b * 255);
+        uint a = (uint)(color.a * 255);
+        return (a << 24) | (r << 16) | (g << 8) | b;
+    }
+
+    public static Color UInt32ToColor(this uint packed)
+    {
+        float a = ((packed >> 24) & 0xFF) / 255f;
+        float r = ((packed >> 16) & 0xFF) / 255f;
+        float g = ((packed >> 8) & 0xFF) / 255f;
+        float b = (packed & 0xFF) / 255f;
+        return new Color(r, g, b, a);
     }
 }

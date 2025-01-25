@@ -15,7 +15,21 @@ public static class WindowsBreakingController_BreakWindowsFromCollision_Patch
     {
         if (!NetworkLifecycle.Instance.IsHost())
             return;
-        ushort netId = TrainCar.Resolve(__instance.transform).GetNetId();
+
+        TrainCar car = TrainCar.Resolve(__instance.transform);
+        if (car == null)
+        {
+            Multiplayer.LogWarning($"BreakWindowsFromCollision failed, unable to resolve TrainCar");
+            return;
+        }
+
+        ushort netId = car.GetNetId();
+        if(netId == 0)
+        {
+            Multiplayer.LogWarning($"BreakWindowsFromCollision failed, {car.name}");
+            return; 
+        }
+
         NetworkLifecycle.Instance.Server.SendWindowsBroken(netId, forceDirection);
     }
 
@@ -25,7 +39,17 @@ public static class WindowsBreakingController_BreakWindowsFromCollision_Patch
     {
         if (!NetworkLifecycle.Instance.IsHost())
             return;
-        ushort netId = TrainCar.Resolve(__instance.transform).GetNetId();
+
+        TrainCar car = TrainCar.Resolve(__instance.transform);
+        ushort netId = car.GetNetId();
+
+        if (car == null ||netId == 0)
+        {
+            Multiplayer.LogWarning($"RepairWindows_Postfix failed, {car?.name}");
+            return;
+        }
+
+        Multiplayer.LogDebug(()=>$"RepairWindows_Postfix, {car.name}");
         NetworkLifecycle.Instance.Server.SendWindowsRepaired(netId);
     }
 }

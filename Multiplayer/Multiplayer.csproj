@@ -1,8 +1,9 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
         <TargetFramework>net48</TargetFramework>
         <LangVersion>latest</LangVersion>
         <RootNamespace>Multiplayer</RootNamespace>
+        <InformationalVersion>0.1.9.9</InformationalVersion>
     </PropertyGroup>
 
     <ItemGroup>
@@ -11,6 +12,7 @@
         <Publicize Include="DV.CharacterController" IncludeCompilerGeneratedMembers="false" />
         <Publicize Include="DV.Simulation" IncludeCompilerGeneratedMembers="false" />
         <Publicize Include="DV.Utils:DV.Utils.SingletonBehaviour`1._instance" />
+        <Publicize Include="DV.UI" IncludeCompilerGeneratedMembers="false" />
     </ItemGroup>
 
     <!-- Derail Valley -->
@@ -39,6 +41,8 @@
         <Reference Include="DV.UserManagement" />
         <Reference Include="DV.Utils" />
         <Reference Include="DV.WeatherSystem" />
+        <Reference Include="Stateless" />
+        <Reference Include="RootMotion" />
     </ItemGroup>
 
     <!-- Mod Loader -->
@@ -64,6 +68,7 @@
         <Reference Include="UnityChan">
             <HintPath>../build/UnityChan.dll</HintPath>
         </Reference>
+        <Reference Include="Facepunch.Steamworks.Win64"></Reference>
     </ItemGroup>
 
     <!-- Unity -->
@@ -72,22 +77,36 @@
         <Reference Include="UnityEngine" />
         <Reference Include="UnityEngine.AssetBundleModule" />
         <Reference Include="UnityEngine.AudioModule" />
+        <Reference Include="UnityEngine.AnimationModule" />
         <Reference Include="UnityEngine.CoreModule" />
         <Reference Include="UnityEngine.IMGUIModule" />
         <Reference Include="UnityEngine.JSONSerializeModule" />
         <Reference Include="UnityEngine.PhysicsModule" />
         <Reference Include="UnityEngine.UI" />
-    </ItemGroup>
-    <ItemGroup>
-        <Compile Remove="Patches\World\WorldStreamingInitPatch.cs" />
+        <Reference Include="UnityEngine.UIModule" />
+        <Reference Include="UnityEngine.TextRenderingModule" />
+        <Reference Include="UnityEngine.UnityWebRequestModule" />
+        <Reference Include="UnityEngine.InputLegacyModule" />
     </ItemGroup>
 
-    <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+    <Target Name="PostBuildMacros">
+        <GetAssemblyIdentity AssemblyFiles="$(TargetPath)">
+            <Output TaskParameter="Assemblies" ItemName="Targets" />
+        </GetAssemblyIdentity>
+        <ItemGroup>
+            <VersionNumber Include="$(InformationalVersion.Split('+')[0] )" />
+        </ItemGroup>
+    </Target>
+    
+    <Target Name="PostBuild" AfterTargets="PostBuildEvent" DependsOnTargets="PostBuildMacros">
+        <!-- Sign Assemblies if in 'Release' -->
+        <Exec Condition="$(ConfigurationName) == 'Release' AND $(Cert-Thumb) != ''" Command="&quot;$(SignToolPath)SignTool.exe&quot; sign /sha1 $(Cert-Thumb) /fd SHA256 /t http://timestamp.sectigo.com &quot;$(TargetPath)&quot;" />
+
         <!-- Copy to build folder -->
         <Copy SourceFiles="../info.json;../locale.csv;../LICENSE;$(TargetPath);$(OutDir)/Humanizer.dll" DestinationFolder="../build/" />
 
-        <!-- Copy to game install folder -->
-        <Exec Condition="Exists('$(DvInstallDir)') And '$(OS)' == 'Windows_NT'" Command="powershell -executionpolicy bypass -Command &quot;(../package.ps1 -NoArchive -OutputDirectory '$(DvInstallDir)\Mods')&quot;" />
-        <Exec Condition="Exists('$(DvInstallDir)') And '$(OS)' != 'Windows_NT'" Command="pwsh  -Command &quot;(../package.ps1 -NoArchive -OutputDirectory '$(DvInstallDir)/Mods')&quot;" />
+        <!-- Update Json, copy to game directory and make package if in 'Release' -->
+        <Exec Condition="$(ConfigurationName) == 'Release'" Command="powershell -executionpolicy bypass -Command &quot;(../post-build.ps1 -Ver '@(VersionNumber)' -Target '$(TargetPath)' -GameDir '$(DvInstallDir)\Mods\Multiplayer')&quot;" />
+        <Exec Condition="$(ConfigurationName) == 'Debug'" Command="powershell -executionpolicy bypass -Command &quot;(../post-build.ps1 -Ver '@(VersionNumber)' -NoArchive -Target '$(TargetPath)' -GameDir '$(DvInstallDir)\Mods\Multiplayer')&quot;" />
     </Target>
 </Project>
