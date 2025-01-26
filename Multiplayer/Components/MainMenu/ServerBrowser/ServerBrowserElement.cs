@@ -100,10 +100,10 @@ namespace Multiplayer.Components.MainMenu.ServerBrowser
             networkName.text = data.Name;
             playerCount.text = $"{data.CurrentPlayers} / {data.MaxPlayers}";
 
-            if (data.MultiplayerVersion == Multiplayer.Ver)
+            //if (data.MultiplayerVersion == Multiplayer.Ver)
                 ping.text = $"<color={GetColourForPing(data.Ping)}>{(data.Ping < 0 ? "?" : data.Ping)} ms</color>";
-            else
-                ping.text = $"<color={PING_COLOR_UNKNOWN}>N/A</color>";
+            //else
+            //    ping.text = $"<color={PING_COLOR_UNKNOWN}>N/A</color>";
 
             // Hide the icon if the server does not have a password
             goIconPassword.SetActive(data.HasPassword);
