@@ -167,6 +167,9 @@ public class NetworkServer : NetworkManager
         Log($"Server loaded, processing {joinQueue.Count} queued players");
         IsLoaded = true;
 
+        //We should initialise object here for dedicated servers, rather than relying on the existance of a client
+        NetworkedPitStopStation.InitialisePitStops(); //trigger cache build
+
         while (joinQueue.Count > 0)
         {
             ITransportPeer peer = joinQueue.Dequeue();
@@ -712,7 +715,8 @@ public class NetworkServer : NetworkManager
         }
 
         // Sync Stations (match NetIDs with StationIDs) - we could do this the same as junctions but juntions may need to be upgraded to work this way - future planning for mod integration
-        SendPacket(peer, new ClientBoundStationControllerLookupPacket(NetworkedStationController.GetAll().ToArray()), DeliveryMethod.ReliableOrdered);
+        SendPacket(peer, new ClientboundStationControllerLookupPacket(NetworkedStationController.GetAll().ToArray()), DeliveryMethod.ReliableOrdered);
+        SendPacket(peer, new ClientboundPitStopStationLookupPacket(NetworkedPitStopStation.GetAllPitStopStations().ToArray()), DeliveryMethod.ReliableOrdered);
 
         //send jobs
         foreach (StationController station in StationController.allStations)
