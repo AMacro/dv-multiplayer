@@ -103,9 +103,11 @@ public static class RightPaneController_Patch
     [HarmonyPostfix]
     private static void OnEnablePost(RightPaneController __instance)
     {
+        SteamMatchmaking.OnLobbyDataChanged += SteamworksUtils.OnLobbyDataChanged;
+        SteamMatchmaking.OnLobbyInvite += SteamworksUtils.OnLobbyInviteRequest;
+        SteamFriends.OnGameLobbyJoinRequested += SteamworksUtils.OnLobbyJoinRequest;
+
         if (Environment.GetCommandLineArgs().Contains("+connect_lobby"))
             SteamworksUtils.JoinFromCommandLine();
-
-        SteamMatchmaking.OnLobbyInvite += SteamworksUtils.OnLobbyInviteRequest;
     }
 }

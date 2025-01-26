@@ -97,8 +97,6 @@ public static class SteamworksUtils
             return;
         hasJoinedCL = true;
 
-        SteamMatchmaking.OnLobbyDataChanged += OnLobbyDataChanged;
-
         var id = GetLobbyIdFromArgs();
         var sId = new SteamId
         {
@@ -109,9 +107,8 @@ public static class SteamworksUtils
         var ret = lobby.Refresh();
     }
 
-    private static void OnLobbyDataChanged(Lobby lobby)
+    public static void OnLobbyDataChanged(Lobby lobby)
     {
-        SteamMatchmaking.OnLobbyDataChanged -= OnLobbyDataChanged;
 
         NetworkLifecycle.Instance.QueueMainMenuEvent(() =>
         {
@@ -125,6 +122,29 @@ public static class SteamworksUtils
             ServerBrowserPane.lobbyToJoin = lobby;
             MainMenuThingsAndStuff.Instance.SwitchToMenu((byte)RightPaneController_Patch.joinMenuIndex);
         });
+    }
+
+    public static void OnLobbyJoinRequest(Lobby lobby, SteamId id)
+    {
+        Multiplayer.Log($"Received lobby join request: {lobby.Id}, {id.Value}");
+
+        if (NetworkLifecycle.Instance.IsServerRunning || NetworkLifecycle.Instance.IsClientRunning)
+            return;
+
+        NetworkLifecycle.Instance.QueueMainMenuEvent(() =>
+        {
+            Multiplayer.Log($"OnLobbyDataChanged({lobby.Id}) count: {lobby.Data?.Count()}");
+
+            foreach (var item in lobby.Data)
+            {
+                Multiplayer.Log($"OnEnablePost Data: {item.Key}, Value: {item.Value}");
+            }
+
+            ServerBrowserPane.lobbyToJoin = lobby;
+            MainMenuThingsAndStuff.Instance.SwitchToMenu((byte)RightPaneController_Patch.joinMenuIndex);
+        });
+
+        NetworkLifecycle.Instance.TriggerMainMenuEventLater();
     }
 
     public static void OnLobbyInviteRequest(Friend friend, Lobby lobby)
