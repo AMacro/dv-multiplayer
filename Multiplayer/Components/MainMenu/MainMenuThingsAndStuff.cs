@@ -70,6 +70,9 @@ namespace Multiplayer.Components.MainMenu
         // Switch to a specific menu by index
         public void SwitchToMenu(byte index)
         {
+            if (uiMenuController.ActiveIndex == index)
+                return;
+
             uiMenuController.SwitchMenu(index);
         }
 
