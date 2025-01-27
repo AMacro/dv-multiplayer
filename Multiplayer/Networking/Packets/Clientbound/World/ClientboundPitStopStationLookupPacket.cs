@@ -8,22 +8,23 @@ public class ClientboundPitStopStationLookupPacket
 {
     public ushort[] NetIds {  get; set; }
     public Vector3[] Locations { get; set; }
+    public int[] SelectedCars { get; set; }
 
 
     public ClientboundPitStopStationLookupPacket() { }
 
-    public ClientboundPitStopStationLookupPacket(KeyValuePair<ushort, Vector3>[] NetIDtoLocation)
+    public ClientboundPitStopStationLookupPacket(Tuple<ushort, Vector3, int>[] data)
     {
-        if (NetIDtoLocation == null)
-            throw new ArgumentNullException(nameof(NetIDtoLocation));
+        NetIds = new ushort[data.Length];
+        Locations = new Vector3[data.Length];
+        SelectedCars = new int[data.Length];
 
-        NetIds = new ushort[NetIDtoLocation.Length];
-        Locations = new Vector3[NetIDtoLocation.Length];
-
-        for (int i = 0; i < NetIDtoLocation.Length; i++)
+        for (int i = 0; i < data.Length; i++)
         {
-            NetIds[i] = NetIDtoLocation[i].Key;
-            Locations[i] = NetIDtoLocation[i].Value;
+            var (netId, location, selection) = data[i];
+            NetIds[i] = netId;
+            Locations[i] = location;
+            SelectedCars[i] = selection;
         }
     }
 

@@ -956,6 +956,20 @@ public class NetworkClient : NetworkManager
         Object.Destroy(networkedJob.gameObject);
     }
 
+    private void OnCommonPitStopInteractionPacket(CommonPitStopInteractionPacket packet)
+    {
+        if (!NetworkedPitStopStation.Get(packet.NetId, out var netPitStop))
+        {
+            LogWarning($"Pit stop Interaction received for netId: {packet.NetId}, but pit stop does not exist!");
+        }
+
+        Log($"Pit stop interaction received for {netPitStop.StationName}");
+
+        LogDebug(() => $"OnCommonPitStopInteractionPacket() [{netPitStop.StationName}, {packet.NetId}], interaction: [{packet.InteractionType}], resource: {packet?.ResourceType}, State: {packet.State}");
+        netPitStop.ProcessPacket(packet);
+    }
+
+
     private void OnCommonItemChangePacket(CommonItemChangePacket packet)
     {
         //LogDebug(() => $"OnCommonItemChangePacket({packet?.Items?.Count})");
@@ -1354,6 +1368,18 @@ public class NetworkClient : NetworkManager
         {
             message = message
         }, DeliveryMethod.ReliableUnordered);
+    }
+
+    public void SendPitStopInteractionPacket(ushort netId, PitStopStationInteractionType interaction, ResourceType? resource, float state)
+    {
+        int res = resource == null ? 0 : (int)resource;
+        SendPacketToServer(new CommonPitStopInteractionPacket
+        {
+            NetId = netId,
+            InteractionType = (byte)interaction,
+            ResourceType = res,
+            State = state
+        }, DeliveryMethod.ReliableOrdered);
     }
 
     public void SendItemsChangePacket(List<ItemUpdateData> items)

@@ -154,6 +154,8 @@ public class NetworkServer : NetworkManager
         netPacketProcessor.SubscribeReusable<CommonChatPacket, ITransportPeer>(OnCommonChatPacket);
         netPacketProcessor.SubscribeReusable<UnconnectedPingPacket, IPEndPoint>(OnUnconnectedPingPacket);
         netPacketProcessor.SubscribeNetSerializable<CommonItemChangePacket, ITransportPeer>(OnCommonItemChangePacket);
+
+        netPacketProcessor.SubscribeReusable<CommonPitStopInteractionPacket, ITransportPeer>(OnCommonPitStopInteractionPacket);
     }
 
     private void OnLoaded()
@@ -1108,6 +1110,32 @@ public class NetworkServer : NetworkManager
     {
         //Multiplayer.Log($"OnUnconnectedPingPacket({endPoint.Address})");
         //SendUnconnectedPacket(packet, endPoint.Address.ToString(), endPoint.Port);
+    }
+
+    private void OnCommonPitStopInteractionPacket(CommonPitStopInteractionPacket packet, ITransportPeer peer)
+    {
+
+        if(NetworkedPitStopStation.Get(packet.NetId, out NetworkedPitStopStation controller))
+        {
+            if (controller.ValidateInteraction(packet))
+            {
+                //passed validation, send to all but the originator
+                SendPacketToAll(packet, DeliveryMethod.ReliableOrdered, peer);
+            }
+            else
+            {
+                //Failed to validate, player needs to rollback interaction
+                SendPacket(peer, new CommonPitStopInteractionPacket
+                {
+                    NetId = packet.NetId,
+                    InteractionType = (byte)PitStopStationInteractionType.Reject
+                }, DeliveryMethod.ReliableOrdered);
+            }
+        }
+        else
+        {
+            LogError($"OnCommonPitStopInteractionPacket() Failed to find PitStopStation with netId: {packet.NetId}");
+        }
     }
 
     private void OnCommonItemChangePacket(CommonItemChangePacket packet, ITransportPeer peer)
