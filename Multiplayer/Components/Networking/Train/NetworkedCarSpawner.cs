@@ -24,8 +24,9 @@ public static class NetworkedCarSpawner
             SetBrakeParams(parts[i].BrakeData, cars[i].TrainCar);
 
         //couple them if marked as coupled
-        for (int i = 0; i < cars.Length; i++)
-            Couple(parts[i], cars[i].TrainCar, autoCouple);
+        //- we need to do this back to front otherwise the TrainSet indicies will be wrong!
+        for (int i = cars.Length - 1; i >= 0; i--)
+            Couple(in parts[i], cars[i].TrainCar, autoCouple);
 
         //update speed queue data
         for (int i = 0; i < cars.Length; i++)
