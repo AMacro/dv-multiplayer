@@ -43,6 +43,7 @@ using DV.UserManagement;
 using DV.Common;
 using DV.Customization.Paint;
 using Multiplayer.Networking.TransportLayers;
+using System.Collections;
 
 namespace Multiplayer.Networking.Managers.Client;
 
@@ -111,8 +112,20 @@ public class NetworkClient : NetworkManager
 
     protected override void Subscribe()
     {
+        netPacketProcessor.SubscribeReusable<ClientboundServerLoadingPacket>(OnClientboundServerLoadingPacket);
         netPacketProcessor.SubscribeReusable<ClientboundLoginResponsePacket>(OnClientboundLoginResponsePacket);
         netPacketProcessor.SubscribeReusable<ClientboundDisconnectPacket>(OnClientboundDisconnectPacket);
+        netPacketProcessor.SubscribeReusable<ClientboundRemoveLoadingScreenPacket>(OnClientboundRemoveLoadingScreen);
+
+        netPacketProcessor.SubscribeReusable<ClientboundTickSyncPacket>(OnClientboundTickSyncPacket);
+        netPacketProcessor.SubscribeReusable<ClientboundBeginWorldSyncPacket>(OnClientboundBeginWorldSyncPacket);
+        netPacketProcessor.SubscribeReusable<ClientboundGameParamsPacket>(OnClientboundGameParamsPacket);
+        netPacketProcessor.SubscribeReusable<ClientboundSaveGameDataPacket>(OnClientboundSaveGameDataPacket);
+        netPacketProcessor.SubscribeReusable<ClientboundWeatherPacket>(OnClientboundWeatherPacket);
+        netPacketProcessor.SubscribeReusable<ClientboundRailwayStatePacket>(OnClientboundRailwayStatePacket);
+        netPacketProcessor.SubscribeReusable<ClientboundStationControllerLookupPacket>(OnClientboundStationControllerLookupPacket);
+        netPacketProcessor.SubscribeReusable<ClientboundPitStopStationLookupPacket>(OnClientboundPitStopStationLookupPacket);
+
 
         netPacketProcessor.SubscribeReusable<ClientboundPlayerJoinedPacket>(OnClientboundPlayerJoinedPacket);
         netPacketProcessor.SubscribeReusable<ClientboundPlayerDisconnectPacket>(OnClientboundPlayerDisconnectPacket);
@@ -120,16 +133,7 @@ public class NetworkClient : NetworkManager
         netPacketProcessor.SubscribeReusable<ClientboundPlayerPositionPacket>(OnClientboundPlayerPositionPacket);
         netPacketProcessor.SubscribeReusable<ClientboundPingUpdatePacket>(OnClientboundPingUpdatePacket);
 
-        netPacketProcessor.SubscribeReusable<ClientboundTickSyncPacket>(OnClientboundTickSyncPacket);
-        netPacketProcessor.SubscribeReusable<ClientboundServerLoadingPacket>(OnClientboundServerLoadingPacket);
-        netPacketProcessor.SubscribeReusable<ClientboundBeginWorldSyncPacket>(OnClientboundBeginWorldSyncPacket);
-        netPacketProcessor.SubscribeReusable<ClientboundGameParamsPacket>(OnClientboundGameParamsPacket);
-        netPacketProcessor.SubscribeReusable<ClientboundSaveGameDataPacket>(OnClientboundSaveGameDataPacket);
-        netPacketProcessor.SubscribeReusable<ClientboundWeatherPacket>(OnClientboundWeatherPacket);
-        netPacketProcessor.SubscribeReusable<ClientboundRemoveLoadingScreenPacket>(OnClientboundRemoveLoadingScreen);
         netPacketProcessor.SubscribeReusable<ClientboundTimeAdvancePacket>(OnClientboundTimeAdvancePacket);
-        netPacketProcessor.SubscribeReusable<ClientboundRailwayStatePacket>(OnClientboundRailwayStatePacket);
-        netPacketProcessor.SubscribeReusable<ClientBoundStationControllerLookupPacket>(OnClientBoundStationControllerLookupPacket);
         netPacketProcessor.SubscribeReusable<CommonChangeJunctionPacket>(OnCommonChangeJunctionPacket);
         netPacketProcessor.SubscribeReusable<CommonRotateTurntablePacket>(OnCommonRotateTurntablePacket);
         netPacketProcessor.SubscribeReusable<ClientboundSpawnTrainCarPacket>(OnClientboundSpawnTrainCarPacket);
@@ -165,6 +169,8 @@ public class NetworkClient : NetworkManager
         netPacketProcessor.SubscribeReusable<ClientboundJobValidateResponsePacket>(OnClientboundJobValidateResponsePacket);
         netPacketProcessor.SubscribeReusable<CommonChatPacket>(OnCommonChatPacket);
         netPacketProcessor.SubscribeNetSerializable<CommonItemChangePacket>(OnCommonItemChangePacket);
+
+        netPacketProcessor.SubscribeReusable<CommonPitStopInteractionPacket>(OnCommonPitStopInteractionPacket);
     }
 
     #region Net Events
@@ -342,6 +348,8 @@ public class NetworkClient : NetworkManager
             NetworkedItemManager.Instance.CheckInstance();
             Log($"WorldStreamingInit.LoadingFinished() CacheWorldItems()");
             NetworkedItemManager.Instance.CacheWorldItems();
+            Log($"WorldStreamingInit.LoadingFinished() InitialisePitStops()"); 
+            NetworkedPitStopStation.InitialisePitStops();
             Log($"WorldStreamingInit.LoadingFinished() SendReadyPacket()");
             SendReadyPacket();
         };
@@ -402,7 +410,7 @@ public class NetworkClient : NetworkManager
     }
 
     //Force stations to be mapped to same netId across all clients and server - probably should implement for junctions, etc.
-    private void OnClientBoundStationControllerLookupPacket(ClientBoundStationControllerLookupPacket packet)
+    private void OnClientboundStationControllerLookupPacket(ClientboundStationControllerLookupPacket packet)
     {
 
         if (packet == null)
@@ -416,7 +424,6 @@ public class NetworkClient : NetworkManager
             LogError($"OnClientBoundStationControllerLookupPacket received packet with null arrays: NetID is null: {packet.NetID == null}, StationID is null: {packet.StationID == null}");
             return;
         }
-
 
         for (int i = 0; i < packet.NetID.Length; i++)
         {
@@ -435,8 +442,44 @@ public class NetworkClient : NetworkManager
         }
     }
 
+    //Force pitstops to be mapped to same netId across all clients and server - probably should implement for junctions, etc.
+    private void OnClientboundPitStopStationLookupPacket(ClientboundPitStopStationLookupPacket packet)
+    {
+        LogDebug(() => $"OnClientboundPitStopStationLookupPacket({packet.NetIds?.Length})");
 
-    private void OnClientboundRailwayStatePacket(ClientboundRailwayStatePacket packet)
+        if (packet == null)
+        {
+            LogError("OnClientboundPitStopStationLookupPacket received null packet");
+            return;
+        }
+
+        if (packet.NetIds == null || packet.Locations == null)
+        {
+            LogError($"OnClientboundPitStopStationLookupPacket received packet with null arrays: NetIDs is null: {packet.NetIds == null}, Locations is null: {packet.Locations == null}");
+            return;
+        }
+
+        //Log($"WorldStreamingInit.LoadingFinished() CachePitStopStations()");
+        //NetworkedPitStopStation.InitialisePitStops();
+
+        for (int i = 0; i < packet.NetIds.Length; i++)
+        {
+            LogDebug(() => $"OnClientboundPitStopStationLookupPacket[{i}] vector: {packet.Locations[i]}, netId: {packet.NetIds[i]}");
+            if (NetworkedPitStopStation.GetFromVector(packet.Locations[i], out  NetworkedPitStopStation netStation))
+            {
+                netStation.NetId = packet.NetIds[i];
+                if (netStation.Station.pitstop != null)
+                {
+                    netStation.Station.pitstop.currentCarIndex = packet.SelectedCars[i];
+                    //netStation.Station.pitstop.OnCarSelectionChanged();
+                }
+            }
+            else
+                LogError($"Syncing PitStopStations station with coords: {packet.Locations[i]} not found");
+        }
+    }
+
+     private void OnClientboundRailwayStatePacket(ClientboundRailwayStatePacket packet)
     {
         for (int i = 0; i < packet.SelectedJunctionBranches.Length; i++)
         {

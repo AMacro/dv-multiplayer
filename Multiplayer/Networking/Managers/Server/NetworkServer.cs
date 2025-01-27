@@ -716,7 +716,7 @@ public class NetworkServer : NetworkManager
 
         // Sync Stations (match NetIDs with StationIDs) - we could do this the same as junctions but juntions may need to be upgraded to work this way - future planning for mod integration
         SendPacket(peer, new ClientboundStationControllerLookupPacket(NetworkedStationController.GetAll().ToArray()), DeliveryMethod.ReliableOrdered);
-        SendPacket(peer, new ClientboundPitStopStationLookupPacket(NetworkedPitStopStation.GetAllPitStopStations().ToArray()), DeliveryMethod.ReliableOrdered);
+        SendPacket(peer, new ClientboundPitStopStationLookupPacket(NetworkedPitStopStation.GetAllPitStopStations()), DeliveryMethod.ReliableOrdered);
 
         //send jobs
         foreach (StationController station in StationController.allStations)
