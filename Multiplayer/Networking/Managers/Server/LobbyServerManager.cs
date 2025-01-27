@@ -172,6 +172,8 @@ public class LobbyServerManager : MonoBehaviour
             //todo implement public/private/friends
             if (server.serverData.isPublic)
                 lobby?.SetPublic();
+            else
+                lobby?.SetPrivate();
 
             lobby?.SetJoinable(true);
         }
