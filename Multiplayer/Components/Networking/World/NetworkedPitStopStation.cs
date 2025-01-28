@@ -148,7 +148,7 @@ public class NetworkedPitStopStation : IdMonoBehaviour<ushort, NetworkedPitStopS
 
 
     #region Common
-    public IEnumerator Init()
+    private IEnumerator Init()
     {
         Multiplayer.LogDebug(() => $"NetworkedPitStopStation.Init() station: {Station == null}, pitstop: {Station?.pitstop == null}");
 
@@ -157,7 +157,21 @@ public class NetworkedPitStopStation : IdMonoBehaviour<ushort, NetworkedPitStopS
 
         var resourceModules = Station?.locoResourceModules?.resourceModules;
 
-        var carSelectorGrab = GetComponentInChildren<GrabHandlerHingeJoint>();
+        GrabHandlerHingeJoint carSelectorGrab = null;
+
+        while (carSelectorGrab == null)
+        {
+            try
+            {
+                carSelectorGrab = GetComponentInChildren<GrabHandlerHingeJoint>();
+            }
+            catch (Exception ex) { }
+
+            if (carSelectorGrab == null)
+                yield return new WaitForEndOfFrame();
+        }
+                
+
         if (carSelectorGrab != null)
         {
             Multiplayer.LogDebug(() => $"NetworkedPitStopStation.Init() Grab Handler found: {carSelectorGrab != null}, Name: {carSelectorGrab.name}");
@@ -314,6 +328,7 @@ public class NetworkedPitStopStation : IdMonoBehaviour<ushort, NetworkedPitStopS
         isGrabbed = false;
         grabbedModule = null;
         grabbedAmplitudeChecker = null;
+        lastUnitsToBuy = module.Data.unitsToBuy;
         NetworkLifecycle.Instance?.Client.SendPitStopInteractionPacket(NetId, PitStopStationInteractionType.Ungrab, module.resourceType, lastUnitsToBuy);
     }
     #endregion
