@@ -402,7 +402,7 @@ public class NetworkServer : NetworkManager
         }, DeliveryMethod.ReliableOrdered, SelfPeer);
     }
 
-    public void SendCarHealthUpdate(ushort netId, float health)
+    public void SendCarHealthUpdate(ushort netId, TrainCarHealthData health)
     {
         SendPacketToAll(new ClientboundCarHealthUpdatePacket
         {

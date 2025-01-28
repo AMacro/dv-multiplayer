@@ -828,15 +828,19 @@ public class NetworkClient : NetworkManager
         if (!NetworkedTrainCar.GetTrainCar(packet.NetId, out TrainCar trainCar))
             return;
 
-        CarDamageModel carDamage = trainCar.CarDamage;
-        float difference = Mathf.Abs(packet.Health - carDamage.currentHealth);
-        if (difference < 0.0001)
-            return;
+        packet.Health.LoadTo(trainCar);
+        //todo test new code thoroughly
+        //check that career and comms radio repairs and damage work as expected
 
-        if (packet.Health < carDamage.currentHealth)
-            carDamage.DamageCar(difference);
-        else
-            carDamage.RepairCar(difference);
+        //CarDamageModel carDamage = trainCar.CarDamage;
+        //float difference = Mathf.Abs(packet.Health - carDamage.currentHealth);
+        //if (difference < 0.0001)
+        //    return;
+
+        //if (packet.Health < carDamage.currentHealth)
+        //    carDamage.DamageCar(difference);
+        //else
+        //    carDamage.RepairCar(difference);
     }
 
     private void OnClientboundRerailTrainPacket(ClientboundRerailTrainPacket packet)
@@ -1372,6 +1376,8 @@ public class NetworkClient : NetworkManager
 
     public void SendPitStopInteractionPacket(ushort netId, PitStopStationInteractionType interaction, ResourceType? resource, float state)
     {
+        Multiplayer.LogDebug(()=>$"SendPitStopInteractionPacket({netId}, [{interaction}], {resource}, {state}");
+
         int res = resource == null ? 0 : (int)resource;
         SendPacketToServer(new CommonPitStopInteractionPacket
         {
@@ -1380,6 +1386,7 @@ public class NetworkClient : NetworkManager
             ResourceType = res,
             State = state
         }, DeliveryMethod.ReliableOrdered);
+
     }
 
     public void SendItemsChangePacket(List<ItemUpdateData> items)

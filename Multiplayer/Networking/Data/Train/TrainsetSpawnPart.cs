@@ -21,6 +21,8 @@ public readonly struct TrainsetSpawnPart
     public readonly string LiveryId;
     public readonly string CarId;
     public readonly string CarGuid;
+    public readonly bool Exploded;
+    public readonly TrainCarHealthData CarHealthData;
 
     // Customisation details
     public readonly bool PlayerSpawnedCar;
@@ -46,7 +48,8 @@ public readonly struct TrainsetSpawnPart
     public readonly BrakeSystemData BrakeData;
 
     public TrainsetSpawnPart(
-          ushort netId, string liveryId, string carId, string carGuid, bool playerSpawnedCar, bool isRestoration, LocoRestorationController.RestorationState restorationState, PaintTheme paintExterior, PaintTheme paintInterior,
+          ushort netId, string liveryId, string carId, string carGuid, bool exploded, TrainCarHealthData carHealthData,
+          bool playerSpawnedCar, bool isRestoration, LocoRestorationController.RestorationState restorationState, PaintTheme paintExterior, PaintTheme paintInterior,
           CouplingData frontCoupling, CouplingData rearCoupling,
           float speed, Vector3 position, Quaternion rotation,
           BogieData bogie1, BogieData bogie2, BrakeSystemData brakeData)
@@ -55,6 +58,8 @@ public readonly struct TrainsetSpawnPart
         LiveryId = liveryId;
         CarId = carId;
         CarGuid = carGuid;
+        Exploded = exploded;
+        CarHealthData = carHealthData;
 
         PlayerSpawnedCar = playerSpawnedCar;
         IsRestorationLoco = isRestoration;
@@ -88,6 +93,9 @@ public readonly struct TrainsetSpawnPart
             writer.PutBytesWithLength(EMPTY_GUID);
         }
 
+        writer.Put(data.Exploded);
+        TrainCarHealthData.Serialize(writer, data.CarHealthData);
+
         writer.Put(data.PlayerSpawnedCar);
         writer.Put(data.IsRestorationLoco);
 
@@ -116,8 +124,10 @@ public readonly struct TrainsetSpawnPart
         string liveryId = reader.GetString();
         string carId = reader.GetString();
         string carGuid = new Guid(reader.GetBytesWithLength()).ToString();
-        bool playerSpawnedCar = reader.GetBool();
+        bool exploded = reader.GetBool();
+        TrainCarHealthData healthData = TrainCarHealthData.Deserialize(reader);
 
+        bool playerSpawnedCar = reader.GetBool();
         bool isRestoration = reader.GetBool();
         LocoRestorationController.RestorationState restorationState = default;
         if (isRestoration)
@@ -142,7 +152,8 @@ public readonly struct TrainsetSpawnPart
         var brakeSet = BrakeSystemData.Deserialize(reader);
 
         return new TrainsetSpawnPart(
-            netId, liveryId, carId, carGuid, playerSpawnedCar, isRestoration, restorationState, exteriorPaint, interiorPaint,
+            netId, liveryId, carId, carGuid, exploded, healthData,
+            playerSpawnedCar, isRestoration, restorationState, exteriorPaint, interiorPaint,
             frontCoupling, rearCoupling,
             speed, position, rotation,
             bogie1, bogie2, brakeSet);
@@ -162,6 +173,8 @@ public readonly struct TrainsetSpawnPart
             trainCar.carLivery.id,
             trainCar.ID,
             trainCar.CarGUID,
+            trainCar.isExploded,
+            TrainCarHealthData.From(trainCar),
 
             trainCar.playerSpawnedCar,
             restorationController != null,

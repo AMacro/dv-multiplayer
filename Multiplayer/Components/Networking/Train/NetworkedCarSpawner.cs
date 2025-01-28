@@ -1,4 +1,5 @@
 using System.Collections;
+using DV.Damage;
 using DV.LocoRestoration;
 using DV.Simulation.Brake;
 using DV.ThingTypes;
@@ -59,6 +60,18 @@ public static class NetworkedCarSpawner
         trainCar.playerSpawnedCar = spawnPart.PlayerSpawnedCar;
         trainCar.uniqueCar = false;
         trainCar.InitializeExistingLogicCar(spawnPart.CarId, spawnPart.CarGuid);
+
+        //set health data
+        if (spawnPart.Exploded)
+        {
+            var explosionBase = trainCar.GetComponent<ResourceExplosionBase>();
+            if (explosionBase != null)
+                explosionBase.UpdateToExplodedStateExternal();
+            else
+                TrainCarExplosion.UpdateModelToExploded(trainCar);
+        }
+
+        spawnPart.CarHealthData.LoadTo(trainCar);
 
         //Restoration vehicle hack
         //todo: make it work properly

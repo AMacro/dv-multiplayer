@@ -506,7 +506,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         if (!healthDirty)
             return;
         healthDirty = false;
-        NetworkLifecycle.Instance.Server.SendCarHealthUpdate(NetId, TrainCar.CarDamage.currentHealth);
+        NetworkLifecycle.Instance.Server.SendCarHealthUpdate(NetId, TrainCarHealthData.From(TrainCar));
     }
 
     public bool Server_ValidateCouplerInteraction(CommonCouplerInteractionPacket packet, ITransportPeer peer)
