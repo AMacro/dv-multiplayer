@@ -81,12 +81,8 @@ public static class SteamworksUtils
         string[] args = Environment.GetCommandLineArgs();
 
         for (int i = 0; i < args.Length - 1; i++)
-        {
             if (args[i] == "+connect_lobby")
-            {
                 return ulong.Parse(args[i + 1]);
-            }
-        }
 
         return 0;
     }
@@ -104,54 +100,30 @@ public static class SteamworksUtils
         };
 
         var lobby = new Lobby(sId);
-        var ret = lobby.Refresh();
+        lobby.Refresh();
     }
 
-    public static void OnLobbyDataChanged(Lobby lobby)
+    private static bool CanHandleLobbyRequest()
     {
-
-        NetworkLifecycle.Instance.QueueMainMenuEvent(() =>
-        {
-            Multiplayer.Log($"OnLobbyDataChanged({lobby.Id}) count: {lobby.Data?.Count()}");
-
-            foreach (var item in lobby.Data)
-            {
-                Multiplayer.Log($"OnEnablePost Data: {item.Key}, Value: {item.Value}"); 
-            }
-
-            ServerBrowserPane.lobbyToJoin = lobby;
-            MainMenuThingsAndStuff.Instance.SwitchToMenu((byte)RightPaneController_Patch.joinMenuIndex);
-        });
+        return !NetworkLifecycle.Instance.IsServerRunning &&
+               !NetworkLifecycle.Instance.IsClientRunning;
     }
 
     public static void OnLobbyJoinRequest(Lobby lobby, SteamId id)
     {
         Multiplayer.Log($"Received lobby join request: {lobby.Id}, {id.Value}");
 
-        if (NetworkLifecycle.Instance.IsServerRunning || NetworkLifecycle.Instance.IsClientRunning)
+        if (!CanHandleLobbyRequest())
             return;
 
-        NetworkLifecycle.Instance.QueueMainMenuEvent(() =>
-        {
-            Multiplayer.Log($"OnLobbyDataChanged({lobby.Id}) count: {lobby.Data?.Count()}");
-
-            foreach (var item in lobby.Data)
-            {
-                Multiplayer.Log($"OnEnablePost Data: {item.Key}, Value: {item.Value}");
-            }
-
-            ServerBrowserPane.lobbyToJoin = lobby;
-            MainMenuThingsAndStuff.Instance.SwitchToMenu((byte)RightPaneController_Patch.joinMenuIndex);
-        });
-
-        NetworkLifecycle.Instance.TriggerMainMenuEventLater();
+        QueueLobbyInvite(lobby);
     }
 
     public static void OnLobbyInviteRequest(Friend friend, Lobby lobby)
     {
         Multiplayer.Log($"Received lobby invite: {lobby.Id}");
 
-        if (NetworkLifecycle.Instance.IsServerRunning ||  NetworkLifecycle.Instance.IsClientRunning)
+        if (!CanHandleLobbyRequest())
             return;
 
         NetworkLifecycle.Instance.QueueMainMenuEvent(() =>
@@ -159,10 +131,7 @@ public static class SteamworksUtils
             var popup = MainMenuThingsAndStuff.Instance.ShowYesNoPopup();
 
             if (popup == null)
-            {
-                Multiplayer.LogError("OnLobbyInviteRequest() Popup not found.");
                 return;
-            }
 
             popup.labelTMPro.text = $"{friend.Name} invited you to play!\r\nDo you wish to join?";
 
@@ -176,12 +145,8 @@ public static class SteamworksUtils
 
             popup.Closed += (PopupResult result) =>
             {
-                Multiplayer.LogDebug(()=>$"OnLobbyInviteRequest() Popup closed by {result.closedBy}");
                 if (result.closedBy == PopupClosedByAction.Positive)
-                {
-                    MainMenuThingsAndStuff.Instance.SwitchToMenu((byte)RightPaneController_Patch.joinMenuIndex);
-                    ServerBrowserPane.lobbyToJoin = lobby;
-                }
+                    QueueLobbyInvite(lobby);
             }; 
 
         });
@@ -189,4 +154,14 @@ public static class SteamworksUtils
         NetworkLifecycle.Instance.TriggerMainMenuEventLater();
     }
 
+    public static void QueueLobbyInvite(Lobby lobby)
+    {
+        NetworkLifecycle.Instance.QueueMainMenuEvent(() =>
+        {
+            ServerBrowserPane.lobbyToJoin = lobby;
+            MainMenuThingsAndStuff.Instance.SwitchToMenu((byte)RightPaneController_Patch.joinMenuIndex);
+        });
+
+        NetworkLifecycle.Instance.TriggerMainMenuEventLater();
+    }
 }
