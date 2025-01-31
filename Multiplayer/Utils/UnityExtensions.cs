@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using JetBrains.Annotations;
 using UnityEngine;
 
@@ -122,5 +123,13 @@ public static class UnityExtensions
         float g = ((packed >> 8) & 0xFF) / 255f;
         float b = (packed & 0xFF) / 255f;
         return new Color(r, g, b, a);
+    }
+
+    public static string GetObjectPath(this GameObject obj)
+    {
+        if (obj.transform.parent == null)
+            return obj.name;
+
+        return obj.transform.parent.gameObject.GetObjectPath() + "/" + obj.name;
     }
 }

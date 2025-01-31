@@ -187,6 +187,28 @@ public class NetworkServer : NetworkManager
                 System.Console.WriteLine("Connection is not established.");
             }
         }
+
+        LogDebug(() =>
+        {
+            StringBuilder sb = new StringBuilder();
+
+            var objects = Resources.FindObjectsOfTypeAll<PlayerDistanceGameObjectsDisabler>();
+            foreach (var obj in objects)
+                sb.AppendLine($"PlayerDistanceGameObjectsDisabler() {obj.gameObject.GetObjectPath()}");
+
+            return sb.ToString();
+        });
+
+        LogDebug(() =>
+        {
+            StringBuilder sb = new StringBuilder();
+
+            var objects = Resources.FindObjectsOfTypeAll<PlayerDistanceMultipleGameObjectsOptimizer>();
+            foreach (var obj in objects)
+                sb.AppendLine($"PlayerDistanceMultipleGameObjectsOptimizer() {obj.gameObject.GetObjectPath()}");
+
+            return sb.ToString();
+        });
     }
 
     public bool TryGetServerPlayer(ITransportPeer peer, out ServerPlayer player)
