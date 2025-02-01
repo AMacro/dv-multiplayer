@@ -1376,7 +1376,7 @@ public class NetworkClient : NetworkManager
 
     public void SendPitStopInteractionPacket(ushort netId, PitStopStationInteractionType interaction, ResourceType? resource, float state)
     {
-        Multiplayer.LogDebug(()=>$"SendPitStopInteractionPacket({netId}, [{interaction}], {resource}, {state}");
+        Multiplayer.LogDebug(()=>$"SendPitStopInteractionPacket({netId}, [{interaction}], {resource}, {state})");
 
         int res = resource == null ? 0 : (int)resource;
         SendPacketToServer(new CommonPitStopInteractionPacket
