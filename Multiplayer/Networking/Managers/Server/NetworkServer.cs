@@ -156,6 +156,7 @@ public class NetworkServer : NetworkManager
         netPacketProcessor.SubscribeNetSerializable<CommonItemChangePacket, ITransportPeer>(OnCommonItemChangePacket);
 
         netPacketProcessor.SubscribeReusable<CommonPitStopInteractionPacket, ITransportPeer>(OnCommonPitStopInteractionPacket);
+        netPacketProcessor.SubscribeReusable<CommonPitStopPlugInteractionPacket, ITransportPeer>(OnCommonPitStopPlugInteractionPacket);
     }
 
     private void OnLoaded()
@@ -740,7 +741,7 @@ public class NetworkServer : NetworkManager
 
         // Sync Stations (match NetIDs with StationIDs) - we could do this the same as junctions but juntions may need to be upgraded to work this way - future planning for mod integration
         SendPacket(peer, new ClientboundStationControllerLookupPacket(NetworkedStationController.GetAll().ToArray()), DeliveryMethod.ReliableOrdered);
-        SendPacket(peer, new ClientboundPitStopStationLookupPacket(NetworkedPitStopStation.GetAllPitStopStations()), DeliveryMethod.ReliableOrdered);
+        SendPacket(peer, new ClientboundPitStopStationLookupPacket(NetworkedPitStopStation.GetAll()), DeliveryMethod.ReliableOrdered);
 
         //send jobs
         foreach (StationController station in StationController.allStations)
@@ -1148,6 +1149,35 @@ public class NetworkServer : NetworkManager
             {
                 //Failed to validate, player needs to rollback interaction
                 SendPacket(peer, new CommonPitStopInteractionPacket
+                {
+                    NetId = packet.NetId,
+                    InteractionType = (byte)PitStopStationInteractionType.Reject
+                }, DeliveryMethod.ReliableOrdered);
+            }
+        }
+        else
+        {
+            LogError($"OnCommonPitStopInteractionPacket() Failed to find PitStopStation with netId: {packet.NetId}");
+        }
+    }
+    private void OnCommonPitStopPlugInteractionPacket(CommonPitStopPlugInteractionPacket packet, ITransportPeer peer)
+    {
+        bool foundPlayer = TryGetServerPlayer(peer, out var player);
+        if (!foundPlayer)
+            LogWarning($"Received Pit Stop Plug Interaction, but player was not found");
+
+        if(NetworkedPluggableObject.Get(packet.NetId, out NetworkedPluggableObject plug) && foundPlayer)
+        {
+            if (plug.ValidateInteraction(packet))
+            {
+                //passed validation, send to all but the originator
+                packet.PlayerId = player.Id;
+                SendPacketToAll(packet, DeliveryMethod.ReliableOrdered, peer);
+            }
+            else
+            {
+                //Failed to validate, player needs to rollback interaction
+                SendPacket(peer, new CommonPitStopPlugInteractionPacket
                 {
                     NetId = packet.NetId,
                     InteractionType = (byte)PitStopStationInteractionType.Reject

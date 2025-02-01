@@ -1,4 +1,3 @@
-using DV;
 using DV.Interaction;
 using Multiplayer.Networking.Packets.Common;
 using Multiplayer.Networking.TransportLayers;
@@ -10,7 +9,7 @@ using System.Text;
 using UnityEngine;
 using DV.ThingTypes;
 using System.Collections;
-using System.Collections.ObjectModel;
+using System.Linq;
 
 
 namespace Multiplayer.Components.Networking.World;
@@ -22,6 +21,7 @@ public class NetworkedPitStopStation : IdMonoBehaviour<ushort, NetworkedPitStopS
 {
     #region Lookup Cache
     private static readonly Dictionary<Vector3, NetworkedPitStopStation> netPitStopStationToLocation = [];
+
     public static bool Get(ushort netId, out NetworkedPitStopStation obj)
     {
         bool b = Get(netId, out IdMonoBehaviour<ushort, NetworkedPitStopStation> rawObj);
@@ -34,6 +34,11 @@ public class NetworkedPitStopStation : IdMonoBehaviour<ushort, NetworkedPitStopS
         return netPitStopStationToLocation.TryGetValue(position, out networkedPitStopStation);
     }
 
+    public static NetworkedPitStopStation[] GetAll()
+    {
+        return netPitStopStationToLocation.Values.ToArray();
+    }
+
     public static Tuple<ushort, Vector3, int>[] GetAllPitStopStations()
     {
         if (netPitStopStationToLocation.Count == 0)
@@ -41,7 +46,6 @@ public class NetworkedPitStopStation : IdMonoBehaviour<ushort, NetworkedPitStopS
 
         List <Tuple<ushort, Vector3, int>> result = [];
 
-        int i = 0;
         foreach (var kvp in netPitStopStationToLocation)
         {
             var selection = kvp.Value?.Station?.pitstop?.SelectedIndex ?? 0;
@@ -86,6 +90,7 @@ public class NetworkedPitStopStation : IdMonoBehaviour<ushort, NetworkedPitStopS
     private readonly GrabHandlerHingeJoint carSelectorGrab;
     private readonly Dictionary<GrabHandlerHingeJoint, (LocoResourceModule module, Action grabbedHandler, Action ungrabbedHandler)> grabberLookup = [];
     private readonly Dictionary<ResourceType, GrabHandlerHingeJoint> grabbedHandlerLookup = [];
+    private readonly Dictionary<ResourceType, NetworkedPluggableObject> resourceToPluggableObject = [];
 
     private bool isGrabbed = false;
     private bool wasGrabbed = false;
@@ -200,6 +205,15 @@ public class NetworkedPitStopStation : IdMonoBehaviour<ushort, NetworkedPitStopS
 
     #region Server
 
+    public Dictionary<ResourceType, ushort> GetPluggables()
+    {
+        Dictionary<ResourceType, ushort> keyValuePairs = [];
+        foreach (var kvp in resourceToPluggableObject)
+            keyValuePairs.Add(kvp.Key, kvp.Value.NetId);
+
+        return keyValuePairs;
+    }
+
     public bool ValidateInteraction(CommonPitStopInteractionPacket packet)
     {
         //todo: implement validation code (player distance, player interacting, etc.)
@@ -217,6 +231,13 @@ public class NetworkedPitStopStation : IdMonoBehaviour<ushort, NetworkedPitStopS
 
     #region Common
     /// <summary>
+    /// Looks up Pluggable object by resource type
+    /// </summary>
+    public bool TryGetPluggable(ResourceType type, out NetworkedPluggableObject netPluggable)
+    {
+        return resourceToPluggableObject.TryGetValue(type, out netPluggable);
+    }
+    /// <summary>
     /// Initializes the pit stop station and sets up event handlers for grab interactions.
     /// </summary>
     private IEnumerator Init()
@@ -228,6 +249,7 @@ public class NetworkedPitStopStation : IdMonoBehaviour<ushort, NetworkedPitStopS
 
         var resourceModules = Station?.locoResourceModules?.resourceModules;
 
+        //Wait for levers an knobs to load
         yield return new WaitUntil(() => GetComponentInChildren<GrabHandlerHingeJoint>(true) != null);
         GrabHandlerHingeJoint carSelectorGrab = GetComponentInChildren<GrabHandlerHingeJoint>(true);
 
@@ -266,6 +288,14 @@ public class NetworkedPitStopStation : IdMonoBehaviour<ushort, NetworkedPitStopS
 
                         sb.AppendLine($"\t{resourceModule.resourceType}, Grab Handler found: {grab != null}, Name: {grab.name}");
                     }
+                }
+
+                var plug = resourceModule.resourceHose;
+                if (plug != null)
+                {
+                    var netPlug = plug.GetOrAddComponent<NetworkedPluggableObject>();
+                    resourceToPluggableObject[resourceModule.resourceType] = netPlug;
+                    netPlug.InitPitStop(this);
                 }
             }
         }
@@ -311,13 +341,12 @@ public class NetworkedPitStopStation : IdMonoBehaviour<ushort, NetworkedPitStopS
         switch (interactionType)
         {
             case PitStopStationInteractionType.Reject:
-
+                //todo: implement rejection
                 break;
 
             case PitStopStationInteractionType.Grab:
                 //block interaction
-                if (grab != null)
-                    grab.interactionAllowed = false;
+                grab?.SetMovingDisabled(false);
 
                 //set direction
                 if (resourceType != null && resourceType != 0 && resourceModule != null)
@@ -332,8 +361,8 @@ public class NetworkedPitStopStation : IdMonoBehaviour<ushort, NetworkedPitStopS
 
             case PitStopStationInteractionType.Ungrab:
                 //allow interaction
-                //if (grab != null)
-                //    grab.interactionAllowed = true;
+                if (grab != null)
+                    grab.SetMovingDisabled(true);
 
                 if (resourceType != null && resourceType != 0 && resourceModule != null)
                 {

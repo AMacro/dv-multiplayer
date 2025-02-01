@@ -171,6 +171,7 @@ public class NetworkClient : NetworkManager
         netPacketProcessor.SubscribeNetSerializable<CommonItemChangePacket>(OnCommonItemChangePacket);
 
         netPacketProcessor.SubscribeReusable<CommonPitStopInteractionPacket>(OnCommonPitStopInteractionPacket);
+        netPacketProcessor.SubscribeReusable<CommonPitStopPlugInteractionPacket>(OnCommonPitStopPlugInteractionPacket);
     }
 
     #region Net Events
@@ -445,41 +446,43 @@ public class NetworkClient : NetworkManager
     //Force pitstops to be mapped to same netId across all clients and server - probably should implement for junctions, etc.
     private void OnClientboundPitStopStationLookupPacket(ClientboundPitStopStationLookupPacket packet)
     {
-        LogDebug(() => $"OnClientboundPitStopStationLookupPacket({packet.NetIds?.Length})");
+        LogDebug(() => $"OnClientboundPitStopStationLookupPacket({packet.PitStops?.Length})");
 
-        if (packet == null)
+        if (packet.PitStops == null)
         {
-            LogError("OnClientboundPitStopStationLookupPacket received null packet");
+            LogError($"OnClientboundPitStopStationLookupPacket received packet with null arrays: NetIDs is null: {packet.PitStops == null}");
             return;
         }
 
-        if (packet.NetIds == null || packet.Locations == null)
+        for (int i = 0; i < packet.PitStops.Length; i++)
         {
-            LogError($"OnClientboundPitStopStationLookupPacket received packet with null arrays: NetIDs is null: {packet.NetIds == null}, Locations is null: {packet.Locations == null}");
-            return;
-        }
-
-        //Log($"WorldStreamingInit.LoadingFinished() CachePitStopStations()");
-        //NetworkedPitStopStation.InitialisePitStops();
-
-        for (int i = 0; i < packet.NetIds.Length; i++)
-        {
-            LogDebug(() => $"OnClientboundPitStopStationLookupPacket[{i}] vector: {packet.Locations[i]}, netId: {packet.NetIds[i]}");
-            if (NetworkedPitStopStation.GetFromVector(packet.Locations[i], out  NetworkedPitStopStation netStation))
+            LogDebug(() => $"OnClientboundPitStopStationLookupPacket({i}) vector: {packet.PitStops[i].Location}, netId: {packet.PitStops[i].NetId}");
+            if (NetworkedPitStopStation.GetFromVector(packet.PitStops[i].Location, out  NetworkedPitStopStation netStation))
             {
-                netStation.NetId = packet.NetIds[i];
+                netStation.NetId = packet.PitStops[i].NetId;
                 if (netStation.Station.pitstop != null)
                 {
-                    netStation.Station.pitstop.currentCarIndex = packet.SelectedCars[i];
-                    //netStation.Station.pitstop.OnCarSelectionChanged();
+                    netStation.Station.pitstop.currentCarIndex = packet.PitStops[i].SelectedCar;
+                    foreach (var mapping in packet.PitStops[i].PlugMapping)
+                    {
+                        if (netStation.TryGetPluggable(mapping.Key, out var netPluggable))
+                        {
+                            LogDebug(() => $"OnClientboundPitStopStationLookupPacket({i}) {mapping.Key}, {mapping.Value} Found");
+                            netPluggable.NetId = mapping.Value;
+                        }
+                        else
+                        {
+                            LogDebug(() => $"OnClientboundPitStopStationLookupPacket({i}) {mapping.Key}, {mapping.Value} Not Found");
+                        }
+                    }
                 }
             }
             else
-                LogError($"Syncing PitStopStations station with coords: {packet.Locations[i]} not found");
+                LogError($"Syncing PitStopStations station with coords: {packet.PitStops[i].Location} not found");
         }
     }
 
-     private void OnClientboundRailwayStatePacket(ClientboundRailwayStatePacket packet)
+    private void OnClientboundRailwayStatePacket(ClientboundRailwayStatePacket packet)
     {
         for (int i = 0; i < packet.SelectedJunctionBranches.Length; i++)
         {
@@ -964,13 +967,26 @@ public class NetworkClient : NetworkManager
     {
         if (!NetworkedPitStopStation.Get(packet.NetId, out var netPitStop))
         {
-            LogWarning($"Pit stop Interaction received for netId: {packet.NetId}, but pit stop does not exist!");
+            LogWarning($"Pit Stop Interaction received for netId: {packet.NetId}, but pit stop does not exist!");
         }
 
         Log($"Pit stop interaction received for {netPitStop.StationName}");
 
         LogDebug(() => $"OnCommonPitStopInteractionPacket() [{netPitStop.StationName}, {packet.NetId}], interaction: [{packet.InteractionType}], resource: {packet?.ResourceType}, State: {packet.State}");
         netPitStop.ProcessPacket(packet);
+    }
+
+    private void OnCommonPitStopPlugInteractionPacket(CommonPitStopPlugInteractionPacket packet)
+    {
+        if (!NetworkedPluggableObject.Get(packet.NetId, out var netPlug))
+        {
+            LogWarning($"Pit Stop Plug Interaction received for plug netId: {packet.NetId}, but pit stop plug does not exist!");
+        }
+
+        Log($"Pit Stop Plug Interaction received for {netPlug}");
+
+        LogDebug(() => $"OnCommonPitStopPlugInteractionPacket() [{netPlug?.transform?.parent?.name}, {packet.NetId}], interaction: [{packet.InteractionType}]");
+        netPlug.ProcessPacket(packet);
     }
 
 
@@ -1386,7 +1402,20 @@ public class NetworkClient : NetworkManager
             ResourceType = res,
             State = state
         }, DeliveryMethod.ReliableOrdered);
+    }
 
+    public void SendPitStopPlugInteractionPacket(ushort netId, PlugInteractionType interaction, ushort trainCarNetId = 0, bool left = false)
+    {
+        Multiplayer.LogDebug(()=>$"SendPitStopInteractionPacket({netId}, {interaction}, {trainCarNetId}, {left})");
+
+        SendPacketToServer(new CommonPitStopPlugInteractionPacket
+        {
+            NetId = netId,
+            InteractionType = (byte)interaction,
+            TrainCarNetId = trainCarNetId,
+            IsLeftSide = left,
+
+        }, DeliveryMethod.ReliableOrdered);
     }
 
     public void SendItemsChangePacket(List<ItemUpdateData> items)

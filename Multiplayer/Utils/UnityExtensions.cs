@@ -125,6 +125,11 @@ public static class UnityExtensions
         return new Color(r, g, b, a);
     }
 
+    public static string GetObjectPath(this Component component)
+    {
+        return component.gameObject.GetObjectPath();
+    }
+
     public static string GetObjectPath(this GameObject obj)
     {
         if (obj.transform.parent == null)
