@@ -1,4 +1,6 @@
 using DV.CabControls;
+using DV.Interaction;
+using Multiplayer.Components.Networking.Player;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Networking.Data;
 using Multiplayer.Networking.Packets.Clientbound.World;
@@ -30,6 +32,8 @@ public class NetworkedPluggableObject : IdMonoBehaviour<ushort, NetworkedPluggab
     public PluggableObject PluggableObject { get; private set; }
     public NetworkedPitStopStation Station { get; private set; }
 
+    private GrabHandlerGizmoItem grabHandler;
+
     private bool handlersInitialised = false;
 
     private byte playerHolding = 0;
@@ -47,6 +51,8 @@ public class NetworkedPluggableObject : IdMonoBehaviour<ushort, NetworkedPluggab
     private IEnumerator Start()
     {
         yield return new WaitUntil(() => PluggableObject?.controlBase != null);
+
+        grabHandler = this.GetComponent<GrabHandlerGizmoItem>();
 
         PluggableObject.controlBase.Grabbed += OnGrabbed;
         PluggableObject.controlBase.Ungrabbed += OnUngrabbed;
@@ -88,6 +94,9 @@ public class NetworkedPluggableObject : IdMonoBehaviour<ushort, NetworkedPluggab
     public void ProcessPacket(CommonPitStopPlugInteractionPacket packet)
     {
         var interaction = (PlugInteractionType)packet.InteractionType;
+        bool result;
+
+        NetworkedPlayer player = null;
 
         switch (interaction)
         {
@@ -96,28 +105,81 @@ public class NetworkedPluggableObject : IdMonoBehaviour<ushort, NetworkedPluggab
                 break;
 
             case PlugInteractionType.PickedUp:
+                //Handle the picked up state
                 isGrabbed = true;
                 playerHolding = packet.PlayerId;
                 PluggableObject.controlGrabbed = true;
                 BlockInteraction(true);
+
+                PluggableObject.Unplug();
+
+                Multiplayer.LogDebug(() => $"ProcessPacket() NetId: {NetId}, Picked Up, player: {playerHolding}");
+
+                //attach to a player
+                if (NetworkLifecycle.Instance.IsClientRunning &&
+                    NetworkLifecycle.Instance.Client.ClientPlayerManager.TryGetPlayer(playerHolding, out player))
+                {
+                    var target = grabHandler?.customGrabAnchor?.GetGrabAnchor();
+                    player.HoldItem(gameObject, target?.localPos, target?.localRot);
+                }
                 break;
 
             case PlugInteractionType.Dropped:
+                Multiplayer.LogDebug(() => $"ProcessPacket() NetId: {NetId}, Dropped");
+
+                if (isGrabbed)
+                {
+                    if (NetworkLifecycle.Instance.IsClientRunning &&
+                    NetworkLifecycle.Instance.Client.ClientPlayerManager.TryGetPlayer(playerHolding, out player))
+                    {
+                        player.DropItem();
+                    }
+                }
+
                 isGrabbed = false;
                 playerHolding = 0;
                 PluggableObject.controlGrabbed = false;
                 BlockInteraction(false);
+
+                PluggableObject.Unplug();
+ 
                 break;
 
             case PlugInteractionType.DockHome:
+                Multiplayer.LogDebug(() => $"ProcessPacket() NetId: {NetId}, DockHome");
+
+                if (isGrabbed)
+                {
+                    if (NetworkLifecycle.Instance.IsClientRunning &&
+                    NetworkLifecycle.Instance.Client.ClientPlayerManager.TryGetPlayer(playerHolding, out player))
+                    {
+                        player.DropItem();
+                    }
+                }
+
                 isGrabbed = false;
                 playerHolding = 0;
                 PluggableObject.controlGrabbed = false;
-                PluggableObject.InstantSnapTo(PluggableObject.startAttachedTo);
                 BlockInteraction(false);
+
+                PluggableObject.Unplug();
+
+                result = PluggableObject.InstantSnapTo(PluggableObject.startAttachedTo);
+                Multiplayer.LogDebug(() => $"ProcessPacket() NetId: {NetId}, DockHome, result: {result}");
                 break;
 
             case PlugInteractionType.DockSocket:
+                Multiplayer.LogDebug(() => $"ProcessPacket() NetId: {NetId}, DockSocket, trainCar: {packet.TrainCarNetId}, isLeft: {packet.IsLeftSide}");
+
+                if (isGrabbed)
+                {
+                    if (NetworkLifecycle.Instance.IsClientRunning &&
+                    NetworkLifecycle.Instance.Client.ClientPlayerManager.TryGetPlayer(playerHolding, out player))
+                    {
+                        player.DropItem();
+                    }
+                }
+
                 if (NetworkedTrainCar.GetTrainCar(packet.TrainCarNetId, out var trainCar))
                 {
                     isGrabbed = false;
@@ -125,11 +187,23 @@ public class NetworkedPluggableObject : IdMonoBehaviour<ushort, NetworkedPluggab
                     PluggableObject.controlGrabbed = false;
                     BlockInteraction(false);
 
+                    PluggableObject.Unplug();
+
                     var sockets = trainCar.GetComponentsInChildren<PlugSocket>();
                     if (packet.IsLeftSide)
-                        PluggableObject.InstantSnapTo(sockets[0]);
+                    {
+                        result = PluggableObject.InstantSnapTo(sockets[0]);
+                        Multiplayer.LogDebug(() => $"ProcessPacket() NetId: {NetId}, DockSocket, trainCar: {packet.TrainCarNetId}, isLeft: {packet.IsLeftSide}, result: {result}");
+                    }
                     else
-                        PluggableObject.InstantSnapTo(sockets[1]);
+                    {
+                        result = PluggableObject.InstantSnapTo(sockets[1]);
+                        Multiplayer.LogDebug(() => $"ProcessPacket() NetId: {NetId}, DockSocket, trainCar: {packet.TrainCarNetId}, isLeft: {packet.IsLeftSide}, result: {result}");
+                    }
+                }
+                else
+                {
+                    Multiplayer.LogDebug(() => $"ProcessPacket() NetId: {NetId}, DockSocket, trainCar: {packet.TrainCarNetId}. TrainCar not found!");
                 }
                 break;
         }
@@ -137,14 +211,13 @@ public class NetworkedPluggableObject : IdMonoBehaviour<ushort, NetworkedPluggab
 
     private void BlockInteraction(bool block)
     {
-        var rigid = GetComponentInChildren<Rigidbody>();
-
-        if (rigid)
-            rigid.isKinematic = !block;
-
         if (block)
+        {
+            PluggableObject.DisableStandaloneComponents();
             PluggableObject.DisableColliders();
+        }
         else
+            PluggableObject.EnableStandaloneComponents();
             PluggableObject.EnableColliders();
     }
 
@@ -164,18 +237,27 @@ public class NetworkedPluggableObject : IdMonoBehaviour<ushort, NetworkedPluggab
     #region Client
     private void OnGrabbed(ControlImplBase control)
     {
+        if (NetworkLifecycle.Instance.IsProcessingPacket)
+            return;
+
         Multiplayer.LogDebug(() => $"NetworkedPluggableObject.OnGrabbed() [{transform.parent.name}, {NetId}] station: {Station?.StationName}");
         NetworkLifecycle.Instance.Client?.SendPitStopPlugInteractionPacket(NetId, PlugInteractionType.PickedUp);
     }
 
     private void OnUngrabbed(ControlImplBase control)
     {
+        if (NetworkLifecycle.Instance.IsProcessingPacket)
+            return;
+
         Multiplayer.LogDebug(() => $"NetworkedPluggableObject.OnUngrabbed() [{transform.parent.name}, {NetId}] station: {Station?.StationName}");
         NetworkLifecycle.Instance.Client?.SendPitStopPlugInteractionPacket(NetId, PlugInteractionType.Dropped);
     }
 
     private void OnPlugged(PluggableObject plug, PlugSocket socket)
     {
+        if (NetworkLifecycle.Instance.IsProcessingPacket)
+            return;
+
         Multiplayer.LogDebug(() => $"NetworkedPluggableObject.OnPlugged() [{transform.parent.name}, {NetId}] station: {Station?.StationName}");
 
         PlugInteractionType interaction;
@@ -199,7 +281,7 @@ public class NetworkedPluggableObject : IdMonoBehaviour<ushort, NetworkedPluggab
 
                 interaction = PlugInteractionType.DockSocket;
                 var sockets = trainCar.GetComponentsInChildren<PlugSocket>();
-                if (socket = sockets[0])
+                if (socket == sockets[0])
                     left = true;
             }
             else
