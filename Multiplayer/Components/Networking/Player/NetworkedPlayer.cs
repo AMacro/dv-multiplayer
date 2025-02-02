@@ -1,12 +1,35 @@
 using System;
+using DV.Player;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Editor.Components.Player;
 using UnityEngine;
 
 namespace Multiplayer.Components.Networking.Player;
 
+/// <summary>
+/// Represents a networked player in the multiplayer environment, handling movement, item holding, and visual state
+/// </summary>
 public class NetworkedPlayer : MonoBehaviour
 {
+    #region Static Setup
+    private static Vector3 itemAnchorOffset;
+
+    /// <summary>
+    /// Captures the standard offset position for held items relative to the player transform
+    /// for mapping to a NetworkedPlayer
+    /// This must be called as soon as the world is loaded, before the local player moves or crouches
+    /// </summary>
+    public static void CaptureItemAnchorOffset()
+    {
+        //todo: there's some minor inconsistency with return values and may be related to:
+        // - the direction/rotation of the camera
+        // - player loading status (maybe posistion hasn't settled yet)
+        itemAnchorOffset = PlayerManager.PlayerTransform.InverseTransformPoint(ItemPositionController.Instance.itemAnchor.position);
+        Multiplayer.LogDebug(() => $"NetworkedPlayer.CaptureItemAnchorOffset() itemAnchorOffset: {itemAnchorOffset}");
+    }
+
+    #endregion
+
     private const float LERP_SPEED = 5.0f;
 
     public byte Id;
@@ -33,6 +56,10 @@ public class NetworkedPlayer : MonoBehaviour
     private Quaternion targetRotation;
     private Vector2 moveDir;
     private Vector2 targetMoveDir;
+    
+    private GameObject itemHeld;
+    private Vector3? itemHoldPos;
+    private Quaternion? itemHoldRot;
 
     private void Awake()
     {
@@ -89,6 +116,12 @@ public class NetworkedPlayer : MonoBehaviour
             selfTransform.position = position;
             selfTransform.rotation = rotation;
         }
+
+        if (itemHeld != null)
+        {
+            itemHeld.transform.position = selfTransform.position + GetItemOffsetFromPlayer();
+            itemHeld.transform.rotation = selfTransform.rotation * (itemHoldRot ?? ItemPositionController.Instance.itemAnchor.localRotation);
+        }
     }
 
     public void UpdatePosition(Vector3 position, Vector2 moveDir, float rotation, bool isJumping, bool movePacketIsOnCar)
@@ -118,4 +151,34 @@ public class NetworkedPlayer : MonoBehaviour
         targetPos = isOnCar ? transform.localPosition : selfTransform.position;
         targetRotation = isOnCar ? transform.localRotation : selfTransform.rotation;
     }
+
+    /// <summary>
+    /// Sets the player's currently held item with optional position and rotation offsets
+    /// </summary>
+    /// <param name="itemGo">The item GameObject to hold</param>
+    /// <param name="targetPos">Optional local position offset</param>
+    /// <param name="targetRot">Optional local rotation offset</param>
+    public void HoldItem(GameObject itemGo, Vector3? targetPos = null, Quaternion? targetRot = null)
+    {
+        Multiplayer.LogDebug(() => $"NetworkedPlayer.HoldItem({itemGo.GetPath()}) Player: {username}, Before position: {itemGo.transform.localPosition}, rotation:  {itemGo.transform.localRotation}, Target pos: {targetPos}, Target rot: {targetRot}");
+
+        itemHeld = itemGo;
+        itemHoldPos = targetPos;
+        itemHoldRot = targetRot;
+    }
+
+    public void DropItem()
+    {
+        itemHeld = null;
+        itemHoldPos = null;
+        itemHoldRot = null;
+    }
+
+    private Vector3 GetItemOffsetFromPlayer()
+    {
+        Vector3 baseOffset = itemAnchorOffset;
+        Vector3 finalOffset = itemHoldPos.HasValue ? baseOffset + itemHoldPos.Value : baseOffset;
+        return selfTransform.TransformDirection(finalOffset);
+    }
+
 }

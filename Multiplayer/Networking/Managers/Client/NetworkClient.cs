@@ -70,6 +70,11 @@ public class NetworkClient : NetworkManager
     public NetworkClient(Settings settings) : base(settings)
     {
         ClientPlayerManager = new ClientPlayerManager();
+
+        WorldStreamingInit.LoadingFinished += () =>
+        {
+            NetworkedPlayer.CaptureItemAnchorOffset();
+        };
     }
 
     public void Start(string address, int port, string password, bool isSinglePlayer, Action<DisconnectReason, string> onDisconnect)
