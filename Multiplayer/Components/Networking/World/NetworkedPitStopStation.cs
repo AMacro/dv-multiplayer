@@ -192,7 +192,7 @@ public class NetworkedPitStopStation : IdMonoBehaviour<ushort, NetworkedPitStopS
         {
             float previous = grabbedModule.Data.unitsToBuy;
             //grabbedModule.Data.unitsToBuy = lastRemoteValue; 
-            grabbedModule.SetUnitsToBuy(lastRemoteValue);
+            SetUnits(grabbedModule, lastRemoteValue);
 
             Multiplayer.LogDebug(() => $"NetworkedPitStopStation.LateUpdate() wasRemoteGrabbed: {wasRemoteGrabbed}, previous: {previous}, new: {lastRemoteValue}");
 
@@ -371,7 +371,7 @@ public class NetworkedPitStopStation : IdMonoBehaviour<ushort, NetworkedPitStopS
                 {
                     lastRemoteValue = packet.State;
                     //resourceModule.Data.unitsToBuy = lastRemoteValue;
-                    resourceModule.SetUnitsToBuy(lastRemoteValue);
+                    SetUnits(resourceModule, lastRemoteValue);
                 }
 
                 isRemoteGrabbed = false;
@@ -386,7 +386,7 @@ public class NetworkedPitStopStation : IdMonoBehaviour<ushort, NetworkedPitStopS
                     {
                         lastRemoteValue = packet.State;
                         //resourceModule.Data.unitsToBuy = lastRemoteValue;
-                        resourceModule.SetUnitsToBuy(lastRemoteValue);
+                        SetUnits(resourceModule, lastRemoteValue);
                     }
                 }
                 break;
@@ -403,6 +403,15 @@ public class NetworkedPitStopStation : IdMonoBehaviour<ushort, NetworkedPitStopS
             case PitStopStationInteractionType.ProcessOrder:
                 break;
         }
+    }
+
+    private void SetUnits(LocoResourceModule rm, float units)
+    {
+        if (rm == null)
+            return;
+
+        float clamped = Mathf.Clamp(units, rm.AbsoluteMinValue, rm.AbsoluteMaxValue);
+        rm.SetUnitsToBuy(clamped);
     }
     #endregion
 
