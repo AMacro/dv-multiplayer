@@ -524,6 +524,22 @@ public class NetworkServer : NetworkManager
         }
     }
 
+    public void SendPitStopBulkDataPacket(ushort netId, PitStopStationData[] stationData, PitStopPlugData[] plugData , ITransportPeer peer = null)
+    {
+        LogDebug(() => $"SendPitStopBulkDataPacket({netId}, {stationData.Count()}, {plugData.Count()}, {peer?.Id})");
+
+        var packet = new ClientboundPitStopBulkUpdatePacket
+        {
+            PitStopData = stationData,
+            PlugData = plugData,
+        };
+
+        if (peer == null)
+            SendPacketToAll(packet, DeliveryMethod.ReliableOrdered);
+        else
+            SendPacket(peer, packet, DeliveryMethod.ReliableOrdered);
+    }
+
     public void SendChat(string message, ITransportPeer exclude = null)
     {
 
@@ -1168,7 +1184,7 @@ public class NetworkServer : NetworkManager
 
         if(NetworkedPluggableObject.Get(packet.NetId, out NetworkedPluggableObject plug) && foundPlayer)
         {
-            if (plug.ValidateInteraction(packet))
+            if (plug.ValidateInteraction(packet, player))
             {
                 //passed validation, send to all but the originator
                 packet.PlayerId = player.Id;

@@ -10,7 +10,7 @@ using UnityEngine;
 using DV.ThingTypes;
 using System.Collections;
 using System.Linq;
-
+using Multiplayer.Networking.Packets.Clientbound.World;
 
 namespace Multiplayer.Components.Networking.World;
 
@@ -83,7 +83,17 @@ public class NetworkedPitStopStation : IdMonoBehaviour<ushort, NetworkedPitStopS
 
     const float MAX_DELTA = 0.2f;
     const float MIN_UPDATE_TIME = 0.1f;
+    const float LOADING_TIMEOUT = 5f;
 
+    const float DEFAULT_DISABLER_SQR_DISTANCE = 250000f;
+
+    #region Server variables
+    private Dictionary<ushort, float> playerToLastNearbyTime;
+    private Dictionary<ushort, bool> playerToInitialised;
+    private float disablerSqrDistance = DEFAULT_DISABLER_SQR_DISTANCE;
+    #endregion
+
+    #region Common variables
     public PitStopStation Station { get; set; }
     public string StationName { get; private set; }
 
@@ -103,12 +113,33 @@ public class NetworkedPitStopStation : IdMonoBehaviour<ushort, NetworkedPitStopS
     private RotaryAmplitudeChecker grabbedAmplitudeChecker;
     private float lastUnitsToBuy;
 
+    private bool Refreshed = false;
+    #endregion
+
     #region Unity
     protected override void Awake()
     {
         base.Awake();
 
         StationName = $"{transform.parent.parent.name} - {transform.parent.name}";
+
+        if (NetworkLifecycle.Instance.IsHost())
+        {
+            playerToInitialised = [];
+            playerToLastNearbyTime = [];
+
+            var disabler = GetComponentInParent<PlayerDistanceGameObjectsDisabler>();
+            if (disabler != null)
+                disablerSqrDistance = disabler.disableSqrDistance;
+
+            NetworkLifecycle.Instance.OnTick += PlayerDistanceChecker;
+        }
+    }
+
+    protected void OnDisable()
+    {
+        if (!NetworkLifecycle.Instance.IsHost())
+            Refreshed = false;
     }
 
     protected override void OnDestroy()
@@ -227,6 +258,49 @@ public class NetworkedPitStopStation : IdMonoBehaviour<ushort, NetworkedPitStopS
     {
         //todo: when a player disconnects, if they are interacting with a lever, cancel the interaction
         //Multiplayer.LogWarning($"OnPlayerDisconnect()");
+    }
+
+    private void PlayerDistanceChecker(uint tick)
+    {
+        //if not active then there is no one close by
+        if (!gameObject.activeInHierarchy || Station == null || Station.pitstop == null)
+            return;
+
+        foreach (var player in NetworkLifecycle.Instance.Server.ServerPlayers)
+        {
+            if (!player.IsLoaded)
+                continue;
+
+            float sqrDistance = (player.WorldPosition - transform.position).sqrMagnitude;
+
+            if (sqrDistance <= disablerSqrDistance)
+            {
+                if(playerToInitialised.TryGetValue(player.Id, out var initialised) && initialised)
+                    continue;
+
+                playerToInitialised[player.Id] = false;
+
+                if (Station.pitstop.IsCarInPitStop())
+                {
+                    PitStopStationData[] stateData = new PitStopStationData[Station.pitstop.carList.Count];
+                    int i;
+                    for (i = 0; i < Station.pitstop.paramsList.Count; i++)
+                    {
+                        stateData[i] = PitStopStationData.From(Station.pitstop.paramsList[i]);
+                    }
+
+                    PitStopPlugData[] plugData = new PitStopPlugData[resourceToPluggableObject.Count];
+                    i = 0;
+                    foreach(var plug in resourceToPluggableObject)
+                    {
+                        plugData[i] = PitStopPlugData.From(plug.Value);
+                        i++;
+                    }
+
+                    NetworkLifecycle.Instance.Server.SendPitStopBulkDataPacket(NetId, stateData, plugData);
+                }
+            }
+        }
     }
 
     #endregion
@@ -405,6 +479,35 @@ public class NetworkedPitStopStation : IdMonoBehaviour<ushort, NetworkedPitStopS
         }
     }
 
+    public void ProcessBulkUpdate(ClientboundPitStopBulkUpdatePacket packet)
+    {
+        if (Station?.pitstop?.carList == null || packet.PitStopData.Count() < Station.pitstop.carList.Count)
+        {
+            StartCoroutine(WaitForLoad(packet));
+            return;
+        }
+
+        //todo: process the packet!!
+    }
+
+    private IEnumerator WaitForLoad(ClientboundPitStopBulkUpdatePacket packet)
+    {
+        float time = Time.time;
+
+        yield return new WaitUntil(() =>
+                (Station?.pitstop?.carList == null || packet.PitStopData.Count() < Station.pitstop.carList.Count)
+                || (Time.time - time) > LOADING_TIMEOUT
+            );
+
+        if ((Time.time - time) < LOADING_TIMEOUT)
+        {
+            ProcessBulkUpdate(packet);
+  
+        }
+        else
+            Multiplayer.LogWarning($"NetworkedPitStopStation.WaitForLoad() Station {StationName} failed to process bulk update");
+    }
+
     private void SetUnits(LocoResourceModule rm, float units)
     {
         if (rm == null)
@@ -421,6 +524,13 @@ public class NetworkedPitStopStation : IdMonoBehaviour<ushort, NetworkedPitStopS
     /// </summary>
     private void CarSelectorGrabbed()
     {
+        if (NetworkLifecycle.Instance.IsProcessingPacket)
+            return;
+
+        //Prevent new players/players entering the area from sending packets until initalised
+        if (!Refreshed)
+            return;
+
         Multiplayer.LogDebug(() => $"CarSelectorGrabbed() {StationName}");
         NetworkLifecycle.Instance?.Client.SendPitStopInteractionPacket(NetId, PitStopStationInteractionType.Grab, null, 0);
     }
@@ -430,6 +540,13 @@ public class NetworkedPitStopStation : IdMonoBehaviour<ushort, NetworkedPitStopS
     /// </summary>
     private void CarSelectorUnGrabbed()
     {
+        if (NetworkLifecycle.Instance.IsProcessingPacket)
+            return;
+
+        //Prevent new players/players entering the area from sending packets until initalised
+        if (!Refreshed)
+            return;
+
         Multiplayer.LogDebug(() => $"CarSelectorUnGrabbed() {StationName}");
         NetworkLifecycle.Instance?.Client.SendPitStopInteractionPacket(NetId, PitStopStationInteractionType.Ungrab, null, Station.pitstop.SelectedIndex);
     }
@@ -440,6 +557,10 @@ public class NetworkedPitStopStation : IdMonoBehaviour<ushort, NetworkedPitStopS
     private void CarSelected()
     {
         if (NetworkLifecycle.Instance.IsProcessingPacket)
+            return;
+
+        //Prevent new players/players entering the area from sending packets until initalised
+        if (!Refreshed)
             return;
 
         Multiplayer.LogDebug(() => $"CarSelected() selected: {Station.pitstop.SelectedIndex}");
@@ -453,6 +574,13 @@ public class NetworkedPitStopStation : IdMonoBehaviour<ushort, NetworkedPitStopS
     /// <param name="module">The resource module being grabbed.</param>
     private void LeverGrabbed(LocoResourceModule module)
     {
+        if (NetworkLifecycle.Instance.IsProcessingPacket)
+            return;
+
+        //Prevent new players/players entering the area from sending packets until initalised
+        if (!Refreshed)
+            return;
+
         Multiplayer.LogDebug(() => $"LeverGrabbed() {StationName}, module: {module.resourceType}");
         isGrabbed = true;
         wasGrabbed = true;
@@ -468,6 +596,13 @@ public class NetworkedPitStopStation : IdMonoBehaviour<ushort, NetworkedPitStopS
     /// <param name="module">The resource module being grabbed.</param>
     private void LeverUnGrabbed(LocoResourceModule module)
     {
+        if (NetworkLifecycle.Instance.IsProcessingPacket)
+            return;
+
+        //Prevent new players/players entering the area from sending packets until initalised
+        if (!Refreshed)
+            return;
+
         Multiplayer.LogDebug(() => $"LeverUnGrabbed() {StationName}, module: {module.resourceType}");
         isGrabbed = false;
     }

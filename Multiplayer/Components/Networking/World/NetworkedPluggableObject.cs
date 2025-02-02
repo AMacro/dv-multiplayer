@@ -3,14 +3,12 @@ using DV.Interaction;
 using Multiplayer.Components.Networking.Player;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Networking.Data;
-using Multiplayer.Networking.Packets.Clientbound.World;
 using Multiplayer.Networking.Packets.Common;
 using Multiplayer.Utils;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using UnityEngine;
 
 namespace Multiplayer.Components.Networking.World;
@@ -29,6 +27,13 @@ public class NetworkedPluggableObject : IdMonoBehaviour<ushort, NetworkedPluggab
 
     protected override bool IsIdServerAuthoritative => true;
 
+    #region Server Variables
+    public PlugInteractionType CurrentInteration {  get; set; }
+    public ServerPlayer HeldBy { get; private set; }
+    public ushort TrainCarNetId { get; private set; }
+    public bool IsConnectedLeft { get; private set; }
+
+    #endregion
     public PluggableObject PluggableObject { get; private set; }
     public NetworkedPitStopStation Station { get; private set; }
 
@@ -38,6 +43,8 @@ public class NetworkedPluggableObject : IdMonoBehaviour<ushort, NetworkedPluggab
 
     private byte playerHolding = 0;
     private bool isGrabbed = false;
+
+    private bool Refreshed = false;
 
     #region Unity
     protected override void Awake()
@@ -81,9 +88,37 @@ public class NetworkedPluggableObject : IdMonoBehaviour<ushort, NetworkedPluggab
 
     #region Server
 
-    public bool ValidateInteraction(CommonPitStopPlugInteractionPacket packet)
+    public bool ValidateInteraction(CommonPitStopPlugInteractionPacket packet, ServerPlayer player)
     {
+        PlugInteractionType interactionType = (PlugInteractionType)packet.InteractionType;
         //todo: implement validation code (player distance, player interacting, etc.)
+
+        //validate and update
+        CurrentInteration = interactionType;
+
+        if (interactionType == PlugInteractionType.DockSocket)
+        {
+            TrainCarNetId = packet.TrainCarNetId;
+            IsConnectedLeft = packet.IsLeftSide;
+            HeldBy = null;
+        }
+        else
+        {
+            HeldBy = null;
+            if (interactionType == PlugInteractionType.DockHome)
+            {
+                //todo
+            }
+            else if (interactionType == PlugInteractionType.Dropped)
+            {
+                //todo
+            }
+            else if (interactionType == PlugInteractionType.PickedUp)
+            {
+                HeldBy = player;
+            }
+        }
+
         return true;
     }
 
@@ -240,6 +275,10 @@ public class NetworkedPluggableObject : IdMonoBehaviour<ushort, NetworkedPluggab
         if (NetworkLifecycle.Instance.IsProcessingPacket)
             return;
 
+        //Prevent new players/players entering the area from sending packets until initalised
+        if (!Refreshed)
+            return;
+
         Multiplayer.LogDebug(() => $"NetworkedPluggableObject.OnGrabbed() [{transform.parent.name}, {NetId}] station: {Station?.StationName}");
         NetworkLifecycle.Instance.Client?.SendPitStopPlugInteractionPacket(NetId, PlugInteractionType.PickedUp);
     }
@@ -249,6 +288,10 @@ public class NetworkedPluggableObject : IdMonoBehaviour<ushort, NetworkedPluggab
         if (NetworkLifecycle.Instance.IsProcessingPacket)
             return;
 
+        //Prevent new players/players entering the area from sending packets until initalised
+        if (!Refreshed)
+            return;
+
         Multiplayer.LogDebug(() => $"NetworkedPluggableObject.OnUngrabbed() [{transform.parent.name}, {NetId}] station: {Station?.StationName}");
         NetworkLifecycle.Instance.Client?.SendPitStopPlugInteractionPacket(NetId, PlugInteractionType.Dropped);
     }
@@ -256,6 +299,10 @@ public class NetworkedPluggableObject : IdMonoBehaviour<ushort, NetworkedPluggab
     private void OnPlugged(PluggableObject plug, PlugSocket socket)
     {
         if (NetworkLifecycle.Instance.IsProcessingPacket)
+            return;
+
+        //Prevent new players/players entering the area from sending packets until initalised
+        if (!Refreshed)
             return;
 
         Multiplayer.LogDebug(() => $"NetworkedPluggableObject.OnPlugged() [{transform.parent.name}, {NetId}] station: {Station?.StationName}");

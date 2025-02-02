@@ -177,6 +177,7 @@ public class NetworkClient : NetworkManager
 
         netPacketProcessor.SubscribeReusable<CommonPitStopInteractionPacket>(OnCommonPitStopInteractionPacket);
         netPacketProcessor.SubscribeReusable<CommonPitStopPlugInteractionPacket>(OnCommonPitStopPlugInteractionPacket);
+        netPacketProcessor.SubscribeReusable<ClientboundPitStopBulkUpdatePacket>(OnClientboundPitStopBulkUpdatePacket);
     }
 
     #region Net Events
@@ -993,6 +994,19 @@ public class NetworkClient : NetworkManager
 
         LogDebug(() => $"OnCommonPitStopPlugInteractionPacket() [{netPlug?.transform?.parent?.name}, {packet.NetId}], interaction: [{(PlugInteractionType)packet.InteractionType}]");
         netPlug.ProcessPacket(packet);
+    }
+
+    private void OnClientboundPitStopBulkUpdatePacket(ClientboundPitStopBulkUpdatePacket packet)
+    {
+        if (!NetworkedPitStopStation.Get(packet.NetId, out var netPitStop))
+        {
+            LogWarning($"Pit Stop Bulk Data received for station netId: {packet.NetId}, but pit stop does not exist!");
+            return;
+        }
+
+        Log($"Pit Stop Bulk Data received for {netPitStop.StationName}");
+
+        netPitStop.ProcessBulkUpdate(packet);
     }
 
 
