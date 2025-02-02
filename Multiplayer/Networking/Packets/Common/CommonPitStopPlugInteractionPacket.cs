@@ -4,9 +4,9 @@ using System.Linq;
 using System.Text;
 using UnityEngine;
 
-namespace Multiplayer.Networking.Packets.Clientbound.World;
+namespace Multiplayer.Networking.Packets.Common;
 
-public class CommonPitStopPlugInteractionPacket 
+public class CommonPitStopPlugInteractionPacket
 {
     public ushort NetId { get; set; }
     public byte InteractionType { get; set; }
