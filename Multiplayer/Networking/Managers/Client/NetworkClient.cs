@@ -778,7 +778,7 @@ public class NetworkClient : NetworkManager
 
         if (logicCar == null)
         {
-            Multiplayer.LogWarning($"OnClientboundCargoStatePacket() Failed to find logic car for [{networkedTrainCar.TrainCar.ID}, {packet.NetId}] is initialised: {networkedTrainCar.Client_Initialized}");
+            LogWarning($"OnClientboundCargoStatePacket() Failed to find logic car for [{networkedTrainCar.TrainCar.ID}, {packet.NetId}] is initialised: {networkedTrainCar.Client_Initialized}");
             return;
         }
 
@@ -1001,7 +1001,7 @@ public class NetworkClient : NetworkManager
         //LogDebug(() => $"OnCommonItemChangePacket({packet?.Items?.Count})");
 
 
-        //Multiplayer.LogDebug(() =>
+        //LogDebug(() =>
         //{
         //    string debug = "";
 
@@ -1398,7 +1398,7 @@ public class NetworkClient : NetworkManager
 
     public void SendPitStopInteractionPacket(ushort netId, PitStopStationInteractionType interaction, ResourceType? resource, float state)
     {
-        Multiplayer.LogDebug(()=>$"SendPitStopInteractionPacket({netId}, [{interaction}], {resource}, {state})");
+        LogDebug(()=>$"SendPitStopInteractionPacket({netId}, [{interaction}], {resource}, {state})");
 
         int res = resource == null ? 0 : (int)resource;
         SendPacketToServer(new CommonPitStopInteractionPacket
@@ -1412,7 +1412,7 @@ public class NetworkClient : NetworkManager
 
     public void SendPitStopPlugInteractionPacket(ushort netId, PlugInteractionType interaction, ushort trainCarNetId = 0, bool left = false)
     {
-        Multiplayer.LogDebug(()=>$"SendPitStopInteractionPacket({netId}, {interaction}, {trainCarNetId}, {left})");
+        LogDebug(()=>$"SendPitStopInteractionPacket({netId}, {interaction}, {trainCarNetId}, {left})");
 
         SendPacketToServer(new CommonPitStopPlugInteractionPacket
         {
@@ -1426,7 +1426,7 @@ public class NetworkClient : NetworkManager
 
     public void SendItemsChangePacket(List<ItemUpdateData> items)
     {
-        Multiplayer.Log($"Sending SendItemsChangePacket with {items.Count()} items");
+        Log($"Sending SendItemsChangePacket with {items.Count()} items");
         //SendPacketToServer(new CommonItemChangePacket { Items = items },
         //    DeliveryMethod.ReliableUnordered);
 

@@ -85,7 +85,7 @@ public class NetworkServer : NetworkManager
 
         WorldStreamingInit.LoadingFinished += OnLoaded;
 
-        Multiplayer.Log($"Starting server...");
+        Log($"Starting server...");
         //Try to get our static IPv6 Address we will need this for IPv6 NAT punching to be reliable
         if (IPAddress.TryParse(LobbyServerManager.GetStaticIPv6Address(), out IPAddress ipv6Address))
         {
@@ -365,7 +365,7 @@ public class NetworkServer : NetworkManager
 
         if (netId == 0)
         {
-            Multiplayer.LogWarning($"SendDestroyTrainCar failed. netId {netId}");
+            LogWarning($"SendDestroyTrainCar failed. netId {netId}");
             return;
         }
 
@@ -395,7 +395,7 @@ public class NetworkServer : NetworkManager
             Temperature = temperature
         }, DeliveryMethod.ReliableOrdered, SelfPeer);
 
-        //Multiplayer.LogDebug(()=> $"Sending Brake Pressures netId {netId}: {mainReservoirPressure}, {independentPipePressure}, {brakePipePressure}, {brakeCylinderPressure}");
+        //LogDebug(()=> $"Sending Brake Pressures netId {netId}: {mainReservoirPressure}, {independentPipePressure}, {brakePipePressure}, {brakeCylinderPressure}");
     }
 
     public void SendFireboxState(ushort netId, float fireboxContents, bool fireboxOn)
@@ -407,7 +407,7 @@ public class NetworkServer : NetworkManager
             IsOn = fireboxOn
         }, DeliveryMethod.ReliableOrdered, SelfPeer);
 
-        Multiplayer.LogDebug(() => $"Sending Firebox States netId {netId}: {fireboxContents}, {fireboxOn}");
+        LogDebug(() => $"Sending Firebox States netId {netId}: {fireboxContents}, {fireboxOn}");
     }
 
     public void SendCargoState(TrainCar trainCar, ushort netId, bool isLoading, byte cargoModelIndex)
@@ -497,7 +497,7 @@ public class NetworkServer : NetworkManager
 
     public void SendJobsCreatePacket(NetworkedStationController networkedStation, NetworkedJob[] jobs, ITransportPeer peer = null)
     {
-        Multiplayer.Log($"Sending JobsCreatePacket for stationNetId {networkedStation.NetId} with {jobs.Count()} jobs");
+        Log($"Sending JobsCreatePacket for stationNetId {networkedStation.NetId} with {jobs.Count()} jobs");
 
         var packet = ClientboundJobsCreatePacket.FromNetworkedJobs(networkedStation, jobs);
 
@@ -509,13 +509,13 @@ public class NetworkServer : NetworkManager
 
     public void SendJobsUpdatePacket(ushort stationNetId, NetworkedJob[] jobs)
     {
-        Multiplayer.Log($"Sending JobsUpdatePacket for stationNetId {stationNetId} with {jobs.Count()} jobs");
+        Log($"Sending JobsUpdatePacket for stationNetId {stationNetId} with {jobs.Count()} jobs");
         SendPacketToAll(ClientboundJobsUpdatePacket.FromNetworkedJobs(stationNetId, jobs), DeliveryMethod.ReliableOrdered, SelfPeer);
     }
 
     public void SendItemsChangePacket(List<ItemUpdateData> items, ServerPlayer player)
     {
-        Multiplayer.Log($"Sending SendItemsChangePacket with {items.Count()} items to {player.Username}");
+        Log($"Sending SendItemsChangePacket with {items.Count()} items to {player.Username}");
 
         if (Peers.TryGetValue(player.Id, out ITransportPeer peer) && peer != SelfPeer)
         {
@@ -840,7 +840,7 @@ public class NetworkServer : NetworkManager
             }
             else
             {
-                Multiplayer.LogDebug(() => $"OnCommonCouplerInteractionPacket([{packet.Flags}, {netTrainCar.CurrentID}, {packet.NetId}], {peer.Id}) Sending validation failure");
+                LogDebug(() => $"OnCommonCouplerInteractionPacket([{packet.Flags}, {netTrainCar.CurrentID}, {packet.NetId}], {peer.Id}) Sending validation failure");
                 //failed validation notify client
                 SendPacket(
                             peer,
@@ -856,7 +856,7 @@ public class NetworkServer : NetworkManager
         }
         else
         {
-            Multiplayer.LogDebug(() => $"OnCommonCouplerInteractionPacket([{packet.Flags}, {netTrainCar.CurrentID}, {packet.NetId}], {peer.Id}) Sending destroy");
+            LogDebug(() => $"OnCommonCouplerInteractionPacket([{packet.Flags}, {netTrainCar.CurrentID}, {packet.NetId}], {peer.Id}) Sending destroy");
             //Car doesn't exist, tell client to delete it
             SendDestroyTrainCar(packet.NetId, peer);
         }
@@ -1131,7 +1131,7 @@ public class NetworkServer : NetworkManager
     #region Unconnected Packet Handling
     private void OnUnconnectedPingPacket(UnconnectedPingPacket packet, IPEndPoint endPoint)
     {
-        //Multiplayer.Log($"OnUnconnectedPingPacket({endPoint.Address})");
+        //Log($"OnUnconnectedPingPacket({endPoint.Address})");
         //SendUnconnectedPacket(packet, endPoint.Address.ToString(), endPoint.Port);
     }
 
@@ -1197,7 +1197,7 @@ public class NetworkServer : NetworkManager
 
         //LogDebug(()=>$"OnCommonItemChangePacket({packet?.Items?.Count}, {peer.Id} (\"{player.Username}\"))");
 
-        //Multiplayer.LogDebug(() =>
+        //LogDebug(() =>
         //{
         //    string debug = "";
 
