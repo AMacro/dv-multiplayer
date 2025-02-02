@@ -13,6 +13,4 @@ public class CommonPitStopPlugInteractionPacket
     public byte PlayerId { get; set; }
     public ushort TrainCarNetId { get; set; }
     public bool IsLeftSide { get; set; }
-    //public Vector3 Position { get; set; }
-    //public Quaternion Rotation { get; set; }
 }

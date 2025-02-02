@@ -57,7 +57,10 @@ public class NetworkedPluggableObject : IdMonoBehaviour<ushort, NetworkedPluggab
 
     protected override void OnDestroy()
     {
-        plugToStation.Remove(this);
+        if (UnloadWatcher.isUnloading)
+            plugToStation.Clear();
+        else
+            plugToStation.Remove(this);
 
         if (PluggableObject?.controlBase != null && handlersInitialised)
         {

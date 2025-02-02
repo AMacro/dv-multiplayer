@@ -60,7 +60,7 @@ public class NetworkedPitStopStation : IdMonoBehaviour<ushort, NetworkedPitStopS
         if (netPitStopStationToLocation.Count != 0)
             return;
 
-        var stations = Resources.FindObjectsOfTypeAll<PitStopStation>();
+        var stations = Resources.FindObjectsOfTypeAll<PitStopStation>().Where(p => p.transform.parent != null).ToArray();
 
         Multiplayer.LogDebug(() => $"InitialisePitStops() Found: {stations?.Length}");
 
@@ -113,7 +113,10 @@ public class NetworkedPitStopStation : IdMonoBehaviour<ushort, NetworkedPitStopS
 
     protected override void OnDestroy()
     {
-        netPitStopStationToLocation.Remove(transform.position);
+        if (UnloadWatcher.isUnloading)
+            netPitStopStationToLocation.Clear();
+        else
+            netPitStopStationToLocation.Remove(transform.position);
 
         if (carSelectorGrab != null)
         {
@@ -237,6 +240,7 @@ public class NetworkedPitStopStation : IdMonoBehaviour<ushort, NetworkedPitStopS
     {
         return resourceToPluggableObject.TryGetValue(type, out netPluggable);
     }
+
     /// <summary>
     /// Initializes the pit stop station and sets up event handlers for grab interactions.
     /// </summary>
@@ -361,8 +365,7 @@ public class NetworkedPitStopStation : IdMonoBehaviour<ushort, NetworkedPitStopS
 
             case PitStopStationInteractionType.Ungrab:
                 //allow interaction
-                if (grab != null)
-                    grab.SetMovingDisabled(true);
+                grab?.SetMovingDisabled(true);
 
                 if (resourceType != null && resourceType != 0 && resourceModule != null)
                 {

@@ -986,11 +986,12 @@ public class NetworkClient : NetworkManager
         if (!NetworkedPluggableObject.Get(packet.NetId, out var netPlug))
         {
             LogWarning($"Pit Stop Plug Interaction received for plug netId: {packet.NetId}, but pit stop plug does not exist!");
+            return;
         }
 
         Log($"Pit Stop Plug Interaction received for {netPlug}");
 
-        LogDebug(() => $"OnCommonPitStopPlugInteractionPacket() [{netPlug?.transform?.parent?.name}, {packet.NetId}], interaction: [{packet.InteractionType}]");
+        LogDebug(() => $"OnCommonPitStopPlugInteractionPacket() [{netPlug?.transform?.parent?.name}, {packet.NetId}], interaction: [{(PlugInteractionType)packet.InteractionType}]");
         netPlug.ProcessPacket(packet);
     }
 
