@@ -11,6 +11,7 @@ public class NetworkedJunction : IdMonoBehaviour<ushort, NetworkedJunction>
     protected override bool IsIdServerAuthoritative => false;
 
     public Junction Junction;
+    private bool initialised = false;
 
     protected override void Awake()
     {
@@ -23,16 +24,17 @@ public class NetworkedJunction : IdMonoBehaviour<ushort, NetworkedJunction>
     {
         if (NetworkLifecycle.Instance.IsProcessingPacket)
             return;
+
         NetworkLifecycle.Instance.Client.SendJunctionSwitched(NetId, (byte)branch, switchMode);
     }
 
-    public void Switch(byte mode, byte selectedBranch)
+    public void Switch(byte mode, byte selectedBranch, bool initialising = false)
     {
-        //Junction.selectedBranch = (byte)(selectedBranch - 1); // Junction#Switch increments this before processing
-        //Junction.Switch((Junction.SwitchMode)mode);
-
         //B99
         Junction.Switch((Junction.SwitchMode)mode, selectedBranch);
+
+        if (!initialised && initialising)
+            initialised = true;
     }
 
     public static bool Get(ushort netId, out NetworkedJunction obj)

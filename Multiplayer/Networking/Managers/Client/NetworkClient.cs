@@ -445,14 +445,14 @@ public class NetworkClient : NetworkManager
         {
             if (!NetworkedJunction.Get((ushort)(i + 1), out NetworkedJunction junction))
                 return;
-            junction.Switch((byte)Junction.SwitchMode.NO_SOUND, packet.SelectedJunctionBranches[i]);
+            junction.Switch((byte)Junction.SwitchMode.NO_SOUND, packet.SelectedJunctionBranches[i], true);
         }
 
         for (int i = 0; i < packet.TurntableRotations.Length; i++)
         {
             if (!NetworkedTurntable.Get((byte)(i + 1), out NetworkedTurntable turntable))
                 return;
-            turntable.SetRotation(packet.TurntableRotations[i], true);
+            turntable.SetRotation(packet.TurntableRotations[i], true, true);
         }
     }
 

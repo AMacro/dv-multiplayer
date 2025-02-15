@@ -13,6 +13,7 @@ public class NetworkedTurntable : IdMonoBehaviour<byte, NetworkedTurntable>
 
     public TurntableRailTrack TurntableRailTrack;
     private float lastYRotation;
+    private bool initialised = false;
 
     protected override void Awake()
     {
@@ -31,18 +32,21 @@ public class NetworkedTurntable : IdMonoBehaviour<byte, NetworkedTurntable>
 
     private void OnTick(uint tick)
     {
-        if (Mathf.Approximately(lastYRotation, TurntableRailTrack.targetYRotation) || UnloadWatcher.isUnloading)
+        if (UnloadWatcher.isUnloading || !initialised || Mathf.Approximately(lastYRotation, TurntableRailTrack.targetYRotation))
             return;
 
         lastYRotation = TurntableRailTrack.targetYRotation;
         NetworkLifecycle.Instance.Client.SendTurntableRotation(NetId, lastYRotation);
     }
 
-    public void SetRotation(float rotation, bool forceConnectionRefresh = false)
+    public void SetRotation(float rotation, bool forceConnectionRefresh = false, bool initialising = false)
     {
         lastYRotation = rotation;
         TurntableRailTrack.targetYRotation = rotation;
         TurntableRailTrack.RotateToTargetRotation(forceConnectionRefresh);
+
+        if (!initialised && initialising)
+            initialised = true;
     }
 
     public static bool Get(byte netId, out NetworkedTurntable obj)
