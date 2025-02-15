@@ -140,6 +140,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         if (NetworkLifecycle.Instance.IsHost())
         {
             NetworkTrainsetWatcher.Instance.CheckInstance(); // Ensure the NetworkTrainsetWatcher is initialized
+            Client_Initialized = true;
         }
         else
         {
@@ -1207,7 +1208,15 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             //move the car to the correct position first - maybe?
             if (movementPart.typeFlag.HasFlag(TrainsetMovementPart.MovementType.Position))
             {
-                TrainCar.transform.position = movementPart.Position + WorldMover.currentMove;
+                Vector3 worldPos = movementPart.Position + WorldMover.currentMove;
+
+                Vector3 deltaPos = worldPos - TrainCar.transform.position;
+                if (deltaPos.magnitude > 5f)
+                { // Threshold for significant position change
+                    Multiplayer.LogWarning($"[{CurrentID}] Large position correction: {deltaPos.magnitude}m at tick {tick}");
+                }
+
+                TrainCar.transform.position = worldPos;
                 TrainCar.transform.rotation = movementPart.Rotation;
 
                 //clear the queues?
