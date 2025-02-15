@@ -63,7 +63,12 @@ public class HostGamePane : MonoBehaviour
     public void Start()
     {
         Multiplayer.Log("HostGamePane Started");
-        
+
+        if (DVSteamworks.Success)
+            return;
+
+        Multiplayer.Log($"Steam not detected, prompt for restart.");
+        MainMenuThingsAndStuff.Instance.ShowOkPopup("Steam not detected. Please restart the game with Steam running", () => { });
     }
 
     public void OnEnable()
@@ -334,23 +339,23 @@ private void SetupListeners(bool on)
         bool valid = true;
         int portNum;
 
+
+        if (!DVSteamworks.Success)
+            valid = false;
+
         if (serverName.text.Trim() == "" || serverName.text.Length > MAX_SERVER_NAME_LEN)
             valid = false;
 
         if (port.text != "")
         {
-            portNum = int.Parse(port.text);
-            if(portNum < MIN_PORT || portNum > MAX_PORT)
-                return;
-
+            if (!int.TryParse(port.text, out portNum) || portNum < MIN_PORT || portNum > MAX_PORT)
+                valid = false;
         }
 
-        if( port.text == "" && (Multiplayer.Settings.Port < MIN_PORT || Multiplayer.Settings.Port > MAX_PORT))
+        if (port.text == "" && (Multiplayer.Settings.Port < MIN_PORT || Multiplayer.Settings.Port > MAX_PORT))
             valid = false;
 
         startButton.ToggleInteractable(valid);
-
-        //Multiplayer.Log($"HostPane validated: {valid}");
     }
 
     private void StartClick()

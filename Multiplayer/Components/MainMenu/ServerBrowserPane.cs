@@ -186,6 +186,15 @@ namespace Multiplayer.Components.MainMenu
             }
         }
 
+        public void Start()
+        {
+            if (DVSteamworks.Success)
+                return;
+
+            Multiplayer.Log($"Steam not detected, prompt for restart.");
+            MainMenuThingsAndStuff.Instance.ShowOkPopup("Steam not detected. Please restart the game with Steam running", ()=>{});
+        }
+
         private void CleanUI()
         {
             GameObject.Destroy(this.FindChildByName("Text Content"));
