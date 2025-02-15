@@ -7,6 +7,7 @@ using Steamworks;
 using System.Collections.Generic;
 using Steamworks.Data;
 using System.Runtime.InteropServices;
+using UnityEngine;
 
 
 namespace Multiplayer.Networking.TransportLayers;
@@ -186,7 +187,20 @@ public class SteamWorksTransport : ITransport
 
     public void UpdateSettings(Settings settings)
     {
-        //todo: implement any settings
+        int chance = 0;
+        if (settings.SimulatePacketLoss)
+            chance = settings.SimulationPacketLossChance;
+
+        SteamNetworkingUtils.FakeRecvPacketLoss = chance;
+        SteamNetworkingUtils.FakeSendPacketLoss = chance;
+
+
+        chance = 0;
+        if (settings.SimulateLatency)
+            chance = UnityEngine.Random.Range(settings.SimulationMinLatency, settings.SimulationMaxLatency);
+
+        SteamNetworkingUtils.FakeRecvPacketLag = chance;
+        SteamNetworkingUtils.FakeSendPacketLag = chance;
     }
 
     #endregion
