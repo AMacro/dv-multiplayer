@@ -112,7 +112,7 @@ public static class NetworkedCarSpawner
     private static void Couple(in TrainsetSpawnPart spawnPart, TrainCar trainCar, bool autoCouple)
     {
         TrainsetSpawnPart sp = spawnPart;
-        Multiplayer.LogDebug(() =>$"Couple([{sp.CarId}, {sp.NetId}], trainCar, {autoCouple})");
+        //Multiplayer.LogDebug(() =>$"Couple([{sp.CarId}, {sp.NetId}], trainCar, {autoCouple})");
 
         if (autoCouple)
         {
@@ -139,7 +139,7 @@ public static class NetworkedCarSpawner
         TrainCar tc = currentCoupler.train;
         var net = tc.GetNetId();
 
-        Multiplayer.LogDebug(() => $"HandleCoupling([{tc?.ID}, {net}]) couplingData: is front: {currentCoupler.isFrontCoupler}, {couplingData.HoseConnected}, {couplingData.CockOpen}");
+        //Multiplayer.LogDebug(() => $"HandleCoupling([{tc?.ID}, {net}]) couplingData: is front: {currentCoupler.isFrontCoupler}, {couplingData.HoseConnected}, {couplingData.CockOpen}");
 
         if (couplingData.IsCoupled)
         {

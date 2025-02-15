@@ -159,7 +159,8 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         {
             hoseToCoupler[coupler.hoseAndCock] = coupler;
 
-            Multiplayer.LogDebug(() => $"TrainCar.Start() [{TrainCar?.ID}, {NetId}], Coupler exists: {coupler != null}, Is front: {coupler.isFrontCoupler}, ChainScript exists: {coupler.ChainScript != null}");
+            Multiplayer.LogDebug(() => $"TrainCar Created: {TrainCar?.ID}, {NetId}");
+            //Multiplayer.LogDebug(() => $"TrainCar.Start() [{TrainCar?.ID}, {NetId}], Coupler exists: {coupler != null}, Is front: {coupler.isFrontCoupler}, ChainScript exists: {coupler.ChainScript != null}");
 
             //Locos with tenders and tenders only have one chainscript each, no trainscript is used for the hitch between the loco and tender
             if(coupler.ChainScript != null)
@@ -1210,10 +1211,13 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             {
                 Vector3 worldPos = movementPart.Position + WorldMover.currentMove;
 
-                Vector3 deltaPos = worldPos - TrainCar.transform.position;
-                if (deltaPos.magnitude > 5f)
-                { // Threshold for significant position change
-                    Multiplayer.LogWarning($"[{CurrentID}] Large position correction: {deltaPos.magnitude}m at tick {tick}");
+                //Vector3 deltaPos = worldPos - TrainCar.transform.position;
+                //if (deltaPos.magnitude > 5f)
+                //{
+                //    // Threshold for significant position change
+                //    Multiplayer.LogWarning($"[{CurrentID}] Large position correction: {deltaPos.magnitude}m at tick {tick}");
+                //}
+
                 }
 
                 TrainCar.transform.position = worldPos;
@@ -1301,7 +1305,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
     public void Client_CouplerStateChange(ChainCouplerInteraction.State state, Coupler coupler)
     {
-        Multiplayer.LogDebug(() => $"1 Client_CouplerStateChange({state}) trainCar: [{TrainCar?.ID}, {NetId}], coupler is front: {coupler?.isFrontCoupler}");
+        //Multiplayer.LogDebug(() => $"1 Client_CouplerStateChange({state}) trainCar: [{TrainCar?.ID}, {NetId}], coupler is front: {coupler?.isFrontCoupler}");
 
         //if we are processing a packet, then these state changes are likely triggered by a received update, not player interaction
         //in future, maybe patch OnGrab() or add logic to add/remove action subscriptions
@@ -1318,7 +1322,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
                 originalState = coupler.state;
                 originalCoupledTo = coupler.coupledTo;
                 interactionFlags = CouplerInteractionType.Start;
-                Multiplayer.LogDebug(() => $"3 Client_CouplerStateChange({state}) trainCar: [{TrainCar?.ID}, {NetId}]");
+                //Multiplayer.LogDebug(() => $"3 Client_CouplerStateChange({state}) trainCar: [{TrainCar?.ID}, {NetId}]");
                 break;
 
             case ChainCouplerInteraction.State.Attached_Loose:
@@ -1327,7 +1331,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
                     //couldn't find an appropriate constant in the game code, other than the default value
                     //at B99.3 this distance is 1.5f for both default and constant/magic number
                     otherCoupler = coupler.GetFirstCouplerInRange();
-                    Multiplayer.LogDebug(() => $"4 Client_CouplerStateChange({state}) trainCar: [{TrainCar?.ID}, {NetId}] coupledTo: {coupler?.coupledTo?.train?.ID}, first Coupler: {otherCoupler?.train?.ID}");
+                    //Multiplayer.LogDebug(() => $"4 Client_CouplerStateChange({state}) trainCar: [{TrainCar?.ID}, {NetId}] coupledTo: {coupler?.coupledTo?.train?.ID}, first Coupler: {otherCoupler?.train?.ID}");
                     interactionFlags = CouplerInteractionType.CouplerCouple;
                 }
                 break;
@@ -1335,7 +1339,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             case ChainCouplerInteraction.State.Parked:
                 if (couplerInteraction != null)
                 {
-                    Multiplayer.LogDebug(() => $"6 Client_CouplerStateChange({state}) trainCar: [{TrainCar?.ID}, {NetId}]");
+                    //Multiplayer.LogDebug(() => $"6 Client_CouplerStateChange({state}) trainCar: [{TrainCar?.ID}, {NetId}]");
                     interactionFlags = CouplerInteractionType.CouplerPark;
                 }
                 break;
@@ -1343,7 +1347,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             case ChainCouplerInteraction.State.Dangling:
                 if (couplerInteraction != null)
                 {
-                    Multiplayer.LogDebug(() => $"7 Client_CouplerStateChange({state}) trainCar: [{TrainCar?.ID}, {NetId}]");
+                    //Multiplayer.LogDebug(() => $"7 Client_CouplerStateChange({state}) trainCar: [{TrainCar?.ID}, {NetId}]");
                     interactionFlags = CouplerInteractionType.CouplerDrop;
                 }
                 break;
@@ -1355,7 +1359,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
         if (interactionFlags != CouplerInteractionType.NoAction)
         {
-            Multiplayer.LogDebug(() => $"8 Client_CouplerStateChange({state}) trainCar: [{TrainCar?.ID}, {NetId}], coupler is front: {coupler?.isFrontCoupler}, Sending: {interactionFlags}");
+            //Multiplayer.LogDebug(() => $"8 Client_CouplerStateChange({state}) trainCar: [{TrainCar?.ID}, {NetId}], coupler is front: {coupler?.isFrontCoupler}, Sending: {interactionFlags}");
             NetworkLifecycle.Instance.Client.SendCouplerInteraction(interactionFlags, coupler, otherCoupler);
 
             //finished interaction, clear flag
@@ -1364,7 +1368,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
             return;
         }
-        Multiplayer.LogDebug(() => $"9 Client_CouplerStateChange({state}) trainCar: [{TrainCar?.ID}, {NetId}]");
+        //Multiplayer.LogDebug(() => $"9 Client_CouplerStateChange({state}) trainCar: [{TrainCar?.ID}, {NetId}]");
     }
     #endregion
 }

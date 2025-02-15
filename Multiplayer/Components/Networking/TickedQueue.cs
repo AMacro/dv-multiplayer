@@ -17,15 +17,6 @@ public abstract class TickedQueue<T> : MonoBehaviour
 
     protected virtual void OnEnable()
     {
-        TrainCar car;
-        int bogie = 0;
-
-        if(car = TrainCar.Resolve(this.gameObject))
-           if(this is NetworkedBogie netBogie)
-                bogie = (car.Bogies[0] == netBogie.Bogie) ? 1 : 2;
-
-        identifier = $"{car?.ID ?? gameObject.GetPath()}{(bogie > 0 ? $" Bogie {bogie}" : "")}";
-
         NetworkLifecycle.Instance.OnTick += OnTick;
     }
 
@@ -45,10 +36,10 @@ public abstract class TickedQueue<T> : MonoBehaviour
             return;
 
         if (snapshots.Count >= QUEUE_LENGTH_WARNING)
-            Multiplayer.LogWarning($"[{identifier}] Snapshot queue exceeds {QUEUE_LENGTH_WARNING} items. Current size: {snapshots.Count}");
+            Multiplayer.LogWarning($"[{GetID()}] Snapshot queue exceeds {QUEUE_LENGTH_WARNING} items. Current size: {snapshots.Count}");
 
         if (lastReceivedTick > 0 && tick - lastReceivedTick > SNAPSHOT_GAP_WARNING)
-            Multiplayer.LogWarning($"[{identifier}] Large gap between snapshots: {tick - lastReceivedTick} ticks.");
+            Multiplayer.LogWarning($"[{GetID()}] Large gap between snapshots: {tick - lastReceivedTick} ticks.");
 
         lastReceivedTick = tick;
         lastTick = tick;
@@ -72,4 +63,22 @@ public abstract class TickedQueue<T> : MonoBehaviour
     }
 
     protected abstract void Process(T snapshot, uint snapshotTick);
+
+    private string GetID()
+    {
+        if (identifier != string.Empty)
+            return identifier;
+
+        TrainCar car;
+        int bogie = 0;
+
+        if (car = TrainCar.Resolve(this.gameObject))
+            if (this is NetworkedBogie netBogie)
+                bogie = (car.Bogies[0] == netBogie.Bogie) ? 1 : 2;
+
+        if (car.logicCar != null)
+            identifier = $"{car?.ID ?? gameObject.GetPath()}{(bogie > 0 ? $" Bogie {bogie}" : "")}";
+
+        return identifier;
+    }
 }
