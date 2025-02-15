@@ -1,7 +1,7 @@
 using System;
 using Humanizer;
+using Multiplayer.Components.MainMenu;
 using Multiplayer.Utils;
-using Steamworks;
 using UnityEngine;
 using UnityModManagerNet;
 using Console = DV.Console;
@@ -12,11 +12,12 @@ namespace Multiplayer;
 [DrawFields(DrawFieldMask.OnlyDrawAttr)]
 public class Settings : UnityModManager.ModSettings, IDrawable
 {
+    public const int CURRENT_VERSION = 3;
     public const byte MAX_USERNAME_LENGTH = 24;
 
     public static Action<Settings> OnSettingsUpdated;
 
-    public int SettingsVer = 2;
+    public int SettingsVer = CURRENT_VERSION;
 
     [Header("Player")]
     [Draw("Use Steam Name", Tooltip = "Use your Steam name as your username in-game")]
@@ -33,7 +34,8 @@ public class Settings : UnityModManager.ModSettings, IDrawable
     public string ServerName = "";
     [Draw("Password", Tooltip = "The password required to join your server. Leave blank for no password.")]
     public string Password = "";
-    [Draw("Public Game", Tooltip = "Public servers are listed in the lobby browser")]
+    [Draw("Server Visibility")]
+    public ServerVisibility Visibility = ServerVisibility.Public;
     public bool PublicGame = true;
     [Draw("Max Players", Tooltip = "The maximum number of players that can join your server, including yourself.")]
     public int MaxPlayers = 4;
@@ -45,7 +47,7 @@ public class Settings : UnityModManager.ModSettings, IDrawable
     [Space(10)]
     [Header("Lobby Server")]
     [Draw("Lobby Server address", Tooltip = "Address of lobby server for finding multiplayer games")]
-    public string LobbyServerAddress = "https://dv.mineit.space";//"http://localhost:8080";
+    public string LobbyServerAddress = "https://dv.mineit.space";
     [Draw("IPv4 Check Address", Tooltip = "Do not modify unless the service is unavailable")]
     public string Ipv4AddressCheck = "https://api.ipify.org/";
     [Header("Last Server Connected to by IP")]
@@ -162,36 +164,51 @@ public class Settings : UnityModManager.ModSettings, IDrawable
 
     private static int GetCurrentVersion()
     {
-        return 2;
+        return CURRENT_VERSION;
     }
 
     // Function to handle migrations based on the current version
     private static void MigrateSettings(ref Settings data)
-    { 
+    {
         switch (data.SettingsVer)
         {
             case 0:
                 //We want to disable Punch until it's fully implemented
                 data.EnableNatPunch = false;
-                data.SettingsVer = 1;
 
                 //Ensure http setting is upgraded to https if using the default lobby server
-                if(data.LobbyServerAddress == "http://dv.mineit.space")
+                if (data.LobbyServerAddress == "http://dv.mineit.space")
                     data.LobbyServerAddress = new Settings().LobbyServerAddress;
 
-                MigrateSettings(ref data);
                 break;
-            case 1: 
+
+            case 1:
                 if (data.Ipv4AddressCheck == "http://checkip.dyndns.org")
                     data.Ipv4AddressCheck = new Settings().Ipv4AddressCheck;
 
                 data.ShowAdvancedSettings = true;
                 data.DebugLogging = true;
                 data.ShowPingInNameTags = true;
+        
                 break;
+
+            case 2:
+
+                if (data.PublicGame)
+                    data.Visibility = ServerVisibility.Public;
+                else
+                    data.Visibility = ServerVisibility.Friends;
+
+                break;
+
             default:
                 break;
         }
 
+        if (data.SettingsVer < GetCurrentVersion())
+        {
+            data.SettingsVer++;
+            MigrateSettings(ref data);
+        }
     }
 }

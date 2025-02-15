@@ -2,13 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
-using dnlib.DotNet;
-using DV.Rain;
-using Humanizer;
-using System.Xml.Linq;
 using I2.Loc;
 using Multiplayer.Utils;
-using static VLB.Consts;
+
 
 namespace Multiplayer
 {
@@ -86,6 +82,11 @@ namespace Multiplayer
         public const string SERVER_HOST_NAME_KEY = $"{PREFIX_SERVER_HOST}/name";
         public static string SERVER_HOST_PUBLIC => Get(SERVER_HOST_PUBLIC_KEY);
         public const string SERVER_HOST_PUBLIC_KEY = $"{PREFIX_SERVER_HOST}/public";
+        public static string SERVER_HOST_VISIBILITY => Get(SERVER_HOST_PUBLIC_KEY);
+        public const string SERVER_HOST_VISIBILITY_KEY = $"{PREFIX_SERVER_HOST}/visibility";
+       // public static string SERVER_HOST_VISIBILITY_MODES => Get(SERVER_HOST_VISIBILITY_MODES_KEY);
+        public static string[] SERVER_HOST_VISIBILITY_MODES = [$"{SERVER_HOST_VISIBILITY_MODES_KEY}/private" , $"{SERVER_HOST_VISIBILITY_MODES_KEY}/friends",$"{SERVER_HOST_VISIBILITY_MODES_KEY}/public"];
+        public const string SERVER_HOST_VISIBILITY_MODES_KEY = $"{PREFIX_SERVER_HOST}/visibility/modes";
         public static string SERVER_HOST_DETAILS => Get(SERVER_HOST_DETAILS_KEY);
         public const string SERVER_HOST_DETAILS_KEY = $"{PREFIX_SERVER_HOST}/details";
         public static string SERVER_HOST_MAX_PLAYERS => Get(SERVER_HOST_MAX_PLAYERS_KEY);
@@ -106,6 +107,7 @@ namespace Multiplayer
 
 
         #endregion
+
         #region Disconnect Reason
         public static string DISCONN_REASON__INVALID_PASSWORD => Get(DISCONN_REASON__INVALID_PASSWORD_KEY);
         public const string DISCONN_REASON__INVALID_PASSWORD_KEY = $"{PREFIX_DISCONN_REASON}/invalid_password";

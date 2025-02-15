@@ -5,7 +5,6 @@ using Multiplayer.Utils;
 using System.ComponentModel;
 using TMPro;
 using UnityEngine;
-using UnityEngine.UI;
 
 namespace Multiplayer.Components.MainMenu.ServerBrowser
 {

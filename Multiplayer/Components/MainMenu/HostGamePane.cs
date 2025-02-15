@@ -40,6 +40,7 @@ public class HostGamePane : MonoBehaviour
 
     SliderDV maxPlayers;
     Toggle gamePublic;
+    Selector gameVisibility;
     ButtonDV startButton;
 
     public ISaveGame saveGame;
@@ -120,10 +121,17 @@ public class HostGamePane : MonoBehaviour
             return;
         }
 
+        GameObject selectorPrefab = goMMC.FindChildByName("Crosshair").gameObject;
+        if (selectorPrefab == null)
+        {
+            Multiplayer.LogError("selectorPrefab not found!");
+            return;
+        }
+
         GameObject sliderPrefab = goMMC.FindChildByName("Field Of View").gameObject;
         if (sliderPrefab == null)
         {
-            Multiplayer.LogError("SliderLimitSession not found!");
+            Multiplayer.LogError("Field Of View not found!");
             return;
         }
         
@@ -207,9 +215,11 @@ public class HostGamePane : MonoBehaviour
         ContentSizeFitter sizeFitter = controls.AddComponent<ContentSizeFitter>();
         sizeFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
+        /*
+         *  Server name field 
+         */
         GameObject go = GameObject.Instantiate(inputPrefab, NewContentGroup(controls, scroller.viewport.sizeDelta).transform,false);
         go.name = "Server Name";
-        //go.AddComponent<IHoverable>();
         serverName = go.GetComponent<TMP_InputField>();
         serverName.text = Multiplayer.Settings.ServerName?.Trim().Substring(0,Mathf.Min(Multiplayer.Settings.ServerName.Trim().Length,MAX_SERVER_NAME_LEN));
         serverName.placeholder.GetComponent<TMP_Text>().text = Locale.SERVER_HOST_NAME;
@@ -217,7 +227,9 @@ public class HostGamePane : MonoBehaviour
         go.AddComponent<UIElementTooltip>();
         go.ResetTooltip();
 
-
+        /*
+         *  Server password field 
+         */
         go = GameObject.Instantiate(inputPrefab, NewContentGroup(controls, scroller.viewport.sizeDelta).transform, false);
         go.name = "Password";
         password = go.GetComponent<TMP_InputField>();
@@ -227,19 +239,26 @@ public class HostGamePane : MonoBehaviour
         go.AddComponent<UIElementTooltip>();//.enabledKey = Locale.SERVER_HOST_PASSWORD__TOOLTIP_KEY;
         go.ResetTooltip();
 
-
-        go = GameObject.Instantiate(cbPrefab, NewContentGroup(controls, scroller.viewport.sizeDelta).transform, false);
-        go.name = "Public";
-        TMP_Text label =  go.FindChildByName("text").GetComponent<TMP_Text>();
-        label.text = "Public Game";
-        gamePublic = go.GetComponent<Toggle>();
-        gamePublic.isOn = Multiplayer.Settings.PublicGame;
-        gamePublic.interactable = true;
-        go.GetComponentInChildren<Localize>().key = Locale.SERVER_HOST_PUBLIC_KEY;
-        GameObject.Destroy(go.GetComponentInChildren<I2.Loc.Localize>());
+        /*
+         *  Server visibility field 
+         */
+        go = GameObject.Instantiate(selectorPrefab, NewContentGroup(controls, scroller.viewport.sizeDelta).transform, false);
+        go.name = "Visibility";
+        go.FindChildByName("[text label]").GetComponent<Localize>().key = Locale.SERVER_HOST_VISIBILITY_KEY;
         go.ResetTooltip();
+        go.FindChildByName("[text label]").GetComponent<Localize>().UpdateLocalization();
+        DestroyImmediate(go.GetComponent<SettingChangeSource>());
+        gameVisibility = go.GetOrAddComponent<Selector>();
+        gameVisibility.LocalizedLabel = true;
+        gameVisibility.SetLabel(Locale.SERVER_HOST_VISIBILITY_KEY);
+        gameVisibility.LocalizedValues = true;
+        gameVisibility.SetValues(Locale.SERVER_HOST_VISIBILITY_MODES.ToList());
+        gameVisibility.SetSelectedIndex(3);
+        gameVisibility.ToggleInteractable(true);
 
-
+        /*
+         *  Server details field 
+         */
         go = GameObject.Instantiate(inputPrefab, NewContentGroup(controls, scroller.viewport.sizeDelta,106).transform, false);
         go.name = "Details";
         go.transform.GetComponent<RectTransform>().sizeDelta = new Vector2(go.transform.GetComponent<RectTransform>().sizeDelta.x, 106);
@@ -247,19 +266,21 @@ public class HostGamePane : MonoBehaviour
         details.characterLimit = MAX_DETAILS_LEN;
         details.lineType = TMP_InputField.LineType.MultiLineNewline;
         details.FindChildByName("text [noloc]").GetComponent<TMP_Text>().alignment = TextAlignmentOptions.TopLeft;
-
         details.placeholder.GetComponent<TMP_Text>().text = Locale.SERVER_HOST_DETAILS;
 
-
+        //Divider
         go = GameObject.Instantiate(dividerPrefab, NewContentGroup(controls, scroller.viewport.sizeDelta).transform, false);
         go.name = "Divider";
-        
 
+        /*
+         *  Server max players field 
+         */
         go = GameObject.Instantiate(sliderPrefab, NewContentGroup(controls, scroller.viewport.sizeDelta).transform, false);
         go.name = "Max Players";
         go.FindChildByName("[text label]").GetComponent<Localize>().key = Locale.SERVER_HOST_MAX_PLAYERS_KEY;
         go.ResetTooltip();
         go.FindChildByName("[text label]").GetComponent<Localize>().UpdateLocalization();
+        DestroyImmediate(go.GetComponent<SettingChangeSource>());
         maxPlayers = go.GetComponent<SliderDV>();
         maxPlayers.stepIncrement = 1;
         maxPlayers.minValue = MIN_PLAYERS;
@@ -267,7 +288,9 @@ public class HostGamePane : MonoBehaviour
         maxPlayers.value = Mathf.Clamp(Multiplayer.Settings.MaxPlayers,MIN_PLAYERS,MAX_PLAYERS);
         maxPlayers.interactable = true;
 
-
+        /*
+         *  Server port field 
+         */
         go = GameObject.Instantiate(inputPrefab, NewContentGroup(controls, scroller.viewport.sizeDelta).transform, false);
         go.name = "Port";
         port = go.GetComponent<TMP_InputField>();
@@ -276,15 +299,15 @@ public class HostGamePane : MonoBehaviour
         port.placeholder.GetComponent<TMP_Text>().text = "7777";
         port.text = (Multiplayer.Settings.Port >= MIN_PORT && Multiplayer.Settings.Port <= MAX_PORT) ?  Multiplayer.Settings.Port.ToString() : DEFAULT_PORT.ToString();
 
-        
+        /*
+         *  Start Game button
+         */
         go = this.gameObject.UpdateButton("ButtonTextIcon Save", "ButtonTextIcon Start", Locale.SERVER_HOST_START_KEY, null, playSprite);
         go.FindChildByName("[text]").GetComponent<Localize>().UpdateLocalization();
         
         startButton = go.GetComponent<ButtonDV>();
         startButton.onClick.RemoveAllListeners();
         startButton.onClick.AddListener(StartClick);
-        
-        
     }
 
     private GameObject NewContentGroup(GameObject parent, Vector2 sizeDelta, int cellMaxHeight = 53)
@@ -312,9 +335,7 @@ public class HostGamePane : MonoBehaviour
         return contentGroup;
     }
 
-
-
-private void SetupListeners(bool on)
+    private void SetupListeners(bool on)
     {
         if (on)
         {
@@ -366,7 +387,7 @@ private void SetupListeners(bool on)
             serverData.port = (port.text == "") ? Multiplayer.Settings.Port : int.Parse(port.text); ;
             serverData.Name = serverName.text.Trim();
             serverData.HasPassword = password.text != "";
-            serverData.isPublic = gamePublic.isOn;
+            serverData.Visibility = (ServerVisibility)gameVisibility.SelectedIndex;
 
             serverData.GameMode = 0; //replaced with details from save / new game
             serverData.Difficulty = 0; //replaced with details from save / new game
@@ -409,7 +430,7 @@ private void SetupListeners(bool on)
 
             Multiplayer.Settings.ServerName = serverData.Name;
             Multiplayer.Settings.Password = password.text;
-            Multiplayer.Settings.PublicGame = serverData.isPublic;
+            Multiplayer.Settings.Visibility = serverData.Visibility;
             Multiplayer.Settings.Port = serverData.port;
             Multiplayer.Settings.MaxPlayers = serverData.MaxPlayers;
             Multiplayer.Settings.Details = serverData.ServerDetails;

@@ -64,7 +64,7 @@ namespace Multiplayer.Networking.Data
         [JsonIgnore]
         public int Ping { get; set; } = -1;
         [JsonIgnore]
-        public bool isPublic { get; set; }
+        public ServerVisibility Visibility { get; set; } = ServerVisibility.Public;
         [JsonIgnore]
         public int LastSeen { get; set; } = int.MaxValue;
 
