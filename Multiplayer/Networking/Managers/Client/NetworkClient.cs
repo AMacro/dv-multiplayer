@@ -199,6 +199,9 @@ public class NetworkClient : NetworkManager
     public override void OnNetworkLatencyUpdate(ITransportPeer peer, int latency)
     {
         Ping = latency;
+
+        if (latency > 150)
+            LogWarning($"High Ping Detected! {latency}ms");
     }
 
     public override void OnConnectionRequest(NetDataReader dataReader, IConnectionRequest request)

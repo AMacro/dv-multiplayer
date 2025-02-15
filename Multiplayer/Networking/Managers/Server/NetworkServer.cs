@@ -237,6 +237,12 @@ public class NetworkServer : NetworkManager
         {
             ServerTick = NetworkLifecycle.Instance.Tick
         }, DeliveryMethod.ReliableUnordered);
+
+        if (latency > 150)
+        {
+            serverPlayers.TryGetValue((byte)peer.Id, out var player);
+            LogWarning($"High Ping Detected! Player: \"{player?.Username}\", ping: {latency}ms");
+        }
     }
 
     public override void OnConnectionRequest(NetDataReader requestData, IConnectionRequest request)
