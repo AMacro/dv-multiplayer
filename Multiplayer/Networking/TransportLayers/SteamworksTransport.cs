@@ -13,7 +13,7 @@ namespace Multiplayer.Networking.TransportLayers;
 
 public class SteamWorksTransport : ITransport
 {
-    public NetStatistics Statistics => new NetStatistics();
+    public NetStatistics Statistics => new();
     public bool IsRunning { get; private set; }
 
     public event Action<NetDataReader, IConnectionRequest> OnConnectionRequest;
@@ -61,6 +61,7 @@ public class SteamWorksTransport : ITransport
         
         if (server != null)
         {
+            Multiplayer.LogDebug(() => $"SteamWorksTransport.Start({port}) Relay not null");
             server.transport = this;
             servers.Add(server);
             IsRunning = true;
@@ -84,17 +85,22 @@ public class SteamWorksTransport : ITransport
 
         client?.Close(true);
 
-
-        while (servers.Count > 0)
+        foreach (var server in servers)
         {
-            if (servers[0] != null)
+            if (server != null)
             {
-                foreach (var connection in servers[0].Connected)
+                // Close all connections first
+                foreach (var connection in server.Connected)
+                {
                     connection.Close(true, (int)NetConnectionEnd.App_Generic);
-            }
+                }
 
-            servers.RemoveAt(0);
+                //close the server
+                server.Close();
+            }
         }
+
+        servers.Clear();
     }
 
     public void PollEvents()
