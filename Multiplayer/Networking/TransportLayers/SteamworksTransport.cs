@@ -187,7 +187,7 @@ public class SteamWorksTransport : ITransport
 
     public void UpdateSettings(Settings settings)
     {
-        int chance = 0;
+        float chance = 0f;
         if (settings.SimulatePacketLoss)
             chance = settings.SimulationPacketLossChance;
 
