@@ -42,7 +42,7 @@ public class LobbyServerManager : MonoBehaviour
     private string private_key;
 
     //Steam Lobby
-    public static readonly string[] EXCLUDE_PARAMS = {"id", "ipv4", "ipv6", "port", "LocalIPv4", "LocalIPv6", "Ping", "isPublic", "LastSeen", "CurrentPlayers", "MaxPlayers"};
+    public static readonly string[] EXCLUDE_PARAMS = {"id", "ipv4", "ipv6", "port", "LocalIPv4", "LocalIPv6", "Ping", "Visibility", "LastSeen", "CurrentPlayers", "MaxPlayers"};
     private Lobby? lobby;
 
     private bool initialised = false;
@@ -165,12 +165,12 @@ public class LobbyServerManager : MonoBehaviour
             server.Log("Steam Lobby created successfully!");
             server.LogDebug(() => $"Steam lobby ID: {lobby?.Id}");
 
-            lobby?.SetData(SteamworksUtils.LOBBY_MP_MOD_KEY, string.Empty); //We'll add this in for filtering
+            lobby?.SetData(SteamworksUtils.LOBBY_MP_MOD_KEY, SteamworksUtils.LOBBY_MP_MOD_KEY); //We'll add this in for filtering
             lobby?.SetData(SteamworksUtils.LOBBY_NET_LOCATION_KEY, SteamNetworkingUtils.LocalPingLocation.ToString()); //for ping estimation
 
             SteamworksUtils.SetLobbyData((Lobby)lobby, server.serverData, EXCLUDE_PARAMS);
 
-            //todo implement public/private/friends
+            //Set correct visibility
             if (server.serverData.Visibility == ServerVisibility.Private)
                 lobby?.SetPrivate();
             else if (server.serverData.Visibility == ServerVisibility.Friends)

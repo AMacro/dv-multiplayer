@@ -63,14 +63,32 @@ public static class SteamworksUtils
     {
         var data = new LobbyServerData();
         var properties = typeof(LobbyServerData).GetProperties();
+        string value = null;
 
         foreach (var prop in properties)
         {
-            var value = lobby.GetData(prop.Name);
-            if (string.IsNullOrEmpty(value)) continue;
+            try
+            {
+                value = lobby.GetData(prop.Name);
+                if (string.IsNullOrEmpty(value)) continue;
 
-            var converted = Convert.ChangeType(value, prop.PropertyType);
-            prop.SetValue(data, converted);
+                if (prop.PropertyType.IsEnum)
+                {
+                    var enumValue = Enum.Parse(prop.PropertyType, value);
+                    prop.SetValue(data, enumValue);
+                }
+                else
+                {
+                    var converted = Convert.ChangeType(value, prop.PropertyType);
+                    prop.SetValue(data, converted);
+                }
+
+                value = null;
+            }
+            catch (Exception ex)
+            {
+                Multiplayer.LogException($"GetLobbyData() Error parsing property: {prop?.Name}, value: {value}", ex);
+            }
         }
 
         return data;
