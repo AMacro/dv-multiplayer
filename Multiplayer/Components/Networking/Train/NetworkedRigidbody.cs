@@ -2,7 +2,6 @@ using Multiplayer.Networking.Data.Train;
 using System;
 using System.Collections;
 using UnityEngine;
-using static Multiplayer.Networking.Data.Train.RigidbodySnapshot;
 
 namespace Multiplayer.Components.Networking.Train;
 

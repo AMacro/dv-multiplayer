@@ -8,7 +8,7 @@ namespace Multiplayer.Components.Networking.Train;
 public class NetworkedBogie : TickedQueue<BogieData>
 {
     private const int MAX_FRAMES = 60;
-    private Bogie bogie;
+    public Bogie Bogie { get; private set; }
 
     protected override void OnEnable()
     {
@@ -19,10 +19,10 @@ public class NetworkedBogie : TickedQueue<BogieData>
     {
         int counter = 0;
 
-        while (bogie == null && counter < MAX_FRAMES)
+        while (Bogie == null && counter < MAX_FRAMES)
         {
-            bogie = GetComponent<Bogie>();
-            if (bogie == null)
+            Bogie = GetComponent<Bogie>();
+            if (Bogie == null)
             {
                 counter++;
                 yield return new WaitForEndOfFrame();
@@ -31,20 +31,20 @@ public class NetworkedBogie : TickedQueue<BogieData>
 
         base.OnEnable();
 
-        if (bogie == null)
+        if (Bogie == null)
         {
-            Multiplayer.LogError($"{gameObject.name} ({bogie?.Car?.ID}): {nameof(NetworkedBogie)} requires a {nameof(Bogie)} component on the same GameObject! Waited {counter} iterations");
+            Multiplayer.LogError($"{gameObject.name} ({Bogie?.Car?.ID}): {nameof(NetworkedBogie)} requires a {nameof(Bogie)} component on the same GameObject! Waited {counter} iterations");
         }
     }
 
     protected override void Process(BogieData snapshot, uint snapshotTick)
     {
-        if (bogie.HasDerailed)
+        if (Bogie.HasDerailed)
             return;
 
         if (snapshot.HasDerailed)
         {
-            bogie.Derail();
+            Bogie.Derail();
             return;
         }
 
@@ -52,23 +52,23 @@ public class NetworkedBogie : TickedQueue<BogieData>
         {
             if (!NetworkedRailTrack.Get(snapshot.TrackNetId, out NetworkedRailTrack track))
             {
-                Multiplayer.LogWarning($"NetworkedBogie.Process() Failed to find track {snapshot.TrackNetId} for bogie: {bogie.Car.ID}");
+                Multiplayer.LogWarning($"NetworkedBogie.Process() Failed to find track {snapshot.TrackNetId} for bogie: {Bogie.Car.ID}");
                 return;
             }
 
-            bogie.SetTrack(track.RailTrack, snapshot.PositionAlongTrack, snapshot.TrackDirection);
+            Bogie.SetTrack(track.RailTrack, snapshot.PositionAlongTrack, snapshot.TrackDirection);
 
         }
         else
         {
-            if(bogie.track)
-                bogie.traveller.MoveToSpan(snapshot.PositionAlongTrack);
+            if(Bogie.track)
+                Bogie.traveller.MoveToSpan(snapshot.PositionAlongTrack);
             else
-                Multiplayer.LogWarning($"NetworkedBogie.Process() No track for current bogie for bogie: {bogie?.Car?.ID}, unable to move position!");
+                Multiplayer.LogWarning($"NetworkedBogie.Process() No track for current bogie for bogie: {Bogie?.Car?.ID}, unable to move position!");
         }
 
         int physicsSteps = Mathf.FloorToInt((NetworkLifecycle.Instance.Tick - (float)snapshotTick) / NetworkLifecycle.TICK_RATE / Time.fixedDeltaTime) + 1;
         for (int i = 0; i < physicsSteps; i++)
-            bogie.UpdatePointSetTraveller();
+            Bogie.UpdatePointSetTraveller();
     }
 }
