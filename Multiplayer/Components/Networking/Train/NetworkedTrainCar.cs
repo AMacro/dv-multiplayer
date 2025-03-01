@@ -1216,13 +1216,17 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
         if (movementPart.typeFlag == TrainsetMovementPart.MovementType.RigidBody)
         {
+            Vector3 expectedPosition = movementPart.RigidbodySnapshot.Position + WorldMover.currentMove;
+            Multiplayer.LogDebug(() => $"Processing derailed physics for car {CurrentID} at tick {tick}, current position: {TrainCar.transform.position} expected position: {expectedPosition}");
             //Multiplayer.LogDebug(() => $"Client_ReceiveTrainPhysicsUpdate({TrainCar.ID}, {tick}): is RigidBody");
             TrainCar.Derail();
-            TrainCar.stress.ResetTrainStress();
-            if (TrainCar.rb != null)
-                TrainCar.rb.constraints = RigidbodyConstraints.FreezeAll;
+            movementPart.RigidbodySnapshot.Apply(TrainCar.rb);
+            //TrainCar.stress.ResetTrainStress();
+            //if (TrainCar.rb != null)
+            //    TrainCar.rb.constraints = RigidbodyConstraints.FreezeAll;
 
             Client_trainRigidbodyQueue.ReceiveSnapshot(movementPart.RigidbodySnapshot, tick);
+            Multiplayer.LogDebug(() => $"Derailed car {TrainCar.ID} positioned at {TrainCar.transform.position}");
         }
         else
         {
@@ -1238,10 +1242,14 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
                 //    Multiplayer.LogWarning($"[{CurrentID}] Large position correction: {deltaPos.magnitude}m at tick {tick}");
                 //}
 
+                if (TrainCar.rb != null)
+                {
+                    TrainCar.rb.MovePosition(worldPos);
+                    TrainCar.rb.MoveRotation(movementPart.Rotation);
                 }
 
-                TrainCar.transform.position = worldPos;
-                TrainCar.transform.rotation = movementPart.Rotation;
+                //TrainCar.transform.position = worldPos;
+                //TrainCar.transform.rotation = movementPart.Rotation;
 
                 //clear the queues?
                 Client_trainSpeedQueue.Clear();
@@ -1257,11 +1265,10 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             client_bogie1Queue.ReceiveSnapshot(movementPart.Bogie1, tick);
             client_bogie2Queue.ReceiveSnapshot(movementPart.Bogie2, tick);
 
-            
         }
 
-        if (!TrainCar.derailed && TrainCar.rb != null)
-            TrainCar.rb.constraints = RigidbodyConstraints.None;
+        //if (!TrainCar.derailed && TrainCar.rb != null)
+        //    TrainCar.rb.constraints = RigidbodyConstraints.None;
     }
 
     public void Client_ReceiveBrakeStateUpdate(ClientboundBrakeStateUpdatePacket packet)

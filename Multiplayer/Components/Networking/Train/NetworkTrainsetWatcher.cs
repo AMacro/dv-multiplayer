@@ -14,6 +14,7 @@ public class NetworkTrainsetWatcher : SingletonBehaviour<NetworkTrainsetWatcher>
 
     const float DESIRED_FULL_SYNC_INTERVAL = 2f; // in seconds
     const int MAX_UNSYNC_TICKS = (int)(NetworkLifecycle.TICK_RATE * DESIRED_FULL_SYNC_INTERVAL);
+    const float VELOCITY_THRESHOLD = 0.01f;
 
     protected override void Awake()
     {
@@ -58,6 +59,7 @@ public class NetworkTrainsetWatcher : SingletonBehaviour<NetworkTrainsetWatcher>
 
         cachedSendPacket.FirstNetId = set.firstCar.GetNetId();
         cachedSendPacket.LastNetId = set.lastCar.GetNetId();
+
         //car may not be initialised, missing a valid NetID
         if (cachedSendPacket.FirstNetId == 0 || cachedSendPacket.LastNetId == 0)
             return;
@@ -73,16 +75,24 @@ public class NetworkTrainsetWatcher : SingletonBehaviour<NetworkTrainsetWatcher>
             //If we can locate the networked car, we'll add to the ticks counter and check if any tracks are dirty
             if (NetworkedTrainCar.TryGetFromTrainCar(trainCar, out NetworkedTrainCar netTC))
             {
-                maxTicksReached |= netTC.TicksSinceSync >= MAX_UNSYNC_TICKS;
+                maxTicksReached |= netTC.TicksSinceSync >= MAX_UNSYNC_TICKS; //Even if the car is stationary, if the max ticks has been exceeded we will still sync
                 anyTracksDirty |= netTC.BogieTracksDirty;
             }
-
-            //Even if the car is stationary, if the max ticks has been exceeded we will still sync
-            if (!trainCar.isStationary)
+            
+            if (trainCar.derailed)
+            {
+                // Check if derailed car is actually moving
+                float velocityMagnitude = trainCar.rb.velocity.magnitude;
+                if (velocityMagnitude > VELOCITY_THRESHOLD)
+                {
+                    anyCarMoving = true;
+                }
+            }
+            else if (!trainCar.isStationary)
                 anyCarMoving = true;
 
-            //we can finish checking early if we have BOTH a dirty and a max ticks
-            if (anyCarMoving && maxTicksReached)
+            //we can finish checking early if we have either a car moving or a car not sync'd within the max-tick threshold
+            if (anyCarMoving || maxTicksReached)
                 break;
         }
 
@@ -161,7 +171,14 @@ public class NetworkTrainsetWatcher : SingletonBehaviour<NetworkTrainsetWatcher>
             for (int i = 0; i < packet.TrainsetParts.Length; i++)
             {
                 if (NetworkedTrainCar.Get(packet.TrainsetParts[i].NetId ,out NetworkedTrainCar networkedTrainCar))
+                {
+                    Multiplayer.LogDebug(()=>$"Applying TrainPhysicsUpdate to {packet.TrainsetParts[i].NetId}");
                     networkedTrainCar.Client_ReceiveTrainPhysicsUpdate(in packet.TrainsetParts[i], packet.Tick);
+                }
+                else
+                {
+                    Multiplayer.LogWarning($"Unable to apply TrainPhysicsUpdate to {packet.TrainsetParts[i].NetId}, NetworkedTrainCar not found!");
+                }
             }
             return;
         }
@@ -176,6 +193,8 @@ public class NetworkTrainsetWatcher : SingletonBehaviour<NetworkTrainsetWatcher>
         {
             if(set.cars[i].TryNetworked(out NetworkedTrainCar networkedTrainCar))
                 networkedTrainCar.Client_ReceiveTrainPhysicsUpdate(in packet.TrainsetParts[i], packet.Tick);
+            else
+                Multiplayer.LogWarning($"Unable to apply TrainPhysicsUpdate to TrainSet with FirstNetId: {packet.FirstNetId}, NetworkedTrainCar not found!");
         }
     }
      
