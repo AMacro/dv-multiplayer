@@ -1022,7 +1022,7 @@ public class NetworkClient : NetworkManager
         SendPacketToServer(new ServerboundTimeAdvancePacket
         {
             amountOfTimeToSkipInSeconds = amountOfTimeToSkipInSeconds
-        }, DeliveryMethod.ReliableUnordered);
+        }, DeliveryMethod.ReliableOrdered);
     }
 
     public void SendJunctionSwitched(ushort netId, byte selectedBranch, Junction.SwitchMode mode)
@@ -1032,7 +1032,7 @@ public class NetworkClient : NetworkManager
             NetId = netId,
             SelectedBranch = selectedBranch,
             Mode = (byte)mode
-        }, DeliveryMethod.ReliableUnordered);
+        }, DeliveryMethod.ReliableOrdered);
     }
 
     public void SendTurntableRotation(byte netId, float rotation)
@@ -1099,26 +1099,6 @@ public class NetworkClient : NetworkManager
         }, DeliveryMethod.ReliableUnordered);
     }
 
-    public void SendTrainUncouple(Coupler coupler, bool playAudio, bool dueToBrokenCouple, bool viaChainInteraction)
-    {
-        ushort couplerNetId = coupler.train.GetNetId();
-
-        if (couplerNetId == 0)
-        {
-            LogWarning($"SendTrainUncouple failed. Coupler: {coupler.name} {couplerNetId}");
-            return;
-        }
-
-        SendPacketToServer(new CommonTrainUncouplePacket
-        {
-            NetId = couplerNetId,
-            IsFrontCoupler = coupler.isFrontCoupler,
-            PlayAudio = playAudio,
-            ViaChainInteraction = viaChainInteraction,
-            DueToBrokenCouple = dueToBrokenCouple
-        }, DeliveryMethod.ReliableUnordered);
-    }
-
     public void SendHoseConnected(Coupler coupler, Coupler otherCoupler, bool playAudio)
     {
         ushort couplerNetId = coupler.train.GetNetId();
@@ -1137,7 +1117,7 @@ public class NetworkClient : NetworkManager
             OtherNetId = otherCouplerNetId,
             OtherIsFront = otherCoupler.isFrontCoupler,
             PlayAudio = playAudio
-        }, DeliveryMethod.ReliableUnordered);
+        }, DeliveryMethod.ReliableOrdered);
     }
 
     public void SendHoseDisconnected(Coupler coupler, bool playAudio)
@@ -1150,12 +1130,14 @@ public class NetworkClient : NetworkManager
             return;
         }
 
+        LogDebug(() => $"SendHoseDisconnected({coupler.train.ID}, {coupler.isFrontCoupler}, {playAudio})");
+
         SendPacketToServer(new CommonHoseDisconnectedPacket
         {
             NetId = couplerNetId,
             IsFront = coupler.isFrontCoupler,
             PlayAudio = playAudio
-        }, DeliveryMethod.ReliableUnordered);
+        }, DeliveryMethod.ReliableOrdered);
     }
 
     public void SendMuConnected(MultipleUnitCable cable, MultipleUnitCable otherCable, bool playAudio)
@@ -1176,7 +1158,7 @@ public class NetworkClient : NetworkManager
             OtherNetId = otherCableNetId,
             OtherIsFront = otherCable.isFront,
             PlayAudio = playAudio
-        }, DeliveryMethod.ReliableUnordered);
+        }, DeliveryMethod.ReliableOrdered);
     }
 
     public void SendMuDisconnected(ushort netId, MultipleUnitCable cable, bool playAudio)
@@ -1187,7 +1169,7 @@ public class NetworkClient : NetworkManager
             NetId = netId,
             IsFront = cable.isFront,
             PlayAudio = playAudio
-        }, DeliveryMethod.ReliableUnordered);
+        }, DeliveryMethod.ReliableOrdered);
     }
 
     public void SendCockState(ushort netId, Coupler coupler, bool isOpen)
@@ -1197,7 +1179,7 @@ public class NetworkClient : NetworkManager
             NetId = netId,
             IsFront = coupler.isFrontCoupler,
             IsOpen = isOpen
-        }, DeliveryMethod.ReliableUnordered);
+        }, DeliveryMethod.ReliableOrdered);
     }
 
     public void SendBrakeCylinderReleased(ushort netId)
@@ -1205,7 +1187,7 @@ public class NetworkClient : NetworkManager
         SendPacketToServer(new CommonBrakeCylinderReleasePacket
         {
             NetId = netId
-        }, DeliveryMethod.ReliableUnordered);
+        }, DeliveryMethod.ReliableOrdered);
     }
 
     public void SendHandbrakePositionChanged(ushort netId, float position)
@@ -1259,7 +1241,7 @@ public class NetworkClient : NetworkManager
             NetId = netId,
             FuseIds = fuseIds,
             FuseValues = fuseValues
-        }, DeliveryMethod.ReliableUnordered);
+        }, DeliveryMethod.ReliableOrdered);
     }
 
     public void SendTrainSyncRequest(ushort netId)
