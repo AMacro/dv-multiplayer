@@ -473,6 +473,32 @@ public class NetworkServer : NetworkManager
         }, DeliveryMethod.ReliableUnordered, SelfPeer);
     }
 
+    public void SendTrainUncouple(Coupler coupler, bool playAudio, bool dueToBrokenCouple, bool viaChainInteraction)
+    {
+        ushort couplerNetId = coupler.train.GetNetId();
+
+        if (couplerNetId == 0)
+        {
+            LogWarning($"SendTrainUncouple failed. Coupler: {coupler.name} {couplerNetId}");
+            return;
+        }
+
+        LogDebug(() => $"SendTrainUncouple({coupler.train.ID}, {coupler.isFrontCoupler}, {dueToBrokenCouple}, {viaChainInteraction})");
+
+        SendPacketToAll(
+            new CommonTrainUncouplePacket
+            {
+                NetId = couplerNetId,
+                IsFrontCoupler = coupler.isFrontCoupler,
+                PlayAudio = playAudio,
+                ViaChainInteraction = viaChainInteraction,
+                DueToBrokenCouple = dueToBrokenCouple,
+            },
+            DeliveryMethod.ReliableOrdered,
+            SelfPeer
+        );
+    }
+
     public void SendJobsCreatePacket(NetworkedStationController networkedStation, NetworkedJob[] jobs, ITransportPeer peer = null)
     {
         Multiplayer.Log($"Sending JobsCreatePacket for stationNetId {networkedStation.NetId} with {jobs.Count()} jobs");
