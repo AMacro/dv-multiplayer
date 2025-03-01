@@ -207,6 +207,10 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
             bogie1.TrackChanged += Server_BogieTrackChanged;
             bogie2.TrackChanged += Server_BogieTrackChanged;
+
+            TrainCar.frontCoupler.Uncoupled += Server_CouplerUncoupled;
+            TrainCar.rearCoupler.Uncoupled += Server_CouplerUncoupled;
+
             TrainCar.CarDamage.CarEffectiveHealthStateUpdate += Server_CarHealthUpdate;
 
             brakeSystem.MainResPressureChanged += Server_MainResUpdate;
@@ -262,6 +266,9 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         {
             bogie1.TrackChanged -= Server_BogieTrackChanged;
             bogie2.TrackChanged -= Server_BogieTrackChanged;
+
+            TrainCar.frontCoupler.Uncoupled -= Server_CouplerUncoupled;
+            TrainCar.rearCoupler.Uncoupled -= Server_CouplerUncoupled;
 
             TrainCar.CarDamage.CarEffectiveHealthStateUpdate -= Server_CarHealthUpdate;
 
@@ -417,6 +424,11 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         fireboxDirty = true;
     }
 
+    private void Server_CouplerUncoupled(object _,UncoupleEventArgs args)
+    {
+        sendCouplers |= args.dueToBrokenCouple;
+    }
+
     private void Server_OnTick(uint tick)
     {
         if (UnloadWatcher.isUnloading)
@@ -424,7 +436,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
         Server_SendBrakeStates();
         Server_SendFireBoxState();
-        //Server_SendCouplers();
+        Server_SendCouplers();
         Server_SendCables();
         Server_SendCargoState();
         Server_SendHealthState();
@@ -462,17 +474,25 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
         sendCouplers = false;
 
-        if(TrainCar.frontCoupler.IsCoupled())
-            NetworkLifecycle.Instance.Client.SendTrainCouple(TrainCar.frontCoupler,TrainCar.frontCoupler.coupledTo,false, false);
+        if(!TrainCar.frontCoupler.IsCoupled())
+        //    NetworkLifecycle.Instance.Client.SendTrainCouple(TrainCar.frontCoupler,TrainCar.frontCoupler.coupledTo,false, false);
+        //else
+            NetworkLifecycle.Instance.Server.SendTrainUncouple(TrainCar.frontCoupler,true,true, false);
 
-        if(TrainCar.rearCoupler.IsCoupled())
-            NetworkLifecycle.Instance.Client.SendTrainCouple(TrainCar.rearCoupler,TrainCar.rearCoupler.coupledTo,false, false);
+        if(!TrainCar.rearCoupler.IsCoupled())
+        //    NetworkLifecycle.Instance.Client.SendTrainCouple(TrainCar.rearCoupler,TrainCar.rearCoupler.coupledTo,false, false);
+        //else
+            NetworkLifecycle.Instance.Server.SendTrainUncouple(TrainCar.rearCoupler, true, true, false);
 
-        if (TrainCar.frontCoupler.hoseAndCock.IsHoseConnected)
-            NetworkLifecycle.Instance.Client.SendHoseConnected(TrainCar.frontCoupler, TrainCar.frontCoupler.coupledTo, false);
+        if (!TrainCar.frontCoupler.hoseAndCock.IsHoseConnected)
+        //    NetworkLifecycle.Instance.Client.SendHoseConnected(TrainCar.frontCoupler, TrainCar.frontCoupler.coupledTo, false);
+        //else
+            NetworkLifecycle.Instance.Client.SendHoseDisconnected(TrainCar.frontCoupler, true);
 
-        if (TrainCar.rearCoupler.hoseAndCock.IsHoseConnected)
-            NetworkLifecycle.Instance.Client.SendHoseConnected(TrainCar.rearCoupler, TrainCar.rearCoupler.coupledTo, false);
+        if (!TrainCar.rearCoupler.hoseAndCock.IsHoseConnected)
+        //    NetworkLifecycle.Instance.Client.SendHoseConnected(TrainCar.rearCoupler, TrainCar.rearCoupler.coupledTo, false);
+        //else
+            NetworkLifecycle.Instance.Client.SendHoseDisconnected(TrainCar.rearCoupler, true);
 
         NetworkLifecycle.Instance.Client.SendCockState(NetId, TrainCar.frontCoupler, TrainCar.frontCoupler.IsCockOpen);
         NetworkLifecycle.Instance.Client.SendCockState(NetId, TrainCar.rearCoupler, TrainCar.rearCoupler.IsCockOpen);
