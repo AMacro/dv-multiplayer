@@ -89,7 +89,7 @@ public readonly struct TrainsetMovementPart
 
     public static TrainsetMovementPart Deserialize(NetDataReader reader)
     {
-        ushort netId = 0;
+        ushort netId;
         float speed = 0;
         float slowBuildUpStress = 0;
         Vector3? position = null;
@@ -120,6 +120,6 @@ public readonly struct TrainsetMovementPart
             rotation = QuaternionSerializer.Deserialize(reader);
         }
 
-        return new TrainsetMovementPart(0, speed, slowBuildUpStress, bd1, bd2, position, rotation);
+        return new TrainsetMovementPart(netId, speed, slowBuildUpStress, bd1, bd2, position, rotation);
     }
 }
