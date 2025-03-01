@@ -565,16 +565,16 @@ public class NetworkClient : NetworkManager
 
     private void OnCommonTrainUncouplePacket(CommonTrainUncouplePacket packet)
     {
-        //if (!NetworkedTrainCar.GetTrainCar(packet.NetId, out TrainCar trainCar))
-        //{
-        //    LogDebug(() => $"OnCommonTrainUncouplePacket() netId: {packet.NetId}, trainCar found?: {trainCar != null}");
-        //    return;
-        //}
+        if (!NetworkedTrainCar.GetTrainCar(packet.NetId, out TrainCar trainCar))
+        {
+            LogDebug(() => $"OnCommonTrainUncouplePacket() netId: {packet.NetId}, trainCar found?: {trainCar != null}");
+            return;
+        }
 
-        //LogDebug(() => $"OnCommonTrainUncouplePacket() netId: {packet.NetId}, trainCar: {trainCar.ID}, isFront: {packet.IsFrontCoupler}, playAudio: {packet.PlayAudio}, DueToBrokenCouple: {packet.DueToBrokenCouple}, viaChainInteraction: {packet.ViaChainInteraction}");
+        LogDebug(() => $"OnCommonTrainUncouplePacket() netId: {packet.NetId}, trainCar: {trainCar.ID}, isFront: {packet.IsFrontCoupler}, playAudio: {packet.PlayAudio}, DueToBrokenCouple: {packet.DueToBrokenCouple}, viaChainInteraction: {packet.ViaChainInteraction}");
 
-        //Coupler coupler = packet.IsFrontCoupler ? trainCar.frontCoupler : trainCar.rearCoupler;
-        //coupler.Uncouple(packet.PlayAudio, false, packet.DueToBrokenCouple, false/*B99 packet.ViaChainInteraction*/);
+        Coupler coupler = packet.IsFrontCoupler ? trainCar.frontCoupler : trainCar.rearCoupler;
+        coupler.Uncouple(packet.PlayAudio, false, packet.DueToBrokenCouple, false/*B99 packet.ViaChainInteraction*/);
     }
 
     private void OnCommonHoseConnectedPacket(CommonHoseConnectedPacket packet)
