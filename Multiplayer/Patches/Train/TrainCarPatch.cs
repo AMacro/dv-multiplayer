@@ -41,4 +41,11 @@ public static class TrainCarPatch
             return;
         NetworkLifecycle.Instance.Server.SendRerailTrainCar(networkedTrainCar.NetId, NetworkedRailTrack.GetFromRailTrack(rerailTrack).NetId, worldPos - WorldMover.currentMove, forward);
     }
+
+    [HarmonyPrefix]
+    [HarmonyPatch(nameof(TrainCar.UpdateCouplerJoints))]
+    private static bool UpdateCouplerJoints(TrainCar __instance)
+    {
+        return NetworkLifecycle.Instance.IsHost();
+    }
 }
