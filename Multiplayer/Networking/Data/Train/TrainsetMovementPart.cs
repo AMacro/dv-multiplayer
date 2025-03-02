@@ -103,7 +103,7 @@ public readonly struct TrainsetMovementPart
 
         if (dataType.HasFlag(MovementType.RigidBody))
         {
-            return new TrainsetMovementPart(0, RigidbodySnapshot.Deserialize(reader));
+            return new TrainsetMovementPart(netId, RigidbodySnapshot.Deserialize(reader));
         }
 
         if (dataType.HasFlag(MovementType.Physics))
