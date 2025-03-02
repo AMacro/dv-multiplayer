@@ -1,6 +1,6 @@
 {
     "Id":  "Multiplayer",
-    "Version":  "0.1.10.2",
+    "Version":  "0.1.10.4",
     "DisplayName":  "Multiplayer",
     "Author":  "Insprill, Macka, Morm",
     "EntryMethod":  "Multiplayer.Multiplayer.Load",
@@ -8,5 +8,5 @@
     "LoadAfter":  [
                       "RemoteDispatch"
                   ],
-    "Repository":  "https://www.andrewcraigmackenzie.com/unitymods/Releases.json"
+    "Repository":  "https://raw.githubusercontent.com/AMacro/dv-multiplayer/refs/heads/beta/releases.json"
 }
