@@ -494,8 +494,7 @@ public class NetworkServer : NetworkManager
                 ViaChainInteraction = viaChainInteraction,
                 DueToBrokenCouple = dueToBrokenCouple,
             },
-            DeliveryMethod.ReliableOrdered,
-            SelfPeer
+            DeliveryMethod.ReliableOrdered
         );
     }
 
