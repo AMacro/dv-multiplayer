@@ -14,7 +14,7 @@ public class NetworkTrainsetWatcher : SingletonBehaviour<NetworkTrainsetWatcher>
 
     const float DESIRED_FULL_SYNC_INTERVAL = 2f; // in seconds
     const int MAX_UNSYNC_TICKS = (int)(NetworkLifecycle.TICK_RATE * DESIRED_FULL_SYNC_INTERVAL);
-    const float VELOCITY_THRESHOLD = 0.01f;
+    public const float VELOCITY_THRESHOLD = 0.01f;
 
     protected override void Awake()
     {
@@ -91,9 +91,12 @@ public class NetworkTrainsetWatcher : SingletonBehaviour<NetworkTrainsetWatcher>
             else if (!trainCar.isStationary)
                 anyCarMoving = true;
 
-            //we can finish checking early if we have either a car moving or a car not sync'd within the max-tick threshold
+            // We can finish checking early if we have either a car moving or a car not sync'd within the max-tick threshold
             if (anyCarMoving || maxTicksReached)
+            {
+                //Multiplayer.LogDebug(() => $"Server_TickSet() TrainCar {trainCar.ID} ({netTC?.NetId}) from set: {cachedSendPacket.FirstNetId} is moving or due for sync! stationary: {trainCar.isStationary}, RB velocity: {trainCar.rb.velocity} {trainCar.rb.velocity.magnitude}, tracks dirty: {netTC?.BogieTracksDirty} sync: {netTC?.TicksSinceSync >= MAX_UNSYNC_TICKS}");
                 break;
+            }
         }
 
         //if any car is dirty or exceeded its max ticks we will re-sync the entire train
@@ -123,11 +126,8 @@ public class NetworkTrainsetWatcher : SingletonBehaviour<NetworkTrainsetWatcher>
                 //Have we exceeded the max ticks?
                 if (maxTicksReached)
                 {
-                    //Multiplayer.Log($"Max Ticks Reached for TrainSet with cars {set.firstCar.ID}, {set.lastCar.ID}");
-
                     position = trainCar.transform.position - WorldMover.currentMove;
                     rotation = trainCar.transform.rotation;
-                    networkedTrainCar.TicksSinceSync = 0;   //reset this car's tick count
                 }
 
                 trainsetParts[i] = new TrainsetMovementPart(
@@ -140,13 +140,15 @@ public class NetworkTrainsetWatcher : SingletonBehaviour<NetworkTrainsetWatcher>
                     rotation    //only used in full sync
                 );
             }
+
+            //reset this car's states
+            networkedTrainCar.TicksSinceSync = 0;
+            networkedTrainCar.BogieTracksDirty = false;
         }
 
-        //Multiplayer.Log($"Server_TickSet({set.firstCar.ID}): SendTrainsetPhysicsUpdate, tick: {cachedSendPacket.Tick}");
         cachedSendPacket.TrainsetParts = trainsetParts;
         NetworkLifecycle.Instance.Server.SendTrainsetPhysicsUpdate(cachedSendPacket, anyTracksDirty);
     }
-
     #endregion
 
     #region Client

@@ -68,6 +68,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     private const int MAX_COUPLER_ITERATIONS = 10;
     private const float MAX_FIREBOX_DELTA = 0.1f;
     private const float MAX_PORT_DELTA = 0.001f;
+    private const uint MIN_KINEMATIC_CYCLES = 10;
 
 
     public string CurrentID {  get; private set; }
@@ -121,6 +122,8 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     private Coupler couplerInteraction;
     private ChainCouplerInteraction.State originalState;
     private Coupler originalCoupledTo;
+
+    private uint kinematicCycles = 0;
     #endregion
 
     protected override bool IsIdServerAuthoritative => true;
@@ -1217,16 +1220,14 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         if (movementPart.typeFlag == TrainsetMovementPart.MovementType.RigidBody)
         {
             Vector3 expectedPosition = movementPart.RigidbodySnapshot.Position + WorldMover.currentMove;
-            Multiplayer.LogDebug(() => $"Processing derailed physics for car {CurrentID} at tick {tick}, current position: {TrainCar.transform.position} expected position: {expectedPosition}");
-            //Multiplayer.LogDebug(() => $"Client_ReceiveTrainPhysicsUpdate({TrainCar.ID}, {tick}): is RigidBody");
+            //Multiplayer.LogDebug(() => $"Processing derailed physics for car {CurrentID} at tick {tick}, current position: {TrainCar.transform.position} expected position: {expectedPosition}");
+
             TrainCar.Derail();
             movementPart.RigidbodySnapshot.Apply(TrainCar.rb);
-            //TrainCar.stress.ResetTrainStress();
-            //if (TrainCar.rb != null)
-            //    TrainCar.rb.constraints = RigidbodyConstraints.FreezeAll;
 
             Client_trainRigidbodyQueue.ReceiveSnapshot(movementPart.RigidbodySnapshot, tick);
-            Multiplayer.LogDebug(() => $"Derailed car {TrainCar.ID} positioned at {TrainCar.transform.position}");
+
+            //Multiplayer.LogDebug(() => $"Derailed car {TrainCar.ID} positioned at {TrainCar.transform.position}");
         }
         else
         {
@@ -1235,21 +1236,11 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             {
                 Vector3 worldPos = movementPart.Position + WorldMover.currentMove;
 
-                //Vector3 deltaPos = worldPos - TrainCar.transform.position;
-                //if (deltaPos.magnitude > 5f)
-                //{
-                //    // Threshold for significant position change
-                //    Multiplayer.LogWarning($"[{CurrentID}] Large position correction: {deltaPos.magnitude}m at tick {tick}");
-                //}
-
                 if (TrainCar.rb != null)
                 {
                     TrainCar.rb.MovePosition(worldPos);
                     TrainCar.rb.MoveRotation(movementPart.Rotation);
                 }
-
-                //TrainCar.transform.position = worldPos;
-                //TrainCar.transform.rotation = movementPart.Rotation;
 
                 //clear the queues?
                 Client_trainSpeedQueue.Clear();
@@ -1267,8 +1258,18 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
         }
 
-        //if (!TrainCar.derailed && TrainCar.rb != null)
-        //    TrainCar.rb.constraints = RigidbodyConstraints.None;
+        bool kinematic = movementPart.Speed < NetworkTrainsetWatcher.VELOCITY_THRESHOLD && (movementPart.RigidbodySnapshot != null && movementPart.RigidbodySnapshot.Velocity.magnitude < NetworkTrainsetWatcher.VELOCITY_THRESHOLD);
+
+        if (kinematic && kinematicCycles < MIN_KINEMATIC_CYCLES)
+            kinematicCycles++;
+        else
+            TrainCar.rb.isKinematic = kinematic;
+
+        if (!kinematic)
+        {
+            kinematicCycles = 0;
+            TrainCar.rb.isKinematic = kinematic;
+        }
     }
 
     public void Client_ReceiveBrakeStateUpdate(ClientboundBrakeStateUpdatePacket packet)
