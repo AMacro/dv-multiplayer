@@ -18,15 +18,18 @@ public class NetworkedPlayer : MonoBehaviour
 
     private string username;
 
-    public string Username {
+    public string Username
+    {
         get => username;
-        set {
+        set
+        {
             username = value;
             nameTag.SetUsername(value);
         }
     }
 
     private bool isOnCar;
+    private TrainCar trainCar;
 
     private Transform selfTransform;
     private Vector3 targetPos;
@@ -74,48 +77,61 @@ public class NetworkedPlayer : MonoBehaviour
         float t = Time.deltaTime * LERP_SPEED;
 
         Vector3 position = Vector3.Lerp(isOnCar ? selfTransform.localPosition : selfTransform.position, isOnCar ? targetPos : targetPos + WorldMover.currentMove, t);
-        Quaternion rotation = Quaternion.Lerp(isOnCar ? selfTransform.localRotation : selfTransform.rotation, targetRotation, t);
-
+        
         moveDir = Vector2.Lerp(moveDir, targetMoveDir, t);
         animationHandler.SetMoveDir(moveDir);
 
-        if (isOnCar)
+        if (isOnCar && trainCar != null)
         {
             selfTransform.localPosition = position;
-            selfTransform.localRotation = rotation;
+
+            // Calculate a world-up-respecting rotation
+            // This creates a rotation where Y points up in world space
+            // but the forward direction aligns with the car's forward projected onto the horizontal plane
+            Vector3 carForward = trainCar.transform.forward;
+            Vector3 worldUp = Vector3.up;
+
+            // Project car's forward onto the horizontal plane
+            Vector3 horizontalForward = Vector3.ProjectOnPlane(carForward, worldUp).normalized;
+            if (horizontalForward.sqrMagnitude < 0.001f)
+                horizontalForward = Vector3.ProjectOnPlane(trainCar.transform.right, worldUp).normalized;
+
+            // Create base orientation aligned with world up but facing car's forward direction
+            Quaternion baseRotation = Quaternion.LookRotation(horizontalForward, worldUp);
+
+            // Apply the desired Y rotation (player's facing direction) on top of this base rotation
+            Quaternion targetWorldRotation = baseRotation * Quaternion.Euler(0, targetRotation.eulerAngles.y, 0);
+
+            // Apply rotation in world space despite being a child transform
+            selfTransform.rotation = Quaternion.Lerp(selfTransform.rotation, targetWorldRotation, t);
         }
         else
         {
             selfTransform.position = position;
-            selfTransform.rotation = rotation;
+            selfTransform.rotation = Quaternion.Lerp(transform.rotation, targetRotation, t);
         }
     }
 
-    public void UpdatePosition(Vector3 position, Vector2 moveDir, float rotation, bool isJumping, bool movePacketIsOnCar)
+    public void UpdatePosition(Vector3 position, Vector2 moveDir, float rotationY, bool isJumping, bool movePacketIsOnCar)
     {
+        targetPos = position;
         targetMoveDir = moveDir;
+
         animationHandler.SetIsJumping(isJumping);
 
         if (isOnCar != movePacketIsOnCar)
             return;
 
-        targetPos = position;
-        targetRotation = Quaternion.Euler(0, rotation, 0);
+        targetRotation = Quaternion.Euler(0, rotationY, 0);
     }
 
     public void UpdateCar(ushort netId)
     {
-        isOnCar = NetworkedTrainCar.GetTrainCar(netId, out TrainCar trainCar);
+        isOnCar = NetworkedTrainCar.GetTrainCar(netId, out trainCar);
 
-        if(isOnCar && trainCar == null)
-        {
-            //we have a desync!
-            Multiplayer.LogWarning($"Desync detected! Trying to update player '{username}' position to TrainCar netId {netId}, but car is null!");
-            return;
-        }
-
-        selfTransform.SetParent(isOnCar ? trainCar.transform : null, true);
-        targetPos = isOnCar ? transform.localPosition : selfTransform.position;
-        targetRotation = isOnCar ? transform.localRotation : selfTransform.rotation;
+        if (isOnCar)
+            selfTransform.SetParent(trainCar.transform, true);
+        else
+            selfTransform.SetParent(null, true);
     }
 }
