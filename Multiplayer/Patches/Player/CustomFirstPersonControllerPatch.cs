@@ -19,9 +19,16 @@ public static class CustomFirstPersonControllerPatch
     private static float lastRotationY;
     private static float lastLookPosition;
     private static bool sentFinalPosition;
+    private static bool wasCrouching;
+    private static bool wasSitting;
+    private static bool wasSwimming;
+    
 
     private static bool isJumping;
     private static bool isOnCar;
+    private static bool isCrouching;
+    private static bool isSitting;
+    private static float sitHeight;
     private static TrainCar car;
 
     [HarmonyPatch(nameof(CustomFirstPersonController.Awake))]
@@ -76,6 +83,39 @@ public static class CustomFirstPersonControllerPatch
 
         lookPosition = rawHeadPitch > 180f ? rawHeadPitch - 360f : rawHeadPitch;
         bool lookPositionChanged = Math.Abs(lastLookPosition - lookPosition) > ROTATION_THRESHOLD;
+
+        if (fps.IsCrouching)
+        {
+            wasCrouching = true;
+            Multiplayer.LogDebug(() =>$"Crouch");
+        }
+        else if(wasCrouching)
+        {
+            wasCrouching = false;
+            Multiplayer.LogDebug(() => $"Stand from crouch");
+        }
+
+        if (fps.provider.IsSitting)
+        {
+            wasSitting = true;
+            Multiplayer.LogDebug(() => $"Sit");
+        }
+        else if (wasSitting)
+        {
+            wasSitting = false;
+            Multiplayer.LogDebug(() => $"Stand from sit");
+        }
+
+        if (fps.underwater)
+        {
+            wasSwimming = true;
+            Multiplayer.LogDebug(() => $"Swim");
+        }
+        else if (wasSwimming)
+        {
+            wasSwimming = false;
+            Multiplayer.LogDebug(() => $"Stand from swim");
+        }
 
         ushort carNetID = isOnCar ? car.GetNetId() : (ushort)0;
 

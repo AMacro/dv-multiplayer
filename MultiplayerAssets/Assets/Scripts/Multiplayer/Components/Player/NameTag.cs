@@ -31,6 +31,9 @@ namespace Multiplayer.Editor.Components.Player
 
         private void SetupText()
         {
+#if UNITY_EDITOR
+            return;
+#endif
             InitFont();
             usernameText = CreateText(usernameObject);
             usernameText.fontSize = 12.0f;
