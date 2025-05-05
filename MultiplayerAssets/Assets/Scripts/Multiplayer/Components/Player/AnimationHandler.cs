@@ -13,6 +13,7 @@ namespace Multiplayer.Editor.Components.Player
         private static readonly int hash_Horizontal = Animator.StringToHash("Horizontal");
         private static readonly int hash_Crouch = Animator.StringToHash("Crouch");
         private static readonly int hash_Sit = Animator.StringToHash("Sit");
+        private static readonly int hash_Swim = Animator.StringToHash("Swim");
 
         [UsedImplicitly]
         public void SetIsJumping(bool isJumping)
@@ -33,6 +34,12 @@ namespace Multiplayer.Editor.Components.Player
         }
 
         [UsedImplicitly]
+        public void SetIsSwimming(bool isSwimming)
+        {
+            animator.SetBool(hash_Swim, isSwimming);
+        }
+
+        [UsedImplicitly]
         public void SetMoveDir(Vector2 moveDir)
         {
             animator.SetFloat(hash_Horizontal, moveDir.x);
@@ -43,6 +50,7 @@ namespace Multiplayer.Editor.Components.Player
         bool isJumping;
         bool isCrouching;
         bool isSitting;
+        bool isSwimming;
         [UsedImplicitly]
         void Update()
         {
@@ -55,6 +63,11 @@ namespace Multiplayer.Editor.Components.Player
 
             isSitting = Input.GetButton("Sit");
             SetIsSitting(isSitting);
+
+            isSwimming = Input.GetKey(KeyCode.V);
+            SetIsSwimming(isSwimming);
+
+            SetMoveDir(new Vector2(Input.GetAxis("Horizontal"), Input.GetAxis("Vertical")));
         }
 #endif
     }
