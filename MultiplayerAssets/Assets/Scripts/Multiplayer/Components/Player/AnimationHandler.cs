@@ -46,23 +46,15 @@ namespace Multiplayer.Editor.Components.Player
         [UsedImplicitly]
         void Update()
         {
-            if (Input.GetButton("Jump"))
-            {
-                isJumping = !isJumping;
-                SetIsJumping(isJumping);
-            }
-            else if (Input.GetButton("Crouch"))
-            {
-                isCrouching = !isCrouching;
-                Debug.Log($"Crouch {isCrouching}");
-                SetIsCrouching(isCrouching);
-            }
-            else if (Input.GetButton("Sit"))
-            {
-                isSitting = !isSitting;
-                Debug.Log($"Sit {isSitting}");
-                SetIsCrouching(isCrouching);
-            }
+
+            isJumping = Input.GetButton("Jump");
+            SetIsJumping(isJumping);
+
+            isCrouching = Input.GetButton("Crouch");
+            SetIsCrouching(isCrouching);
+
+            isSitting = Input.GetButton("Sit");
+            SetIsSitting(isSitting);
         }
 #endif
     }
