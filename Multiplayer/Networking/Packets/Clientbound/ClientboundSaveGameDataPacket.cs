@@ -3,6 +3,7 @@ using DV.JObjectExtstensions;
 using DV.ServicePenalty;
 using DV.UserManagement;
 using Multiplayer.Components.Networking;
+using Multiplayer.Components.Networking.World;
 using Multiplayer.Components.SaveGame;
 using Multiplayer.Networking.Data;
 using Newtonsoft.Json;
@@ -23,6 +24,7 @@ public class ClientboundSaveGameDataPacket
     public float Rotation { get; set; }
 
     public bool HasDebt { get; set; }
+   // public ItemData[] InventoryData { get; set; }
     // public string[] Debt_existing_locos { get; set; }
     // public string[] Debt_deleted_locos { get; set; }
     // public string[] Debt_existing_jobs { get; set; }
@@ -55,6 +57,18 @@ public class ClientboundSaveGameDataPacket
         });
 
         return new ClientboundSaveGameDataPacket {
+        //SaveGameData playerSG = new SaveGameData();
+        //playerSG.SetInt(SaveGameKeys.Starting_items,data.GetInt(SaveGameKeys.Starting_items) ?? 0);
+        //playerSG.dataObject.Add(SaveGameKeys.Storage_Inventory,playerData.Property(SaveGameKeys.Storage_Inventory));
+
+        //Multiplayer.LogDebug(() => "playerData:\r\n" + playerData.ToString());
+        //Multiplayer.LogDebug(()=> "PlayerSG:\r\n" + playerSG.dataObject.ToString());
+
+        //load the player inventory
+        //NetworkedStorage.LoadInventory(player, playerSG, playerData == null);
+
+        return new ClientboundSaveGameDataPacket
+        {
             GameMode = data.GetString(SaveGameKeys.Game_mode),
             SerializedDifficulty = difficulty.ToString(Formatting.None),
             Money = StartingItemsController.Instance == null || !StartingItemsController.Instance.itemsLoaded ? data.GetFloat(SaveGameKeys.Player_money).GetValueOrDefault(0) : (float)Inventory.Instance.PlayerMoney,
@@ -63,7 +77,8 @@ public class ClientboundSaveGameDataPacket
             UnlockedGarages = data.GetStringArray(SaveGameKeys.Garages),
             Position = playerData?.GetVector3(SaveGameKeys.Player_position) ?? LevelInfo.DefaultSpawnPosition,
             Rotation = playerData?.GetFloat(SaveGameKeys.Player_rotation) ?? LevelInfo.DefaultSpawnRotation.y,
-            HasDebt = data.GetFloat(SaveGameKeys.Debt_total).GetValueOrDefault(CareerManagerDebtController.Instance != null ? CareerManagerDebtController.Instance.NumberOfNonZeroPricedDebts : 0) > 0
+            HasDebt = data.GetFloat(SaveGameKeys.Debt_total).GetValueOrDefault(CareerManagerDebtController.Instance != null ? CareerManagerDebtController.Instance.NumberOfNonZeroPricedDebts : 0) > 0,
+            //InventoryData = ItemData.From(player.inventory.ToArray()),
             // Debt_existing_locos = data.GetJObjectArray(SaveGameKeys.Debt_existing_locos)?.NotNull().Select(j => j.ToString()).ToArray(),
             // Debt_deleted_locos = data.GetJObjectArray(SaveGameKeys.Debt_deleted_locos)?.NotNull().Select(j => j.ToString()).ToArray(),
             // Debt_existing_jobs = data.GetJObjectArray(SaveGameKeys.Debt_existing_jobs)?.NotNull().Select(j => j.ToString()).ToArray(),

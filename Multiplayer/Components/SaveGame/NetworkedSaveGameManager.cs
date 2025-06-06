@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using DV.InventorySystem;
 using DV.JObjectExtstensions;
 using DV.ThingTypes;
@@ -15,6 +16,8 @@ public class NetworkedSaveGameManager : SingletonBehaviour<NetworkedSaveGameMana
 {
     private const string ROOT_KEY = "Multiplayer";
     private const string PLAYERS_KEY = "Players";
+    private const string PLAYER_INVENTORY_KEY = "Storage_Inventory";
+    private const string PLAYER_LOST_AND_FOUND_KEY = "Storage_LostAndFound";
 
     protected override void Awake()
     {
@@ -80,11 +83,25 @@ public class NetworkedSaveGameManager : SingletonBehaviour<NetworkedSaveGameMana
 
         root.SetJObject(PLAYERS_KEY, players);
         data.SetJObject(ROOT_KEY, root);
+
+        Multiplayer.LogDebug(() => "Internal Data:\r\n" + data.GetJsonString());
     }
 
     public JObject Server_GetPlayerData(SaveGameData data, Guid guid)
     {
         return data?.GetJObject(ROOT_KEY)?.GetJObject(PLAYERS_KEY)?.GetJObject(guid.ToString());
+    }
+
+    public List<StorageItemData> Server_GetPlayerInventory(JObject playerData)
+    {
+        List<StorageItemData> inventory = playerData?.GetJObject(PLAYER_INVENTORY_KEY).ToObject<List<StorageItemData>>();
+        return inventory == null ? inventory : new List<StorageItemData>();
+    }
+
+    public List<StorageItemData> Server_GetPlayerLostAndFound(JObject playerData)
+    {
+        List<StorageItemData> inventory = playerData?.GetJObject(PLAYER_LOST_AND_FOUND_KEY).ToObject<List<StorageItemData>>();
+        return inventory == null ? inventory : new List<StorageItemData>();
     }
 
     #endregion
