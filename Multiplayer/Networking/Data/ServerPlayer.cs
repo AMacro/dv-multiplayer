@@ -4,6 +4,8 @@ using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Components.Networking.World;
 using UnityEngine;
+using Multiplayer.Components.Networking.World;
+using System.Linq;
 
 namespace Multiplayer.Networking.Data;
 
@@ -22,6 +24,8 @@ public class ServerPlayer
     public Dictionary<NetworkedItem, float> NearbyItems { get; private set; } = new Dictionary<NetworkedItem, float>(); //NetworkedItem, time since near the item
     public HashSet<ushort> OwnedItems { get; private set; } = new HashSet<ushort>();
     public StorageBase Storage { get; set; } = new StorageBase();
+    public List<NetworkedItem> inventory = new List<NetworkedItem>();
+    public List<NetworkedItem> lostAndFound = new List<NetworkedItem>();
 
     private Vector3 _lastWorldPos = Vector3.zero;
     private Vector3 _lastAbsoluteWorldPosition = Vector3.zero;
@@ -145,4 +149,23 @@ public class ServerPlayer
     {
         return $"{Id} ({Username}, {Guid.ToString()})";
     }
+
+    public void AddInventory(ItemBase item)
+    {
+
+    }
+
+    public void RemoveInventory(ItemBase item)
+    {
+
+    }
+
+    public Tuple<ushort,StorageItemData>[] GetInventory()
+    {
+     return inventory.Select(item => new { item.NetId, item.StorageData })
+                 .AsEnumerable()
+                 .Select(c => new Tuple<ushort, StorageItemData>(c.NetId, c.StorageData))
+                 .ToArray();
+    }
+
 }
