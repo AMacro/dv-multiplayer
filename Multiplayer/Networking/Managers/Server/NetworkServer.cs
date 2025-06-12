@@ -778,7 +778,7 @@ public class NetworkServer : NetworkManager
 
                 for (int i = 0; i < jobs.Length; i++)
                 {
-                    SendJobsCreatePacket(netStation, [jobs[i]]);
+                    SendJobsCreatePacket(netStation, [jobs[i]], peer);
                 }
             }
             else

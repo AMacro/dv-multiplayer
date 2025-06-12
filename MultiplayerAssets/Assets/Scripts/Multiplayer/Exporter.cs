@@ -14,7 +14,6 @@ namespace Multiplayer.Editor
         private const string DEST_DIR = "../build";
         private const string ASSET_BUNDLE_DEST_NAME = ASSET_BUNDLE_NAME + ".assetbundle";
         private static readonly string[] COPY_DLLS = {
-            "LiteNetLib.dll",
             "MultiplayerEditor.dll",
             "UnityChan.dll"
         };

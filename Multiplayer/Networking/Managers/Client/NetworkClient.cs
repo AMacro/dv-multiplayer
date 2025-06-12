@@ -167,6 +167,18 @@ public class NetworkClient : NetworkManager
         netPacketProcessor.SubscribeNetSerializable<CommonItemChangePacket>(OnCommonItemChangePacket);
     }
 
+    private void OnLoaded()
+    {
+        Log($"WorldStreamingInit.LoadingFinished()");
+        NetworkedItemManager.Instance.CheckInstance();
+        Log($"WorldStreamingInit.LoadingFinished() CacheWorldItems()");
+        NetworkedItemManager.Instance.CacheWorldItems();
+        Log($"WorldStreamingInit.LoadingFinished() SendReadyPacket()");
+        SendReadyPacket();
+
+        WorldStreamingInit.LoadingFinished -= OnLoaded;
+    }
+
     #region Net Events
 
     public override void OnPeerConnected(ITransportPeer peer)
@@ -339,15 +351,7 @@ public class NetworkClient : NetworkManager
         Object.DontDestroyOnLoad(go);
 
         SceneSwitcher.SwitchToScene(DVScenes.Game);
-        WorldStreamingInit.LoadingFinished += () =>
-        {
-            Log($"WorldStreamingInit.LoadingFinished()");
-            NetworkedItemManager.Instance.CheckInstance();
-            Log($"WorldStreamingInit.LoadingFinished() CacheWorldItems()");
-            NetworkedItemManager.Instance.CacheWorldItems();
-            Log($"WorldStreamingInit.LoadingFinished() SendReadyPacket()");
-            SendReadyPacket();
-        };
+        WorldStreamingInit.LoadingFinished += OnLoaded;
 
         TrainStress.globalIgnoreStressCalculation = true;
 
