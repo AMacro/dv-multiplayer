@@ -485,6 +485,7 @@ public class NetworkClient : NetworkManager
         SendTrainSyncRequest(spawnPart.NetId);
     }
 
+    public void OnClientboundSpawnTrainSetPacket(ClientboundSpawnTrainSetPacket packet)
     {
         LogDebug(() => $"Spawning trainset consisting of {string.Join(", ", packet.SpawnParts.Select(p => $"{p.CarId} ({p.LiveryId}) with netId: {p.NetId}"))}");
 
