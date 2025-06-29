@@ -31,8 +31,12 @@ using System.Net;
 using Multiplayer.Networking.Packets.Serverbound.Train;
 using Multiplayer.Networking.Packets.Unconnected;
 using System.Text;
+using DV.Utils;
+using Multiplayer.Components;
 using Multiplayer.Networking.Data.Train;
 using Multiplayer.Networking.TransportLayers;
+using Multiplayer.Patches.CommsRadio;
+using Multiplayer.Patches.Train;
 
 
 namespace Multiplayer.Networking.Managers.Server;
@@ -132,6 +136,7 @@ public class NetworkServer : NetworkManager
         netPacketProcessor.SubscribeReusable<ServerboundTrainSyncRequestPacket>(OnServerboundTrainSyncRequestPacket);
         netPacketProcessor.SubscribeReusable<ServerboundTrainDeleteRequestPacket, ITransportPeer>(OnServerboundTrainDeleteRequestPacket);
         netPacketProcessor.SubscribeReusable<ServerboundTrainRerailRequestPacket, ITransportPeer>(OnServerboundTrainRerailRequestPacket);
+        netPacketProcessor.SubscribeReusable<ServerboundTrainSetSpawnRequestPacket, ITransportPeer>(OnServerboundTrainSpawnRequestPacket);
         netPacketProcessor.SubscribeReusable<ServerboundLicensePurchaseRequestPacket, ITransportPeer>(OnServerboundLicensePurchaseRequestPacket);
         netPacketProcessor.SubscribeReusable<CommonChangeJunctionPacket, ITransportPeer>(OnCommonChangeJunctionPacket);
         netPacketProcessor.SubscribeReusable<CommonRotateTurntablePacket, ITransportPeer>(OnCommonRotateTurntablePacket);
@@ -1066,6 +1071,13 @@ public class NetworkServer : NetworkManager
         }
 
         trainCar.Rerail(networkedRailTrack.RailTrack, position, packet.Forward);
+    }
+
+    private void OnServerboundTrainSpawnRequestPacket(ServerboundTrainSetSpawnRequestPacket packet, ITransportPeer peer)
+    {
+        LogDebug(() => $"Spawning trainset consisting of {string.Join(", ", packet.SpawnParts.Select(p => $"{p.CarId} ({p.LiveryId}) with netId: {p.NetId}"))}");
+
+        NetworkedCarSpawner.SpawnNewCar(packet);
     }
 
     private void OnServerboundLicensePurchaseRequestPacket(ServerboundLicensePurchaseRequestPacket packet, ITransportPeer peer)

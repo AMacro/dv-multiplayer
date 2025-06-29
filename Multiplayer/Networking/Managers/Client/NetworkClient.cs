@@ -36,6 +36,7 @@ using UnityModManagerNet;
 using Object = UnityEngine.Object;
 using Multiplayer.Networking.Packets.Serverbound.Train;
 using System.Linq;
+using System.Text;
 using LiteNetLib.Utils;
 using DV.UserManagement;
 using DV.Common;
@@ -484,7 +485,6 @@ public class NetworkClient : NetworkManager
         SendTrainSyncRequest(spawnPart.NetId);
     }
 
-    private void OnClientboundSpawnTrainSetPacket(ClientboundSpawnTrainSetPacket packet)
     {
         LogDebug(() => $"Spawning trainset consisting of {string.Join(", ", packet.SpawnParts.Select(p => $"{p.CarId} ({p.LiveryId}) with netId: {p.NetId}"))}");
 
@@ -1294,6 +1294,28 @@ public class NetworkClient : NetworkManager
             Position = position,
             Forward = forward
         }, DeliveryMethod.ReliableUnordered);
+    }
+
+    public void SendTrainsetSpawnRequestPacket(List<TrainCar> set, bool autoCouple)
+    {
+
+        LogDebug(() =>
+        {
+            StringBuilder sb = new();
+
+            sb.Append($"SendSpawnTrainSetRequest() Sending trainset {set?.FirstOrDefault()?.GetNetId()} with {set?.Count} cars");
+
+            TrainCar[] noNetId = set?.Where(car => car.GetNetId() == 0).ToArray();
+
+            if (noNetId.Length > 0)
+                sb.AppendLine($"Erroneous cars!: {string.Join(", ", noNetId.Select(car => $"{{{car?.ID}, {car?.CarGUID}, {car.logicCar != null}}}"))}");
+
+            return sb.ToString();
+
+        });
+
+        var packet = ServerboundTrainSetSpawnRequestPacket.FromTrainSet(set, autoCouple);
+        SendPacketToServer(packet, DeliveryMethod.ReliableOrdered);
     }
 
     public void SendLicensePurchaseRequest(string id, bool isJobLicense)

@@ -4,6 +4,7 @@ using DV.InventorySystem;
 using HarmonyLib;
 using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.Train;
+using Multiplayer.Components.Networking.World;
 using Multiplayer.Utils;
 using UnityEngine;
 
@@ -13,6 +14,14 @@ namespace Multiplayer.Patches.CommsRadio;
 [HarmonyPatch(typeof(CommsRadioCarSpawner))]
 public static class CommsRadioCarSpawnerPatch
 {
+    public static CommsRadioCarSpawner CommsRadioCarSpawnerInstance;
+    [HarmonyPrefix]
+    [HarmonyPatch("Awake")]
+    private static void AwakePrefix(CommsRadioCarSpawner __instance)
+    {
+        CommsRadioCarSpawnerInstance = __instance;
+    }
+
     [HarmonyPrefix]
     [HarmonyPatch(nameof(CommsRadioCarSpawner.OnUse))]
     private static bool OnUse_Prefix(CommsRadioCarSpawner __instance)
@@ -23,9 +32,22 @@ public static class CommsRadioCarSpawnerPatch
             return true;
 
         //temporarily disable client spawning
-        CommsRadioController.PlayAudioFromRadio(__instance.cancelSound, __instance.transform);
-        __instance.ClearFlags();
-        return false;
+        //CommsRadioController.PlayAudioFromRadio(__instance.spawnVehicleSound, __instance.transform);
+
+        //NetworkLifecycle.Instance.Client.SendTrainSpawnRequest(
+        //    __instance.category,
+        //    __instance.selectedCarLiveryIndex,
+        //    __instance.selectedCarTypeIndex,
+        //    NetworkedRailTrack.GetFromRailTrack(__instance.destinationTrack).NetId,
+        //    (Vector3)__instance.closestPointOnDestinationTrack.Value.position,
+        //    __instance.closestPointOnDestinationTrack.Value.forward
+        //);
+
+        //__instance.ClearFlags();
+
+
+        //return false;
+        return true;
 
     }
 }

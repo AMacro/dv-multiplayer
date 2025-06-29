@@ -308,3 +308,5 @@ MultiplayerAssets/ProjectSettings/*
 !MultiplayerAssets/Packages
 /Lobby Servers/Rust Server/target
 *.pem
+OtherReffs/UnityChan.dll
+OtherReffs/MultiplayerEditor.dll

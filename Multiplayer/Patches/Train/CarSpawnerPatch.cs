@@ -3,6 +3,7 @@ using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Utils;
 using System.Collections.Generic;
+using UnityEngine;
 
 namespace Multiplayer.Patches.Train;
 
@@ -24,7 +25,7 @@ public static class CarSpawner_Patch
         NetworkLifecycle.Instance.Server?.SendDestroyTrainCar(networkedTrainCar);
     }
 
-    //Called from 
+    //Called from
     [HarmonyPatch(nameof(CarSpawner.SpawnCars))]
     [HarmonyPostfix]
     private static void SpawnCars(List<TrainCar> __result)
@@ -52,7 +53,11 @@ public static class CarSpawner_Patch
             return;
 
         if (!NetworkLifecycle.Instance.IsHost())
-            return;
+        {
+            Multiplayer.LogDebug(() => $"SpawnCarFromRemote() {__result?.carLivery?.name} spawned, sending to players");
+            NetworkLifecycle.Instance.Client.SendTrainsetSpawnRequestPacket([__result], true);
+            CarSpawner._instance.DeleteCar(__result);
+        }
 
         if (__result == null)
             return;
@@ -66,6 +71,10 @@ public static class CarSpawner_Patch
     [HarmonyPostfix]
     private static void SpawnCarOnClosestTrack(TrainCar __result)
     {
+        Multiplayer.Log("Test");
+        Multiplayer.LogError("SpawnCarOnClosestTrack()" + __result + " and " +UnloadWatcher.isUnloading+ " and " +!NetworkLifecycle.Instance.IsHost());
+
+
         if (UnloadWatcher.isUnloading)
             return;
 
@@ -76,6 +85,7 @@ public static class CarSpawner_Patch
             return;
 
         Multiplayer.LogDebug(() => $"SpawnCarOnClosestTrack() {__result?.carLivery?.name} spawned, sending to players");
+        Multiplayer.LogError(__result?.carLivery?.name + " spawned, sending to players "+ __result.transform.position);
         NetworkLifecycle.Instance.Server.SendSpawnTrainset([__result], true, true);
 
     }
