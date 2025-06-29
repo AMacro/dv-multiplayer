@@ -267,7 +267,8 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
         }
         else if (networkedJob.Job.State == JobState.InProgress)
         {
-            takenJobs.Add(newJob); 
+            takenJobs.Add(newJob);
+            newJob.TakeJob(true); //take job as if loaded from save to prevent debt controller kicking in
         }
         else
         {
@@ -424,6 +425,8 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
                 availableJobs.Remove(netJob.Job);
                 takenJobs.Add(netJob.Job);
 
+                netJob.Job.TakeJob(true); //take job as if loaded from save to prevent debt controller kicking in
+
                 if (canPrint)
                 {
                     JobBooklet jobBooklet = BookletCreator.CreateJobBooklet(netJob.Job, validator.bookletPrinter.spawnAnchor.position, validator.bookletPrinter.spawnAnchor.rotation, WorldMover.OriginShiftParent, true);
@@ -440,6 +443,7 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
             case JobState.Completed:
                 takenJobs.Remove(netJob.Job);
                 completedJobs.Add(netJob.Job);
+                netJob.Job.CompleteJob();
 
                 if (canPrint)
                 {
@@ -459,6 +463,7 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
             case JobState.Abandoned:
                 takenJobs.Remove(netJob.Job);
                 abandonedJobs.Add(netJob.Job);
+                netJob.Job.AbandonJob();
                 StartCoroutine(UpdateCarPlates(netJob.JobCars, string.Empty));
                 break;
 

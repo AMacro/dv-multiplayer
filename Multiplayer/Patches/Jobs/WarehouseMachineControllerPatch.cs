@@ -1,55 +1,132 @@
-﻿using System.Collections;
+using DV.Logic.Job;
+using DV.ThingTypes;
+using HarmonyLib;
 using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.Jobs;
+using Multiplayer.Components.Networking.Train;
 using Multiplayer.Networking.Data;
-using UnityEngine;
+using static WarehouseMachineController;
 
 namespace Multiplayer.Patches.Jobs;
-
-using HarmonyLib;
 
 [HarmonyPatch(typeof(WarehouseMachineController))]
 public class WarehouseMachineControllerPatch
 {
     [HarmonyPrefix]
-    [HarmonyPatch("StartUnloadSequence")]
-    public static void StartUnloadSequence_Prefix(WarehouseMachineController __instance)
+    [HarmonyPatch(nameof(WarehouseMachineController.Awake))]
+    public static void Awake(WarehouseMachineController __instance)
     {
-        __instance.displayTrainInRangeText.text = __instance.warehouseMachine.ID;
+        __instance.gameObject.AddComponent<NetworkedWarehouseMachineController>();
+    }
 
+    [HarmonyPrefix]
+    [HarmonyPatch(nameof(WarehouseMachineController.SetScreen))]
+    public static bool SetScreen(WarehouseMachineController __instance, TextPreset preset, bool isLoading, string jobId, Car car, CargoType_v2 cargoType)
+    {
         if (!NetworkLifecycle.Instance.IsHost())
+            return true;
+
+        Multiplayer.LogDebug(() => $"WarehouseMachineControllerPatch.SetScreen() is host");
+
+        bool skip = preset switch
         {
-            SendValidationRequest(__instance, WarehouseAction.Unload);
+            TextPreset.Idle => true,
+            TextPreset.TrainInRange => true,
+            TextPreset.ClearTrainInRange => true,
+            _ => false
+        };
+
+        Multiplayer.LogDebug(() => $"WarehouseMachineControllerPatch.SetScreen() skipping: {skip}");
+        if (skip)
+            return true;
+
+        var netMachine = NetworkedWarehouseMachineController.GetFromWarehouseMachineController(__instance);
+        if (netMachine == null)
+        {
+            Multiplayer.LogError($"WarehouseMachineControllerPatch.SetScreen(): Failed to get NetworkedWarehouseMachineController for {__instance.warehouseTrackName}");
+            return true;
         }
 
+        Multiplayer.LogDebug(() => $"WarehouseMachineControllerPatch.SetScreen() NetMachine found");
+
+        //obtain serialisable info
+        ushort carNetId = 0;
+        ushort jobNetId = 0;
+        CargoType cargoTypeV1 = CargoType.None;
+
+        if (car != null)
+        {
+            Multiplayer.LogDebug(() => $"WarehouseMachineControllerPatch.SetScreen() car not null");
+            var tc = car.TrainCar();
+            if (tc == null || !NetworkedTrainCar.TryGetFromTrainCar(tc, out var netTC))
+            {
+                Multiplayer.LogWarning($"WarehouseMachineControllerPatch.SetScreen() Failed to get NetworkedTrainCar for {car?.ID}");
+                return true;
+            }
+
+            Multiplayer.LogDebug(() => $"WarehouseMachineControllerPatch.SetScreen() NetCar found");
+            carNetId = netTC.NetId;
+        }
+
+        if (!string.IsNullOrEmpty(jobId))
+        {
+            if(!NetworkedJob.TryGetFromJobId(jobId, out var netJob))
+            {
+                Multiplayer.LogWarning($"WarehouseMachineControllerPatch.SetScreen() Failed to get NetworkedJob for {jobId}");
+                return true;
+            }
+
+            Multiplayer.LogDebug(() => $"WarehouseMachineControllerPatch.SetScreen() NetJob found");
+            jobNetId = netJob.NetId;
+        }
+
+        if (cargoType != null)
+                cargoTypeV1 = cargoType.v1;
+
+        NetworkLifecycle.Instance.Server.SendWarehouseControllerUpdate(netMachine.NetId, isLoading, jobNetId, carNetId, cargoTypeV1, preset);
+
+        return false;
+    }
+
+    [HarmonyPrefix]
+    [HarmonyPatch("StartUnloadSequence")]
+    public static bool StartUnloadSequence_Prefix(WarehouseMachineController __instance)
+    {
+        if (NetworkLifecycle.Instance.IsHost())
+            return true;
+
+        SendValidationRequest(__instance, WarehouseAction.Unload);
+        return false;
     }
 
     [HarmonyPrefix]
     [HarmonyPatch("StartLoadSequence")]
-    public static void StartLoadSequence_Prefix(WarehouseMachineController __instance)
+    public static bool StartLoadSequence_Prefix(WarehouseMachineController __instance)
     {
-        __instance.displayTrainInRangeText.text = __instance.warehouseMachine.ID;
+        if (NetworkLifecycle.Instance.IsHost())
+            return true;
 
-        if (!NetworkLifecycle.Instance.IsHost())
-        {
-            SendValidationRequest(__instance, WarehouseAction.Load);
-        }
-
+        SendValidationRequest(__instance, WarehouseAction.Load);
+        return false;
     }
 
-    private static void SendValidationRequest(WarehouseMachineController machine,WarehouseAction action)
+    private static void SendValidationRequest(WarehouseMachineController machine, WarehouseAction action)
     {
-        //find the current station we're at
-        if (!string.IsNullOrEmpty(machine.warehouseTrackName))
-        {
-            string id = machine.warehouseMachine.ID;
+        string id = machine?.warehouseMachine?.ID;
+        var netController =  NetworkedWarehouseMachineController.GetFromWarehouseMachineController(machine);
 
-            NetworkLifecycle.Instance.Client.SendWarehouseRequest(action, id);
-            //CoroutineManager.Instance.StartCoroutine(AwaitResponse(machine, action));
-        }
-        else
+        if (string.IsNullOrEmpty(id))
         {
-            NetworkLifecycle.Instance.Client.LogError($"Failed to validate {action} for {machine.warehouseMachine.ID}. Warehouse not found!");
+            NetworkLifecycle.Instance.Client.LogError($"Failed to validate {action} for {machine?.name} at {machine?.warehouseTrackName}. Warehouse not found!");
+            return;
         }
+
+        if (netController == null)
+        {
+            NetworkLifecycle.Instance.Client.LogError($"Failed to find NetworkedWarehouseMachineController {machine?.warehouseTrackName}. Warehouse not found!");
+            return;
+        }
+
+        NetworkLifecycle.Instance.Client.SendWarehouseRequest(action, netController.NetId);
     }
 }

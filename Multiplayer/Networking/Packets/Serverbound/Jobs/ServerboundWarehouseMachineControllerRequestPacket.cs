@@ -1,8 +1,9 @@
 using Multiplayer.Networking.Data;
-namespace Multiplayer.Networking.Packets.Clientbound.Jobs;
+
+namespace Multiplayer.Networking.Packets.Serverbound.Jobs;
 
 public class ServerboundWarehouseMachineControllerRequestPacket
 {
-    public string WarehouseMachineID { get; set; }
-    public WarehouseAction warehouseAction { get; set; }
+    public ushort NetId { get; set; }
+    public WarehouseAction WarehouseAction { get; set; }
 }
