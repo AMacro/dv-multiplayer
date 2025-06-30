@@ -1,8 +1,10 @@
+using System.Collections;
 using HarmonyLib;
 using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Utils;
 using System.Collections.Generic;
+using DV.Utils;
 using UnityEngine;
 
 namespace Multiplayer.Patches.Train;
@@ -10,10 +12,19 @@ namespace Multiplayer.Patches.Train;
 [HarmonyPatch(typeof(CarSpawner))]
 public static class CarSpawner_Patch
 {
+    public static List<string> DeleteWithOutPatch = new();
+
     [HarmonyPatch(nameof(CarSpawner.PrepareTrainCarForDeleting))]
     [HarmonyPrefix]
     private static void PrepareTrainCarForDeleting(TrainCar trainCar)
     {
+        Multiplayer.Log("Deleting Train Car List "+DeleteWithOutPatch);
+        if (!NetworkLifecycle.Instance.IsHost() && DeleteWithOutPatch.Contains(trainCar.ID))
+        {
+            Multiplayer.Log("Deleting Train Car"+trainCar.ID);
+            DeleteWithOutPatch.Remove(trainCar.ID);
+            return;
+        }
         if (UnloadWatcher.isUnloading)
             return;
 
@@ -55,8 +66,9 @@ public static class CarSpawner_Patch
         if (!NetworkLifecycle.Instance.IsHost())
         {
             Multiplayer.LogDebug(() => $"SpawnCarFromRemote() {__result?.carLivery?.name} spawned, sending to players");
-            NetworkLifecycle.Instance.Client.SendTrainsetSpawnRequestPacket([__result], true);
-            CarSpawner._instance.DeleteCar(__result);
+
+            SingletonBehaviour<CoroutineManager>.Instance.Run(TransferCarToHost(__result));
+            return;
         }
 
         if (__result == null)
@@ -65,6 +77,14 @@ public static class CarSpawner_Patch
         Multiplayer.LogDebug(() => $"SpawnCarFromRemote() {__result?.carLivery?.name} spawned, sending to players");
         NetworkLifecycle.Instance.Server.SendSpawnTrainset([__result], true, true);
 
+    }
+
+    private static IEnumerator TransferCarToHost(TrainCar trainCar)
+    {
+        yield return (object) WaitFor.Seconds(2.1f);
+        NetworkLifecycle.Instance.Client.SendTrainsetSpawnRequestPacket([trainCar], true);
+        DeleteWithOutPatch.Add(trainCar.ID);
+        CarSpawner._instance.DeleteCar(trainCar);
     }
 
     [HarmonyPatch(nameof(CarSpawner.SpawnCarOnClosestTrack))]

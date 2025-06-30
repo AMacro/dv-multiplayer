@@ -1,6 +1,7 @@
 using System.Collections;
 using DV.Damage;
 using DV.LocoRestoration;
+using DV.Logic.Job;
 using DV.PointSet;
 using DV.Simulation.Brake;
 using DV.ThingTypes;
@@ -259,12 +260,6 @@ public static class NetworkedCarSpawner
             }
         }
 
-        ClientboundSpawnTrainSetPacket returnPacket = new ClientboundSpawnTrainSetPacket();
-        returnPacket.SpawnParts = packet.SpawnParts;
-        returnPacket.AutoCouple = packet.AutoCouple;
-
-        //NetworkedCarSpawner.SpawnCars(packet.SpawnParts, packet.AutoCouple);
-
         foreach (var spawnPart in packet.SpawnParts)
         {
             TrainComponentLookup.Instance.LiveryFromId(spawnPart.LiveryId, out TrainCarLivery livery);
@@ -273,35 +268,9 @@ public static class NetworkedCarSpawner
             bool flip = (Vector3.Dot(closest.point.Value.forward,spawnPart.Rotation * Vector3.forward) < 0);
 
             TrainCar trainCar = CarSpawner.Instance.SpawnCarOnClosestTrack(spawnPart.Position + WorldMover.currentMove, livery, flip, true, true);
-            //trainCar.CarDamage.RepairCarEffectivePercentage(100);
 
             //TrainCar trainCar = CarSpawner.Instance.SpawnCarFromRemote(livery.prefab, closest.track, spawnPart.Position + WorldMover.currentMove, spawnPart.Rotation.eulerAngles);
 
-            /*
-            //Setup positions and bogies
-            Transform trainTransform = trainCar.transform;
-            trainTransform.rotation = spawnPart.Rotation;
-
-            //Multiplayer.LogDebug(() => $"SpawnCar({spawnPart.CarId}) Bogie1 derailed: {spawnPart.Bogie1.HasDerailed}, Rail Track: {bogie1Track?.RailTrack?.name}, Position along track: {spawnPart.Bogie1.PositionAlongTrack}, Track direction: {spawnPart.Bogie1.TrackDirection}, " +
-            //    $"Bogie2 derailed: {spawnPart.Bogie2.HasDerailed}, Rail Track: {bogie2Track?.RailTrack?.name}, Position along track: {spawnPart.Bogie2.PositionAlongTrack}, Track direction: {spawnPart.Bogie2.TrackDirection}"
-            //);
-
-            if (!NetworkedRailTrack.Get(spawnPart.Bogie1.TrackNetId, out NetworkedRailTrack bogie1Track) && spawnPart.Bogie1.TrackNetId != 0)
-            {
-                NetworkLifecycle.Instance.Client.LogDebug(() => $"Tried spawning car but couldn't find track with index {spawnPart.Bogie1.TrackNetId}");
-                return;
-            }
-
-            if (!NetworkedRailTrack.Get(spawnPart.Bogie2.TrackNetId, out NetworkedRailTrack bogie2Track) && spawnPart.Bogie2.TrackNetId != 0)
-            {
-                NetworkLifecycle.Instance.Client.LogDebug(() => $"Tried spawning car but couldn't find track with index {spawnPart.Bogie2.TrackNetId}");
-                return;
-            }
-
-            trainCar.Bogies[0].SetTrack(bogie1Track.RailTrack, spawnPart.Bogie1.PositionAlongTrack, spawnPart.Bogie1.TrackDirection);
-
-            trainCar.Bogies[1].SetTrack(bogie2Track.RailTrack, spawnPart.Bogie2.PositionAlongTrack, spawnPart.Bogie2.TrackDirection);
-*/
 
             Multiplayer.Log("SpawnedCar:" + trainCar);
         }
