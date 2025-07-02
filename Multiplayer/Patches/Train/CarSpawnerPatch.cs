@@ -81,7 +81,7 @@ public static class CarSpawner_Patch
 
     private static IEnumerator TransferCarToHost(TrainCar trainCar)
     {
-        yield return (object) WaitFor.Seconds(2.1f);
+        yield return (object) WaitFor.Seconds(0.0f);
         NetworkLifecycle.Instance.Client.SendTrainsetSpawnRequestPacket([trainCar], true);
         DeleteWithOutPatch.Add(trainCar.ID);
         CarSpawner._instance.DeleteCar(trainCar);
