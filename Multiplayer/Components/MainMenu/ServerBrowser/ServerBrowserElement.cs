@@ -76,7 +76,7 @@ namespace Multiplayer.Components.MainMenu.ServerBrowser
                 goIconLAN = this.FindChildByName("LAN Icon");
             }
             else
-            { 
+            {
                 goIconLAN = Instantiate(goIconPassword, goIconPassword.transform.parent);
                 goIconLAN.name = "LAN Icon";
                 Vector3 LANpos = goIconLAN.transform.localPosition;
@@ -113,7 +113,7 @@ namespace Multiplayer.Components.MainMenu.ServerBrowser
             serverName.text = data.Name;
             playerCount.text = $"{data.CurrentPlayers} / {data.MaxPlayers}";
 
-            ping.text = $"<color={GetColourForPing(data.Ping)}>{(data.Ping < 0 ? "?" : data.Ping)} ms</color>";
+            ping.text = $"<color={GetColourForPing(data.Ping)}>{(data.Ping < 0 ? "?" : data.Ping.ToString())} ms</color>";
 
             // Hide the icon if the server does not have a password
             goIconPassword.SetActive(data.HasPassword);

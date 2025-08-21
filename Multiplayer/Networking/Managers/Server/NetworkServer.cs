@@ -208,7 +208,7 @@ public class NetworkServer : NetworkManager
     public override void OnPeerDisconnected(ITransportPeer peer, DisconnectReason disconnectReason)
     {
         byte id = (byte)peer.Id;
-        Log($"Player {(serverPlayers.TryGetValue(id, out ServerPlayer player) ? player : id)} disconnected: {disconnectReason}");
+        Log($"Player {(serverPlayers.TryGetValue(id, out ServerPlayer player) ? player.Id : id)} disconnected: {disconnectReason}");
 
         if (WorldStreamingInit.isLoaded)
             SaveGameManager.Instance.UpdateInternalData();
@@ -1176,7 +1176,7 @@ public class NetworkServer : NetworkManager
         if(!NetworkedWarehouseMachineController.Get(packet.NetId, out var targetWarehouse))
         {
             LogWarning($"ServerboundWarehouseMachineControllerRequestPacket() WarehouseMachineController not found. NetId: {packet.NetId}");
-            return; 
+            return;
         }
 
         //Todo: add check for player distance from machine
