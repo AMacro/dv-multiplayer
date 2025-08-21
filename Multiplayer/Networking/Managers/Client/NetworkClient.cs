@@ -1293,6 +1293,11 @@ public class NetworkClient : NetworkManager
         }, DeliveryMethod.ReliableUnordered);
     }
 
+    public void SendTrainCarSpawnRequest(TrainCar trainCar)
+    {
+        SendPacketToServer(ServerboundTrainCarSpawnRequest.FromTrainCar(trainCar), DeliveryMethod.ReliableOrdered);
+    }
+
     public void SendTrainDeleteRequest(ushort netId)
     {
         SendPacketToServer(new ServerboundTrainDeleteRequestPacket

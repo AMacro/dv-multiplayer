@@ -31,6 +31,7 @@ using System.Net;
 using Multiplayer.Networking.Packets.Serverbound.Train;
 using Multiplayer.Networking.Packets.Unconnected;
 using System.Text;
+using Multiplayer.Components;
 using Multiplayer.Networking.Data.Train;
 using Multiplayer.Networking.TransportLayers;
 using Multiplayer.Networking.Packets.Serverbound.Jobs;
@@ -131,6 +132,7 @@ public class NetworkServer : NetworkManager
 
         netPacketProcessor.SubscribeReusable<ServerboundPlayerPositionPacket, ITransportPeer>(OnServerboundPlayerPositionPacket);
         netPacketProcessor.SubscribeReusable<ServerboundTrainSyncRequestPacket>(OnServerboundTrainSyncRequestPacket);
+        netPacketProcessor.SubscribeReusable<ServerboundTrainCarSpawnRequest>(OnServerboundTrainCarSpawnRequest);
         netPacketProcessor.SubscribeReusable<ServerboundTrainDeleteRequestPacket, ITransportPeer>(OnServerboundTrainDeleteRequestPacket);
         netPacketProcessor.SubscribeReusable<ServerboundTrainRerailRequestPacket, ITransportPeer>(OnServerboundTrainRerailRequestPacket);
         netPacketProcessor.SubscribeReusable<ServerboundLicensePurchaseRequestPacket, ITransportPeer>(OnServerboundLicensePurchaseRequestPacket);
@@ -1023,6 +1025,20 @@ public class NetworkServer : NetworkManager
     {
         if (NetworkedTrainCar.Get(packet.NetId, out NetworkedTrainCar networkedTrainCar))
             networkedTrainCar.Server_DirtyAllState();
+    }
+
+    private void OnServerboundTrainCarSpawnRequest(ServerboundTrainCarSpawnRequest packet)
+    {
+        if (!TrainComponentLookup.Instance.LiveryFromId(packet.LiveryID, out TrainCarLivery livery))
+        {
+            NetworkLifecycle.Instance.Client.LogDebug(() => $"Tried spawning car but couldn't find TrainCarLivery with ID {packet.LiveryID}");
+            return;
+        }
+
+        Multiplayer.Log($"Client spawned {livery.name} car");
+        TrainCar trainCar = CarSpawner.Instance.SpawnCar(livery.prefab, RailTrack.GetClosest(packet.Position).track, packet.Position, packet.Forward, true);
+        NetworkedTrainCar networkedTrainCar = NetworkedCarSpawner.SpawnCar(TrainsetSpawnPart.FromTrainSet([trainCar])[0]);
+        NetworkLifecycle.Instance.Server.SendSpawnTrainCar(networkedTrainCar);
     }
 
     private void OnServerboundTrainDeleteRequestPacket(ServerboundTrainDeleteRequestPacket packet, ITransportPeer peer)

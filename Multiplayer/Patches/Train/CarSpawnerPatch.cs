@@ -3,6 +3,8 @@ using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Utils;
 using System.Collections.Generic;
+using DV.ThingTypes;
+using UnityEngine;
 
 namespace Multiplayer.Patches.Train;
 
@@ -24,7 +26,28 @@ public static class CarSpawner_Patch
         NetworkLifecycle.Instance.Server?.SendDestroyTrainCar(networkedTrainCar);
     }
 
-    //Called from 
+    [HarmonyPatch(nameof(CarSpawner.SpawnCar))]
+    [HarmonyPostfix]
+    private static void SpawnCar(TrainCar __result)
+    {
+        if (UnloadWatcher.isUnloading)
+            return;
+
+        if (!NetworkLifecycle.Instance.IsHost())
+        {
+            NetworkLifecycle.Instance.Client.SendTrainCarSpawnRequest(__result);
+            CarSpawner.Instance.DeleteCar(__result);
+            return;
+        }
+
+        if (__result == null)
+            return;
+
+        //Coupling is delayed by AutoCouple(), so a true trainset for the entire consist doesn't exist yet
+        Multiplayer.LogDebug(() => $"SpawnCar() {__result?.carLivery?.name} car spawned, sending to players");
+        NetworkLifecycle.Instance.Server.SendSpawnTrainset([__result], true, true);
+    }
+
     [HarmonyPatch(nameof(CarSpawner.SpawnCars))]
     [HarmonyPostfix]
     private static void SpawnCars(List<TrainCar> __result)
@@ -33,7 +56,16 @@ public static class CarSpawner_Patch
             return;
 
         if (!NetworkLifecycle.Instance.IsHost())
+        {
+            // todo: Create a SendTrainSetSpawnRequest packet and use that in these situations.
+            foreach (TrainCar trainCar in __result)
+            {
+                NetworkLifecycle.Instance.Client.SendTrainCarSpawnRequest(trainCar);
+                CarSpawner.Instance.DeleteCar(trainCar);
+            }
+
             return;
+        }
 
         if (__result == null || __result.Count == 0)
             return;
@@ -41,42 +73,41 @@ public static class CarSpawner_Patch
         //Coupling is delayed by AutoCouple(), so a true trainset for the entire consist doesn't exist yet
         Multiplayer.LogDebug(() => $"SpawnCars() {__result?.Count} cars spawned, sending to players");
         NetworkLifecycle.Instance.Server.SendSpawnTrainset(__result, true, true);
-
     }
 
-    [HarmonyPatch(nameof(CarSpawner.SpawnCarFromRemote))]
-    [HarmonyPostfix]
-    private static void SpawnCarFromRemote(TrainCar __result)
-    {
-        if (UnloadWatcher.isUnloading)
-            return;
-
-        if (!NetworkLifecycle.Instance.IsHost())
-            return;
-
-        if (__result == null)
-            return;
-
-        Multiplayer.LogDebug(() => $"SpawnCarFromRemote() {__result?.carLivery?.name} spawned, sending to players");
-        NetworkLifecycle.Instance.Server.SendSpawnTrainset([__result], true, true);
-
-    }
-
-    [HarmonyPatch(nameof(CarSpawner.SpawnCarOnClosestTrack))]
-    [HarmonyPostfix]
-    private static void SpawnCarOnClosestTrack(TrainCar __result)
-    {
-        if (UnloadWatcher.isUnloading)
-            return;
-
-        if (!NetworkLifecycle.Instance.IsHost())
-            return;
-
-        if (__result == null)
-            return;
-
-        Multiplayer.LogDebug(() => $"SpawnCarOnClosestTrack() {__result?.carLivery?.name} spawned, sending to players");
-        NetworkLifecycle.Instance.Server.SendSpawnTrainset([__result], true, true);
-
-    }
+    // [HarmonyPatch(nameof(CarSpawner.SpawnCarFromRemote))]
+    // [HarmonyPostfix]
+    // private static void SpawnCarFromRemote(TrainCar __result)
+    // {
+    //     if (UnloadWatcher.isUnloading)
+    //         return;
+    //
+    //     if (!NetworkLifecycle.Instance.IsHost())
+    //         return;
+    //
+    //     if (__result == null)
+    //         return;
+    //
+    //     Multiplayer.LogDebug(() => $"SpawnCarFromRemote() {__result?.carLivery?.name} spawned, sending to players");
+    //     NetworkLifecycle.Instance.Server.SendSpawnTrainset([__result], true, true);
+    //
+    // }
+    //
+    // [HarmonyPatch(nameof(CarSpawner.SpawnCarOnClosestTrack))]
+    // [HarmonyPostfix]
+    // private static void SpawnCarOnClosestTrack(TrainCar __result)
+    // {
+    //     if (UnloadWatcher.isUnloading)
+    //         return;
+    //
+    //     if (!NetworkLifecycle.Instance.IsHost())
+    //         return;
+    //
+    //     if (__result == null)
+    //         return;
+    //
+    //     Multiplayer.LogDebug(() => $"SpawnCarOnClosestTrack() {__result?.carLivery?.name} spawned, sending to players");
+    //     NetworkLifecycle.Instance.Server.SendSpawnTrainset([__result], true, true);
+    //
+    // }
 }
