@@ -1,8 +1,7 @@
-using System;
-using System.Collections.Generic;
 using DV;
-using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.Player;
+using System.Collections.Generic;
+using System;
 using UnityEngine;
 using Object = UnityEngine.Object;
 
@@ -12,8 +11,8 @@ public class ClientPlayerManager
 {
     private readonly Dictionary<byte, NetworkedPlayer> playerMap = new();
 
-    public Action<byte, NetworkedPlayer> OnPlayerConnected;
-    public Action<byte, NetworkedPlayer> OnPlayerDisconnected;
+    public Action<NetworkedPlayer> OnPlayerConnected;
+    public Action<NetworkedPlayer> OnPlayerDisconnected;
     public IReadOnlyCollection<NetworkedPlayer> Players => playerMap.Values;
 
     private readonly GameObject playerPrefab;
@@ -23,43 +22,43 @@ public class ClientPlayerManager
         playerPrefab = Multiplayer.AssetIndex.playerPrefab;
     }
 
-    public bool TryGetPlayer(byte id, out NetworkedPlayer player)
+    public bool TryGetPlayer(byte playerid, out NetworkedPlayer player)
     {
-        return playerMap.TryGetValue(id, out player);
+        return playerMap.TryGetValue(playerid, out player);
     }
 
-    public void AddPlayer(byte id, string username)
+    public void AddPlayer(byte playerId, string username)
     {
         GameObject go = Object.Instantiate(playerPrefab, WorldMover.OriginShiftParent);
         go.layer = LayerMask.NameToLayer(Layers.Player);
         NetworkedPlayer networkedPlayer = go.AddComponent<NetworkedPlayer>();
-        networkedPlayer.Id = id;
+        networkedPlayer.PlayerId = playerId;
         networkedPlayer.Username = username;
         //networkedPlayer.Guid = guid;
-        playerMap.Add(id, networkedPlayer);
-        OnPlayerConnected?.Invoke(id, networkedPlayer);
+        playerMap.Add(playerId, networkedPlayer);
+        OnPlayerConnected?.Invoke(networkedPlayer);
     }
 
-    public void RemovePlayer(byte id)
+    public void RemovePlayer(byte playerid)
     {
-        if (!playerMap.TryGetValue(id, out NetworkedPlayer networkedPlayer))
+        if (!TryGetPlayer(playerid, out NetworkedPlayer networkedPlayer))
             return;
 
-        OnPlayerDisconnected?.Invoke(id, networkedPlayer);
+        OnPlayerDisconnected?.Invoke(networkedPlayer);
         Object.Destroy(networkedPlayer.gameObject);
-        playerMap.Remove(id);
+        playerMap.Remove(playerid);
     }
 
-    public void UpdatePing(byte id, int ping)
+    public void UpdatePing(byte playerId, int ping)
     {
-        if (!playerMap.TryGetValue(id, out NetworkedPlayer player))
+        if (!TryGetPlayer(playerId, out NetworkedPlayer player))
             return;
         player.SetPing(ping);
     }
 
-    public void UpdatePosition(byte id, Vector3 position, Vector3 moveDir, float rotation, bool isJumping, bool isOnCar, ushort carId)
+    public void UpdatePosition(byte playerid, Vector3 position, Vector3 moveDir, float rotation, bool isJumping, bool isOnCar, ushort carId)
     {
-        if (!playerMap.TryGetValue(id, out NetworkedPlayer player))
+        if (!TryGetPlayer(playerid, out NetworkedPlayer player))
             return;
         player.UpdateCar(carId);
         player.UpdatePosition(position, moveDir, rotation, isJumping, isOnCar);

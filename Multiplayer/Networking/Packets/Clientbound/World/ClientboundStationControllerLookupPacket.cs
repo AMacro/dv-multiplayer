@@ -3,14 +3,14 @@ using System.Collections.Generic;
 
 namespace Multiplayer.Networking.Packets.Clientbound.World;
 
-public class ClientBoundStationControllerLookupPacket
+public class ClientboundStationControllerLookupPacket
 {
     public ushort[] NetID { get; set; }
     public string[] StationID { get; set; }
 
-    public ClientBoundStationControllerLookupPacket() { }
+    public ClientboundStationControllerLookupPacket() { }
 
-    public ClientBoundStationControllerLookupPacket(ushort[] netID, string[] stationID)
+    public ClientboundStationControllerLookupPacket(ushort[] netID, string[] stationID)
     {
         if (netID == null) throw new ArgumentNullException(nameof(netID));
         if (stationID == null) throw new ArgumentNullException(nameof(stationID));
@@ -20,7 +20,7 @@ public class ClientBoundStationControllerLookupPacket
         StationID = stationID;
     }
 
-    public ClientBoundStationControllerLookupPacket(KeyValuePair<ushort, string>[] NetIDtoStationID)
+    public ClientboundStationControllerLookupPacket(KeyValuePair<ushort, string>[] NetIDtoStationID)
     {
         if (NetIDtoStationID == null)
             throw new ArgumentNullException(nameof(NetIDtoStationID));

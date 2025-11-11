@@ -1,13 +1,13 @@
 using DV.Logic.Job;
 using DV.ThingTypes;
 using LiteNetLib.Utils;
-using Multiplayer.Components.Networking;
+using MPAPI.Types;
 using Multiplayer.Components.Networking.Jobs;
 using Multiplayer.Components.Networking.World;
-using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System;
 
 namespace Multiplayer.Networking.Data;
 
@@ -34,7 +34,7 @@ public class JobData
         ushort itemNetId = 0;
         ItemPositionData itemPos = new();
 
-        //Multiplayer.Log($"JobData.FromJob({netStation.name}, {job.ID}, {networkedJob.Job.State})");
+        //Multiplayer.Log($"JobData.FromJob({netStation.name}, {job.ID}, {networkedJob.Job.Value})");
 
         if (networkedJob.Job.State == JobState.Available)
         {
@@ -52,7 +52,7 @@ public class JobData
                 itemPos = ItemPositionData.FromItem(networkedJob.JobBooklet);
             }
         }
-        else if(job.State == JobState.Completed)
+        else if (job.State == JobState.Completed)
         {
             if (networkedJob.JobReport != null)
             {
@@ -79,6 +79,24 @@ public class JobData
         };
     }
 
+    public static (Job newJob, Dictionary<ushort, Task> netIdToTask) ToJob(JobData jobData)
+    {
+        Dictionary<ushort, Task> netIdToTask = [];
+
+        List<Task> tasks = jobData.Tasks.Select(taskData => taskData.ToTask(ref netIdToTask)).ToList();
+
+        StationsChainData chainData = new(jobData.ChainData.ChainOriginYardId, jobData.ChainData.ChainDestinationYardId);
+
+        Job newJob = new(tasks, jobData.JobType, jobData.TimeLimit, jobData.InitialWage, chainData, jobData.ID, jobData.RequiredLicenses)
+        {
+            startTime = jobData.StartTime,
+            finishTime = jobData.FinishTime,
+            State = jobData.State,
+        };
+
+        return new(newJob, netIdToTask);
+    }
+
     public static void Serialize(NetDataWriter writer, JobData data)
     {
         //NetworkLifecycle.Instance.Server.Log($"JobData.Serialize({data.ID}) NetID {data.NetID}");
@@ -94,18 +112,27 @@ public class JobData
             bw.Write((byte)data.Tasks.Length);
             foreach (var task in data.Tasks)
             {
-                NetDataWriter taskSerialiser = new NetDataWriter();
-
                 bw.Write((byte)task.TaskType);
-                task.Serialize(taskSerialiser);
 
-                bw.Write(taskSerialiser.Data.Length);
-                bw.Write(taskSerialiser.Data);
+                using (MemoryStream taskMemStream = new())
+                using (BinaryWriter taskSerialiser = new(taskMemStream))
+                {
+                    task.Serialize(taskSerialiser);
+
+                    if (taskMemStream.Length > int.MaxValue)
+                    {
+                        Multiplayer.LogError($"Task {task.TaskType} too large: {taskMemStream.Length}");
+                        throw new InvalidOperationException($"Task {task.TaskType} data is too large to serialize.");
+                    }
+
+                    bw.Write((int)taskMemStream.Length);
+                    bw.Write(taskMemStream.ToArray());
+                }
             }
 
             byte[] compressedData = PacketCompression.Compress(ms.ToArray());
 
-           // Multiplayer.Log($"JobData.Serialize() Uncompressed: {ms.Length} Compressed: {compressedData.Length}");
+            // Multiplayer.Log($"JobData.Serialize() Uncompressed: {ms.Length} Compressed: {compressedData.Length}");
             writer.PutBytesWithLength(compressedData);
         }
 
@@ -123,12 +150,15 @@ public class JobData
 
     public static JobData Deserialize(NetDataReader reader)
     {
+        ushort netID = 0;
+        JobType jobType = JobType.Custom;
+        string id = string.Empty;
+
         try
         {
-
-            ushort netID = reader.GetUShort();
-            JobType jobType = (JobType)reader.GetByte();
-            string id = reader.GetString();
+            netID = reader.GetUShort();
+            jobType = (JobType)reader.GetByte();
+            id = reader.GetString();
 
             //Decompress task data
             byte[] compressedData = reader.GetBytesWithLength();
@@ -149,10 +179,13 @@ public class JobData
                     TaskType taskType = (TaskType)br.ReadByte();
 
                     int taskLength = br.ReadInt32();
-                    NetDataReader taskReader = new NetDataReader(br.ReadBytes(taskLength));
 
-                    tasks[i] = TaskNetworkDataFactory.ConvertTask(taskType);
-                    tasks[i].Deserialize(taskReader);
+                    using (MemoryStream taskStream = new MemoryStream(br.ReadBytes(taskLength)))
+                    using (BinaryReader taskReader = new BinaryReader(taskStream))
+                    {
+                        tasks[i] = TaskNetworkDataFactory.ConvertTask(taskType);
+                        tasks[i].Deserialize(taskReader);
+                    }
                 }
             }
 
@@ -186,7 +219,7 @@ public class JobData
         }
         catch (Exception ex)
         {
-            Multiplayer.Log($"JobData.Deserialize() Failed! {ex.Message}\r\n{ex.StackTrace}");
+            Multiplayer.Log($"JobData.Deserialize() Failed! netId: {netID}, jobId: {id} {ex.Message}\r\n{ex.StackTrace}");
             return null;
         }
     }

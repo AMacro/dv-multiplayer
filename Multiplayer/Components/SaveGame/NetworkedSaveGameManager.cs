@@ -1,4 +1,3 @@
-using System;
 using DV.InventorySystem;
 using DV.JObjectExtstensions;
 using DV.ThingTypes;
@@ -6,8 +5,8 @@ using DV.Utils;
 using JetBrains.Annotations;
 using Multiplayer.Components.Networking;
 using Multiplayer.Networking.Data;
-using Multiplayer.Networking.Managers.Server;
 using Newtonsoft.Json.Linq;
+using System;
 
 namespace Multiplayer.Components.SaveGame;
 
@@ -69,8 +68,9 @@ public class NetworkedSaveGameManager : SingletonBehaviour<NetworkedSaveGameMana
 
         foreach (ServerPlayer player in NetworkLifecycle.Instance.Server.ServerPlayers)
         {
-            if (player.Id == NetworkServer.SelfId || !player.IsLoaded)
+            if (player.Peer == NetworkLifecycle.Instance.Server.SelfPeer || !player.IsLoaded)
                 continue;
+
             JObject playerData = [];
             playerData.SetVector3(SaveGameKeys.Player_position, player.AbsoluteWorldPosition);
             playerData.SetFloat(SaveGameKeys.Player_rotation, player.WorldRotationY);

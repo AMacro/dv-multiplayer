@@ -1,9 +1,7 @@
-using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Linq;
 using DV.CabControls;
 using DV.Customization.Paint;
+using DV.Damage;
+using DV.Logic.Job;
 using DV.MultipleUnit;
 using DV.Simulation.Brake;
 using DV.Simulation.Cars;
@@ -12,12 +10,16 @@ using JetBrains.Annotations;
 using LocoSim.Definitions;
 using LocoSim.Implementations;
 using Multiplayer.Components.Networking.Player;
-using Multiplayer.Networking.Data;
 using Multiplayer.Networking.Data.Train;
+using Multiplayer.Networking.Data;
 using Multiplayer.Networking.Packets.Clientbound.Train;
 using Multiplayer.Networking.Packets.Common.Train;
-using Multiplayer.Networking.TransportLayers;
 using Multiplayer.Utils;
+using System.Collections.Generic;
+using System.Collections;
+using System.Linq;
+using System.Reflection;
+using System;
 using UnityEngine;
 
 namespace Multiplayer.Components.Networking.Train;
@@ -31,17 +33,24 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     private static readonly Dictionary<string, TrainCar> trainCarIdToTrainCars = [];
     private static readonly Dictionary<HoseAndCock, Coupler> hoseToCoupler = [];
 
-    public static bool Get(ushort netId, out NetworkedTrainCar obj)
+    public static bool TryGet(ushort netId, out NetworkedTrainCar obj)
     {
         bool b = Get(netId, out IdMonoBehaviour<ushort, NetworkedTrainCar> rawObj);
         obj = (NetworkedTrainCar)rawObj;
         return b;
     }
 
-    public static bool GetTrainCar(ushort netId, out TrainCar obj)
+    public static bool TryGet(ushort netId, out TrainCar trainCar)
     {
-        bool b = Get(netId, out NetworkedTrainCar networkedTrainCar);
-        obj = b ? networkedTrainCar.TrainCar : null;
+        bool b = TryGet(netId, out NetworkedTrainCar networkedTrainCar);
+        trainCar = b ? networkedTrainCar.TrainCar : null;
+        return b;
+    }
+
+    public static bool TryGet(ushort netId, out Car trainCar)
+    {
+        bool b = TryGet(netId, out NetworkedTrainCar networkedTrainCar);
+        trainCar = b ? networkedTrainCar.TrainCar?.logicCar : null;
         return b;
     }
 
@@ -62,6 +71,28 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     public static bool TryGetFromTrainCar(TrainCar trainCar, out NetworkedTrainCar networkedTrainCar)
     {
         return trainCarsToNetworkedTrainCars.TryGetValue(trainCar, out networkedTrainCar);
+    }
+
+    public static bool TryGetNetId(TrainCar trainCar, out ushort netId)
+    {
+        netId = 0;
+
+        if (!trainCarsToNetworkedTrainCars.TryGetValue(trainCar, out var networkedTrainCar) || networkedTrainCar == false || networkedTrainCar.NetId == 0)
+            return false;
+
+        netId = networkedTrainCar.NetId;
+        return true;
+    }
+
+    public static bool TryGetNetId(Car car, out ushort netId)
+    {
+        netId = 0;
+
+        if (car == null || !GetFromTrainId(car.ID, out var networkedTrainCar) || networkedTrainCar == false || networkedTrainCar.NetId == 0)
+            return false;
+
+        netId = networkedTrainCar.NetId;
+        return true;
     }
 
     #endregion
@@ -86,11 +117,13 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     private bool hasSimFlow;
     private SimulationFlow simulationFlow;
     public FireboxSimController firebox;
+    private readonly Dictionary<TrainDamage, TrainDamage.HealthChanged> trainDamageDelegates = [];
 
     private HashSet<string> dirtyPorts;
     private Dictionary<string, float> lastSentPortValues;
     private HashSet<string> dirtyFuses;
     private float lastSentFireboxValue;
+    private readonly Dictionary<string, float> lastSentTrainDamages = [];
 
     private bool handbrakeDirty;
     private bool mainResPressureDirty;
@@ -112,8 +145,8 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     private bool frontInteracting = false;
     private bool rearInteracting = false;
 
-    private int frontInteractionPeer;
-    private int rearInteractionPeer;
+    private ServerPlayer frontInteractionPlayer;
+    private ServerPlayer rearInteractionPlayer;
     #region Client
 
     public bool Client_Initialized { get; private set; }
@@ -162,7 +195,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     {
         brakeSystem = TrainCar.brakeSystem;
 
-        Multiplayer.LogDebug(() => $"TrainCar Created: {TrainCar?.ID}, {NetId}");
+        Multiplayer.LogDebug(() => $"NetworkedTrainCar.Start({TrainCar?.ID}, {NetId})");
 
         foreach (Coupler coupler in TrainCar.couplers)
         {
@@ -174,6 +207,8 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             if (coupler.ChainScript != null)
                 coupler.ChainScript.StateChanged += (state) => { Client_CouplerStateChange(state, coupler); };
         }
+
+        //Multiplayer.LogDebug(() => $"NetworkedTrainCar.Start({TrainCar?.ID}, {NetId}) Couplers complete");
 
         SimController simController = GetComponent<SimController>();
         if (simController != null)
@@ -199,6 +234,8 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             }
         }
 
+        //Multiplayer.LogDebug(() => $"NetworkedTrainCar.Start({TrainCar?.ID}, {NetId}) SimController complete");
+
         brakeSystem.HandbrakePositionChanged += Common_OnHandbrakePositionChanged;
         brakeSystem.BrakeCylinderReleased += Common_OnBrakeCylinderReleased;
 
@@ -208,10 +245,13 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             TrainCar.PaintInterior.OnThemeChanged += Common_OnPaintThemeChange;
 
         NetworkLifecycle.Instance.OnTick += Common_OnTick;
+
+        //Multiplayer.LogDebug(() => $"NetworkedTrainCar.Start({TrainCar?.ID}, {NetId}) CommonTick subscribed");
+
         if (NetworkLifecycle.Instance.IsHost())
         {
             NetworkLifecycle.Instance.OnTick += Server_OnTick;
-            NetworkLifecycle.Instance.Server.PlayerDisconnect += Server_OnPlayerDisconnect;
+            NetworkLifecycle.Instance.Server.PlayerDisconnected += Server_OnPlayerDisconnect;
 
             bogie1.TrackChanged += Server_BogieTrackChanged;
             bogie2.TrackChanged += Server_BogieTrackChanged;
@@ -220,6 +260,42 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             TrainCar.rearCoupler.Uncoupled += Server_CouplerUncoupled;
 
             TrainCar.CarDamage.CarEffectiveHealthStateUpdate += Server_CarHealthUpdate;
+
+            //Multiplayer.LogDebug(() => $"NetworkedTrainCar.Start({TrainCar?.ID}, {NetId}) Subscribing to DamageControllers");
+
+            //find all TrainDamages and subscribe
+            if (TryGetComponent<DamageController>(out DamageController damageController) && damageController != null)
+            {
+                var trainDamageFields = typeof(DamageController)
+                    .GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+                    .Where(field => field.FieldType == typeof(TrainDamage))
+                    .Select(field => new { Field = field, Damage = (TrainDamage)field.GetValue(damageController) })
+                    .Where(value => value.Damage != null)
+                    .ToArray();
+
+                //Multiplayer.LogDebug(() => $"NetworkedTrainCar.Start({TrainCar?.ID}, {NetId}) Subscribing to DamageControllers. TrainDamageFields: {trainDamageFields?.Length}");
+
+                if (trainDamageFields != null && trainDamageFields.Length > 0)
+                {
+                    for (int i = 0; i < trainDamageFields.Length; i++)
+                    {
+                        var fieldName = trainDamageFields[i].Field.Name;
+                        var fieldValue = trainDamageFields[i].Damage;
+
+                        //create a delegate for each field
+                        void DamagesUpdate(float health) => Server_TrainDamagesHealthUpdate(fieldName, health);
+
+                        //subscribe to the event
+                        trainDamageFields[i].Damage.HealthPercentageChanged += DamagesUpdate;
+
+                        //store delegates and set a last sent value to an impossible value
+                        trainDamageDelegates.Add(fieldValue, DamagesUpdate);
+                        lastSentTrainDamages.Add(fieldName, -1f);
+                    }
+                }
+            }
+
+            //Multiplayer.LogDebug(() => $"NetworkedTrainCar.Start({TrainCar?.ID}, {NetId}) DamageControllers subscribed");
 
             brakeSystem.MainResPressureChanged += Server_MainResUpdate;
             brakeSystem.heatController.OverheatingActiveStateChanged += Server_BrakeHeatUpdate;
@@ -230,11 +306,14 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
                 firebox.fireOnPort.ValueUpdatedInternally += Common_OnFireboxUpdate;
             }
 
+            //Multiplayer.LogDebug(() => $"NetworkedTrainCar.Start({TrainCar?.ID}, {NetId}) Firebox subscribed");
+
             StartCoroutine(Server_WaitForLogicCar());
         }
 
         NetworkLifecycle.Instance?.Client.SendTrainSyncRequest(NetId);
     }
+
     public void OnDisable()
     {
         if (UnloadWatcher.isQuitting)
@@ -272,7 +351,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         if (NetworkLifecycle.Instance.IsHost())
         {
             NetworkLifecycle.Instance.OnTick -= Server_OnTick;
-            NetworkLifecycle.Instance.Server.PlayerDisconnect -= Server_OnPlayerDisconnect;
+            NetworkLifecycle.Instance.Server.PlayerDisconnected -= Server_OnPlayerDisconnect;
 
             bogie1.TrackChanged -= Server_BogieTrackChanged;
             bogie2.TrackChanged -= Server_BogieTrackChanged;
@@ -281,6 +360,11 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             TrainCar.rearCoupler.Uncoupled -= Server_CouplerUncoupled;
 
             TrainCar.CarDamage.CarEffectiveHealthStateUpdate -= Server_CarHealthUpdate;
+
+            //Unsubscribe from damage updates
+            if (trainDamageDelegates != null && lastSentTrainDamages.Count > 0)
+                foreach (var kvp in trainDamageDelegates)
+                    kvp.Key.HealthPercentageChanged -= kvp.Value;
 
             if (brakeSystem != null)
             {
@@ -356,10 +440,6 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         foreach (string portId in simulationFlow.fullPortIdToPort.Keys)
         {
             dirtyPorts.Add(portId);
-            //if (simulationFlow.TryGetPort(portId, out Port port))
-            //{
-            //    lastSentPortValues[portId] = port.value;
-            //}
         }
 
         foreach (string fuseId in simulationFlow.fullFuseIdToFuse.Keys)
@@ -425,7 +505,23 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
     private void Server_CarHealthUpdate(float health)
     {
+        //Multiplayer.LogDebug(() => $"Server_CarHealthUpdate({health}) netId: {NetId}");
         carHealthDirty = true;
+    }
+
+    private void Server_TrainDamagesHealthUpdate(string field, float health)
+    {
+        //Multiplayer.LogDebug(() => $"Server_TrainDamagesHealthUpdate({field}, {health}) netId: {NetId}");
+
+        // Check if value has changed before updating
+        if (!lastSentTrainDamages.TryGetValue(field, out float lastValue)
+            || Mathf.Abs(lastValue - health) > MAX_PORT_DELTA
+            || (health == 0 && lastValue != 0)
+            || (health == 1 && lastValue != 1))
+        {
+            lastSentTrainDamages[field] = health;
+            carHealthDirty = true;
+        }
     }
 
     private void Server_MainResUpdate(float normalizedPressure, float pressure)
@@ -507,16 +603,17 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         if (!TrainCar.frontCoupler.hoseAndCock.IsHoseConnected)
             //    NetworkLifecycle.Instance.Client.SendHoseConnected(TrainCar.frontCoupler, TrainCar.frontCoupler.coupledTo, false);
             //else
-            NetworkLifecycle.Instance.Client.SendHoseDisconnected(TrainCar.frontCoupler, true);
+            NetworkLifecycle.Instance.Server.SendHoseDisconnected(TrainCar.frontCoupler, true);
 
         if (!TrainCar.rearCoupler.hoseAndCock.IsHoseConnected)
             //    NetworkLifecycle.Instance.Client.SendHoseConnected(TrainCar.rearCoupler, TrainCar.rearCoupler.coupledTo, false);
             //else
-            NetworkLifecycle.Instance.Client.SendHoseDisconnected(TrainCar.rearCoupler, true);
+            NetworkLifecycle.Instance.Server.SendHoseDisconnected(TrainCar.rearCoupler, true);
 
-        NetworkLifecycle.Instance.Client.SendCockState(NetId, TrainCar.frontCoupler, TrainCar.frontCoupler.IsCockOpen);
-        NetworkLifecycle.Instance.Client.SendCockState(NetId, TrainCar.rearCoupler, TrainCar.rearCoupler.IsCockOpen);
+        NetworkLifecycle.Instance.Server.SendCockState(NetId, TrainCar.frontCoupler, TrainCar.frontCoupler.IsCockOpen);
+        NetworkLifecycle.Instance.Server.SendCockState(NetId, TrainCar.rearCoupler, TrainCar.rearCoupler.IsCockOpen);
     }
+
     private void Server_SendCables()
     {
         if (!sendCables)
@@ -565,34 +662,35 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         NetworkLifecycle.Instance.Server.SendCarHealthUpdate(NetId, TrainCarHealthData.From(TrainCar));
     }
 
-    public bool Server_ValidateCouplerInteraction(CommonCouplerInteractionPacket packet, ITransportPeer peer)
+    public bool Server_ValidateCouplerInteraction(CommonCouplerInteractionPacket packet, ServerPlayer player)
     {
         Multiplayer.LogDebug(() =>
-                $"Server_ValidateCouplerInteraction([[{(CouplerInteractionType)packet.Flags}], {CurrentID}, {packet.NetId}], {peer.Id}) " +
-                $"isFront: {packet.IsFrontCoupler}, frontInteracting: {frontInteracting}, frontInteractionPeer: {frontInteractionPeer}, " +
-                $"rearInteracting: {rearInteracting}, rearInteractionPeer: {rearInteractionPeer}"
+                $"Server_ValidateCouplerInteraction([[{(CouplerInteractionType)packet.Flags}], {CurrentID}, {packet.NetId}], {player.PlayerId}) " +
+                $"isFront: {packet.IsFrontCoupler}, frontInteracting: {frontInteracting}, frontInteractionPeer: {frontInteractionPlayer}, " +
+                $"rearInteracting: {rearInteracting}, rearInteractionPeer: {rearInteractionPlayer}"
                 );
+
         //Ensure no one else is interacting
-        if (packet.IsFrontCoupler && frontInteracting && peer.Id != frontInteractionPeer ||
-           packet.IsFrontCoupler == false && rearInteracting && peer.Id != rearInteractionPeer)
+        if (packet.IsFrontCoupler && frontInteracting && player != frontInteractionPlayer ||
+           packet.IsFrontCoupler == false && rearInteracting && player != rearInteractionPlayer)
         {
-            Multiplayer.LogDebug(() => $"Server_ValidateCouplerInteraction([{packet.Flags}, {CurrentID}, {packet.NetId}], {peer.Id}) Failed to validate!");
+            Multiplayer.LogDebug(() => $"Server_ValidateCouplerInteraction([{packet.Flags}, {CurrentID}, {packet.NetId}], {player.PlayerId}) Failed to validate!");
             return false;
         }
 
-        Multiplayer.LogDebug(() => $"Server_ValidateCouplerInteraction([{packet.Flags}, {CurrentID}, {packet.NetId}], {peer.Id}) No one interacting");
+        Multiplayer.LogDebug(() => $"Server_ValidateCouplerInteraction([{packet.Flags}, {CurrentID}, {packet.NetId}], {player.PlayerId}) No one interacting");
 
         if (((CouplerInteractionType)packet.Flags).HasFlag(CouplerInteractionType.Start))
         {
             if (packet.IsFrontCoupler)
             {
                 frontInteracting = true;
-                frontInteractionPeer = peer.Id;
+                frontInteractionPlayer = player;
             }
             else
             {
                 rearInteracting = true;
-                rearInteractionPeer = peer.Id;
+                rearInteractionPlayer = player;
             }
         }
         else
@@ -605,17 +703,17 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
         //todo: Additional checks for player location/proximity
 
-        Multiplayer.LogDebug(() => $"Server_ValidateCouplerInteraction([{packet.Flags}, {CurrentID}, {packet.NetId}], {peer.Id}) Validation passed!");
+        Multiplayer.LogDebug(() => $"Server_ValidateCouplerInteraction([{packet.Flags}, {CurrentID}, {packet.NetId}], {player.PlayerId}) Validation passed!");
         return true;
     }
 
-    private void Server_OnPlayerDisconnect(uint id)
+    private void Server_OnPlayerDisconnect(ServerPlayer player)
     {
-        //todo: resove player disconnection during chain interaction
-        if (frontInteractionPeer == id || rearInteractionPeer == id)
+        //todo: resolve player disconnection during chain interaction
+        if (frontInteractionPlayer == player || rearInteractionPlayer == player)
         {
-            Multiplayer.LogWarning($"Server_OnPlayerDisconnect() Coupler interaction in unknown state [{CurrentID}, {NetId}] isFront: {frontInteractionPeer == id}");
-            if (frontInteractionPeer == id)
+            Multiplayer.LogWarning($"Server_OnPlayerDisconnect() Coupler interaction in unknown state [{CurrentID}, {NetId}] isFront: {frontInteractionPlayer == player}");
+            if (frontInteractionPlayer == player)
             {
                 frontInteracting = false;
                 //NetworkLifecycle.Instance.Client.SendCouplerInteraction(cou, coupler, otherCoupler);
@@ -802,11 +900,10 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
         Multiplayer.LogDebug(() => $"Common_OnPaintThemeChange() target: {paintController.TargetArea}, theme: {paintController.CurrentTheme.name}");
 
-        byte target = (byte)paintController.TargetArea;
-        var theme = PaintThemeLookup.Instance.GetThemeIndex(paintController.CurrentTheme);
+        var themeId = PaintThemeLookup.Instance.GetThemeId(paintController.CurrentTheme);
 
-        Multiplayer.LogDebug(() => $"Common_OnPaintThemeChange() sending [{CurrentID},{NetId}], target: {paintController.TargetArea}, theme: [{paintController.CurrentTheme.name},{theme}]");
-        NetworkLifecycle.Instance?.Client.SendPaintThemeChangePacket(NetId, target, theme);
+        Multiplayer.LogDebug(() => $"Common_OnPaintThemeChange() sending [{CurrentID},{NetId}], target: {paintController.TargetArea}, theme: [{paintController.CurrentTheme.name}, {themeId}]");
+        NetworkLifecycle.Instance?.Client.SendPaintThemeChangePacket(NetId, paintController.TargetArea, themeId);
     }
 
     private void Common_OnFuseUpdated(Fuse fuse)
@@ -872,7 +969,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
         if (packet.OtherNetId != 0)
         {
-            if (GetTrainCar(packet.OtherNetId, out otherCar))
+            if (TryGet(packet.OtherNetId, out otherCar))
                 otherCoupler = packet.IsFrontOtherCoupler ? otherCar?.frontCoupler : otherCar?.rearCoupler;
         }
 
@@ -1221,7 +1318,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
         if (targetPaint == null || !targetPaint.IsSupported(paint))
         {
-            Multiplayer.LogWarning($"Received Paint Theme update for [{CurrentID}, {NetId}], but {paint?.assetName} is not supported");
+            Multiplayer.LogWarning($"Received Paint Theme update for [{CurrentID}, {NetId}], but {paint?.AssetName} is not supported");
             return;
         }
 
@@ -1267,7 +1364,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             TrainCar.Derail();
             movementPart.RigidbodySnapshot.Apply(TrainCar.rb);
 
-        //    Client_trainRigidbodyQueue.ReceiveSnapshot(movementPart.RigidbodySnapshot, tick);
+            //    Client_trainRigidbodyQueue.ReceiveSnapshot(movementPart.RigidbodySnapshot, tick);
 
             //Multiplayer.LogDebug(() => $"Derailed car {TrainCar.ID} positioned at {TrainCar.transform.position}");
         }
@@ -1281,7 +1378,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
                 if (TrainCar.rb != null)
                 {
                     TrainCar.rb.MovePosition(worldPos);
-                    TrainCar.rb.MoveRotation(movementPart.Rotation);
+                    //TrainCar.rb.MoveRotation(movementPart.Rotation); // removed due to motion sickness issues
                 }
 
                 //clear the queues?

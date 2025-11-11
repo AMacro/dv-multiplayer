@@ -4,14 +4,14 @@ using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Networking.Data;
 
-namespace Multiplayer.Patches.World;
+namespace Multiplayer.Patches.Train;
 
 [HarmonyPatch(typeof(CarVisitChecker))]
 public static class CarVisitCheckerPatch
 {
     [HarmonyPrefix]
     [HarmonyPatch(nameof(CarVisitChecker.IsRecentlyVisited), MethodType.Getter)]
-    private static bool IsRecentlyVisited_Prefix(CarVisitChecker __instance, ref bool __result)
+    public static bool IsRecentlyVisited_Prefix(CarVisitChecker __instance, ref bool __result)
     {
         if (NetworkLifecycle.Instance.IsHost() && NetworkLifecycle.Instance.Server.PlayerCount == 1)
             return true;    //playing in "vanilla mode" allow game code to run

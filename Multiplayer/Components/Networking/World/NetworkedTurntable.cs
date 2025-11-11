@@ -1,13 +1,43 @@
-using System.Linq;
 using DV;
+using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 namespace Multiplayer.Components.Networking.World;
 
 public class NetworkedTurntable : IdMonoBehaviour<byte, NetworkedTurntable>
 {
+    #region Lookup Cache
     private static NetworkedTurntable[] _indexedTurntables;
+    private static readonly Dictionary<TurntableRailTrack, NetworkedTurntable> turntableToNetworkedTurntable = [];
     public static NetworkedTurntable[] IndexedTurntables => _indexedTurntables ??= RailTrackRegistry.Instance.TrackRootParent.GetComponentsInChildren<NetworkedTurntable>().OrderBy(nj => nj.NetId).ToArray();
+
+
+    public static bool TryGet(ushort netId, out TurntableRailTrack turntable)
+    {
+        if (Get((byte)netId, out var networkedTurntable))
+        {
+            turntable = networkedTurntable.TurntableRailTrack;
+            return true;
+        }
+
+        turntable = null;
+        return false;
+    }
+
+    public static bool TryGetNetId(TurntableRailTrack turntable, out ushort netId)
+    {
+        if (turntableToNetworkedTurntable.TryGetValue(turntable, out var networkedTurntable))
+        {
+            netId = networkedTurntable.NetId;
+            return true;
+        }
+
+        netId = 0;
+        return false;
+    }
+
+    #endregion
 
     protected override bool IsIdServerAuthoritative => false;
 
@@ -19,6 +49,8 @@ public class NetworkedTurntable : IdMonoBehaviour<byte, NetworkedTurntable>
     {
         base.Awake();
         TurntableRailTrack = GetComponent<TurntableRailTrack>();
+        turntableToNetworkedTurntable[TurntableRailTrack] = this;
+
         NetworkLifecycle.Instance.OnTick += OnTick;
 
         initialised = NetworkLifecycle.Instance.IsHost();
@@ -29,6 +61,9 @@ public class NetworkedTurntable : IdMonoBehaviour<byte, NetworkedTurntable>
         base.OnDestroy();
         if (UnloadWatcher.isQuitting)
             return;
+
+        turntableToNetworkedTurntable.Remove(TurntableRailTrack);
+
         NetworkLifecycle.Instance.OnTick -= OnTick;
     }
 

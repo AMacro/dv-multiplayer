@@ -12,6 +12,8 @@ namespace Multiplayer.Patches.Jobs;
 [HarmonyPatch(typeof(JobValidator))]
 public static class JobValidator_Patch
 {
+    private const float TIME_OUT = 3f;
+
     [HarmonyPatch(nameof(JobValidator.Start))]
     [HarmonyPostfix]
     private static void Start(JobValidator __instance)
@@ -108,7 +110,20 @@ public static class JobValidator_Patch
     }
     private static IEnumerator AwaitResponse(JobValidator validator, NetworkedJob networkedJob)
     {
-        yield return new WaitForSecondsRealtime((NetworkLifecycle.Instance.Client.Ping * 4f)/1000);
+        Multiplayer.LogDebug(() => $"Awaiting validation response for {networkedJob?.Job?.ID}...");
+
+        float timeout = Time.time;
+
+        //Book spawns can take a few seconds, this may be due to how the asset is loaded and rendered
+        yield return new WaitUntil
+        (
+            () =>
+            {
+                return networkedJob.ValidatorResponseReceived || (Time.time - timeout > TIME_OUT);
+            }
+        );
+
+        //WaitForSecondsRealtime(Math.Max(4f,(NetworkLifecycle.Instance.Client.Ping * 4f)/1000));
 
         bool received = networkedJob.ValidatorResponseReceived;
         bool accepted = networkedJob.ValidationAccepted;

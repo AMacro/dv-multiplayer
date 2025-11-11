@@ -5,6 +5,7 @@ using System.Linq;
 using DV;
 using DV.CabControls;
 using DV.Common;
+using DV.Logic.Job;
 using DV.UserManagement;
 using DV.Utils;
 using Multiplayer.Components.Networking;
@@ -45,6 +46,8 @@ public class StartGameData_ServerSave : AStartGameData
         saveGameData.SetBool(SaveGameKeys.Damage_Popup_Shown, true);
 
         CareerManagerDebtControllerPatch.HasDebt = packet.HasDebt;
+
+        JobsManager.Instance.LoadTime(packet.JobManagerTime);
 
         Multiplayer.LogDebug(() =>
         {

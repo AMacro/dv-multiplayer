@@ -1,7 +1,8 @@
-using System.Collections.Generic;
 using Multiplayer.Components.Networking.Jobs;
 using Multiplayer.Components.Networking.World;
 using Multiplayer.Networking.Data;
+using System.Collections.Generic;
+
 namespace Multiplayer.Networking.Packets.Clientbound.Jobs;
 
 public class ClientboundJobsCreatePacket
@@ -15,7 +16,6 @@ public class ClientboundJobsCreatePacket
         foreach (var job in jobs)
         {
             JobData jd = JobData.FromJob(netStation, job);
-            Multiplayer.Log($"JobData: jobNetId: {jd.NetID}, jobId: {jd.ID}, itemNetId {jd.ItemNetID}");
             jobData.Add(jd);
         }
 

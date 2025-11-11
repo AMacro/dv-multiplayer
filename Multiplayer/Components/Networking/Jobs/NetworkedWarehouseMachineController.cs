@@ -24,10 +24,58 @@ public class NetworkedWarehouseMachineController : IdMonoBehaviour<ushort, Netwo
         return b;
     }
 
-    public static NetworkedWarehouseMachineController GetFromWarehouseMachineController(WarehouseMachineController warehouseMachineController)
+    public static bool TryGetNetId(WarehouseMachineController warehouseMachineController, out ushort netId)
     {
-        warehouseMachineControllerToNetworked.TryGetValue(warehouseMachineController, out var netWarehouseMachineController);
-        return netWarehouseMachineController;
+        if (GetFromWarehouseMachineController(warehouseMachineController, out var networkedWarehouseMachineController))
+        {
+            netId = networkedWarehouseMachineController.NetId;
+            return true;
+        }
+
+        netId = 0;
+        return false;
+    }
+
+    public static bool TryGetNetId(WarehouseMachine warehouseMachine, out ushort netId)
+    {
+        var networkedWarehouseMachineController = GetFromWarehouseMachine(warehouseMachine);
+        if (networkedWarehouseMachineController != null)
+        {
+            netId = networkedWarehouseMachineController.NetId;
+            return true;
+        }
+
+        netId = 0;
+        return false;
+    }
+
+    public static bool TryGet(ushort netId, out WarehouseMachineController warehouseMachineController)
+    {
+        if (Get(netId, out var networkedWarehouseMachineController))
+        {
+            warehouseMachineController = networkedWarehouseMachineController.WarehouseMachineController;
+            return true;
+        }
+
+        warehouseMachineController = null;
+        return false;
+    }
+
+    public static bool TryGet(ushort netId, out WarehouseMachine warehouseMachine)
+    {
+        if (Get(netId, out var networkedWarehouseMachineController))
+        {
+            warehouseMachine = networkedWarehouseMachineController.WarehouseMachine;
+            return true;
+        }
+
+        warehouseMachine = null;
+        return false;
+    }
+
+    public static bool GetFromWarehouseMachineController(WarehouseMachineController warehouseMachineController, out NetworkedWarehouseMachineController networkedWarehouseMachineController)
+    {
+        return warehouseMachineControllerToNetworked.TryGetValue(warehouseMachineController, out networkedWarehouseMachineController);
     }
 
     public static NetworkedWarehouseMachineController GetFromWarehouseMachine(WarehouseMachine warehouseMachine)
@@ -41,9 +89,8 @@ public class NetworkedWarehouseMachineController : IdMonoBehaviour<ushort, Netwo
         if (warehouseMachineController != null)
         {
             //Warehouse Machine Controller found, check for NetworkedWarehouseMachineController
-            networkedWarehouseMachineController = GetFromWarehouseMachineController(warehouseMachineController);
-            if (networkedWarehouseMachineController != null)
-                warehouseMachineToNetworked[warehouseMachine] = GetFromWarehouseMachineController(warehouseMachineController);
+            if (!GetFromWarehouseMachineController(warehouseMachineController, out networkedWarehouseMachineController) && networkedWarehouseMachineController != null)
+                warehouseMachineToNetworked[warehouseMachine] = networkedWarehouseMachineController;
         }
 
         return networkedWarehouseMachineController;
@@ -114,7 +161,7 @@ public class NetworkedWarehouseMachineController : IdMonoBehaviour<ushort, Netwo
 
         if (packet.CarNetId != 0)
         {
-            if (!NetworkedTrainCar.Get(packet.CarNetId, out var networkedCar))
+            if (!NetworkedTrainCar.TryGet(packet.CarNetId, out NetworkedTrainCar networkedCar))
             {
                 Multiplayer.LogWarning($"NetworkedWarehouseMachineController failed to find TrainCar with NetId: {packet.NetId}");
                 return;
@@ -164,6 +211,7 @@ public class NetworkedWarehouseMachineController : IdMonoBehaviour<ushort, Netwo
 
             foreach (var task in data.tasksAvailableToProcess)
                 WarehouseMachine.RemoveWarehouseTask(task);
+
         }
     }
 }

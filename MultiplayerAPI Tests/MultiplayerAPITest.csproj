@@ -1,0 +1,100 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>MultiplayerAPITest</RootNamespace>
+    <InformationalVersion>0.0.0.0</InformationalVersion>
+  </PropertyGroup>
+    
+    <ItemGroup>
+        <PackageReference Include="Krafs.Publicizer" Version="2.3.0">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+        <Publicize Include="Assembly-CSharp" IncludeCompilerGeneratedMembers="false" />
+    </ItemGroup>
+    
+    <!-- Derail Valley References -->
+    <ItemGroup>
+        <Reference Include="Assembly-CSharp" />
+        <Reference Include="CommandTerminal" />
+        <Reference Include="DV.BrakeSystem" />
+        <Reference Include="DV.BuildInfo" />
+        <Reference Include="DV.CharacterController" />
+        <Reference Include="DV.Common" />
+        <Reference Include="DV.ControllerAnchors" />
+        <Reference Include="DV.Highlighting" />
+        <Reference Include="DV.Interaction" />
+        <Reference Include="DV.Inventory" />
+        <Reference Include="DV.Layers" />
+        <Reference Include="DV.Localization" />
+        <Reference Include="DV.NAudio" />
+        <Reference Include="DV.PointSet" />
+        <Reference Include="DV.RadioPlayer" />
+        <Reference Include="DV.RailTrack" />
+        <Reference Include="DV.Scenarios.CRUD" />
+        <Reference Include="DV.Simulation" />
+        <Reference Include="DV.Platform.Steam" />
+        <Reference Include="DV.Telemetry" />
+        <Reference Include="DV.TerrainSystem" />
+        <Reference Include="DV.TerrainTools" />
+        <Reference Include="DV.ThingTypes" />
+        <Reference Include="DV.UI" />
+        <Reference Include="DV.UIFramework" />
+        <Reference Include="DV.UserManagement" />
+        <Reference Include="DV.Utils" />
+        <Reference Include="DV.WeatherSystem" />
+    </ItemGroup>
+    
+    <!-- Mod Loader -->
+    <ItemGroup>
+        <PackageReference Include="UnityModManager" Version="0.31.1" />
+    </ItemGroup>
+    
+    <!-- Third-Party References -->
+    <ItemGroup>
+        <PackageReference Include="ErrorProne.NET.Structs" Version="0.4.0-beta.1" />
+        <!--PackageReference Include="Humanizer.Core" Version="2.14.1" / -->
+        <Reference Include="I2.Localization" />
+        <Reference Include="Microsoft.CSharp" />
+        <Reference Include="net.smkd.vector3d" />
+        <Reference Include="Newtonsoft.Json" />
+        <Reference Include="RootMotion" />
+        <Reference Include="Stateless" />
+        <Reference Include="WorldStreamer" />
+
+        <Reference Include="MultiplayerAPI">
+            <HintPath>../build/MultiplayerAPI.dll</HintPath>
+        </Reference>
+    </ItemGroup>
+    <!-- Unity References -->
+    <ItemGroup>
+        <Reference Include="Unity.TextMeshPro" />
+        <Reference Include="UnityEngine" />
+        <Reference Include="UnityEngine.AssetBundleModule" />
+        <Reference Include="UnityEngine.AudioModule" />
+        <Reference Include="UnityEngine.AnimationModule" />
+        <Reference Include="UnityEngine.CoreModule" />
+        <Reference Include="UnityEngine.IMGUIModule" />
+        <Reference Include="UnityEngine.JSONSerializeModule" />
+        <Reference Include="UnityEngine.PhysicsModule" />
+        <Reference Include="UnityEngine.UI" />
+        <Reference Include="UnityEngine.UIModule" />
+        <Reference Include="UnityEngine.TextRenderingModule" />
+        <Reference Include="UnityEngine.UnityWebRequestModule" />
+        <Reference Include="UnityEngine.InputLegacyModule" />
+    </ItemGroup>
+    <Target Name="PostBuildMacros">
+        <GetAssemblyIdentity AssemblyFiles="$(TargetPath)">
+            <Output TaskParameter="Assemblies" ItemName="Targets" />
+        </GetAssemblyIdentity>
+        <ItemGroup>
+            <VersionNumber Include="$(InformationalVersion.Split('+')[0] )" />
+        </ItemGroup>
+    </Target>
+    <Target Name="PostBuild" AfterTargets="PostBuildEvent" DependsOnTargets="PostBuildMacros">   
+        <Copy SourceFiles="$(TargetPath);" DestinationFolder="$(DvInstallDir)\Mods\MultiplayerAPITest" />
+        <Copy SourceFiles="../build/MultiplayerAPI.dll" DestinationFolder="$(DvInstallDir)\Mods\MultiplayerAPITest" />
+    </Target>
+</Project>

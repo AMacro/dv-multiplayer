@@ -1,0 +1,86 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net48</TargetFramework>
+        <LangVersion>latest</LangVersion>
+        <RootNamespace>MPAPI</RootNamespace>
+        <InformationalVersion>0.1.0.0</InformationalVersion>
+        <Version>0.1.0.0</Version>
+
+        <!-- NuGet Package Configuration -->
+        <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+        <PackageId>DVMultiplayerAPI</PackageId>
+        <Title>Derail Valley Multiplayer API</Title>
+        <Authors>Macka</Authors>
+        <Description>API for interfacing with DV Multiplayer mod. Provides events and interfaces for server/client interactions in Derail Valley multiplayer scenarios.</Description>
+        <PackageTags>derail-valley;multiplayer;gaming;api;mod</PackageTags>
+        <PackageProjectUrl>https://github.com/AMacro/dv-multiplayer/wiki/API-Overview</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/AMacro/dv-multiplayer</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <PackageReleaseNotes>Initial release of DV Multiplayer API</PackageReleaseNotes>
+        <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+
+        <!-- Documentation -->
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <DocumentationFile>bin\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
+        <IncludeSymbols>true</IncludeSymbols>
+        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+            <_Parameter1>Multiplayer</_Parameter1>
+        </AssemblyAttribute>
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Krafs.Publicizer" Version="2.3.0">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+        <Publicize Include="Assembly-CSharp" IncludeCompilerGeneratedMembers="false" />
+    </ItemGroup>
+
+    <!-- Mod Loader -->
+    <ItemGroup>
+        <PackageReference Include="UnityModManager" Version="0.31.1" />
+    </ItemGroup>
+
+    <!-- Derail Valley References -->
+    <ItemGroup>
+        <Reference Include="Assembly-CSharp" />
+    </ItemGroup>
+
+    <!-- Unity References -->
+    <ItemGroup>
+        <Reference Include="Unity.TextMeshPro" />
+        <Reference Include="UnityEngine" />
+        <Reference Include="UnityEngine.AssetBundleModule" />
+        <Reference Include="UnityEngine.AudioModule" />
+        <Reference Include="UnityEngine.AnimationModule" />
+        <Reference Include="UnityEngine.CoreModule" />
+        <Reference Include="UnityEngine.IMGUIModule" />
+        <Reference Include="UnityEngine.JSONSerializeModule" />
+        <Reference Include="UnityEngine.PhysicsModule" />
+        <Reference Include="UnityEngine.UI" />
+        <Reference Include="UnityEngine.UIModule" />
+        <Reference Include="UnityEngine.TextRenderingModule" />
+        <Reference Include="UnityEngine.UnityWebRequestModule" />
+        <Reference Include="UnityEngine.InputLegacyModule" />
+    </ItemGroup>
+
+    <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+        <!-- Sign Assemblies if in 'Release' -->
+        <Exec Condition="$(ConfigurationName) == 'Release' AND $(Cert-Thumb) != ''" Command="&quot;$(SignToolPath)SignTool.exe&quot; sign /sha1 $(Cert-Thumb) /fd SHA256 /t http://timestamp.sectigo.com &quot;$(TargetPath)&quot;" />
+        
+        <!-- Copy to build folder -->
+        <Copy SourceFiles="$(TargetPath);" DestinationFolder="../build/" />
+
+        <!-- Generate documentation using https://charlesdevandiere.github.io/xmldoc2md/ -->
+        <Exec Command="xmldoc2md &quot;$(TargetPath)&quot; -o &quot;../docs&quot; --gitlab-wiki --structure tree" ContinueOnError="true" />
+
+        <!-- Convert to GitHub Wiki format with flattened output -->
+        <Exec Command="powershell -ExecutionPolicy Bypass -File &quot;../Convert-ToGitHubWiki.ps1&quot; -Flatten" WorkingDirectory="../docs" ContinueOnError="true" />
+    </Target>
+</Project>

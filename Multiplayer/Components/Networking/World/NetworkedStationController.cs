@@ -1,16 +1,15 @@
-using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Linq;
 using DV.Booklets;
 using DV.Logic.Job;
 using DV.ServicePenalty;
-using DV.Utils;
 using DV.ThingTypes;
+using DV.Utils;
 using Multiplayer.Components.Networking.Jobs;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Networking.Data;
 using Multiplayer.Utils;
+using System.Collections.Generic;
+using System.Collections;
+using System;
 using UnityEngine;
 
 namespace Multiplayer.Components.Networking.World;
@@ -32,11 +31,84 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
         return b;
     }
 
-    public static Dictionary<ushort, string>GetAll()
+
+    public static bool TryGet(ushort netId, out StationController stationController)
+    {
+        if (Get(netId, out var networkedStationController))
+        {
+            stationController = networkedStationController.StationController;
+            return true;
+        }
+
+        stationController = null;
+        return false;
+    }
+
+    public static bool TryGet(ushort netId, out Station station)
+    {
+        if (Get(netId, out var networkedStationController))
+        {
+            station = networkedStationController.StationController.logicStation;
+            return true;
+        }
+
+        station = null;
+        return false;
+    }
+
+    public static bool TryGet(ushort netId, out JobValidator jobValidator)
+    {
+        if (Get(netId, out var networkedStationController))
+        {
+            jobValidator = networkedStationController.JobValidator;
+            return true;
+        }
+
+        jobValidator = null;
+        return false;
+    }
+
+    public static bool TryGetNetId(StationController stationController, out ushort netId)
+    {
+        if (GetFromStationController(stationController, out var networkedStationController))
+        {
+            netId = networkedStationController.NetId;
+            return true;
+        }
+
+        netId = 0;
+        return false;
+    }
+
+    public static bool TryGetNetId(Station station, out ushort netId)
+    {
+        if (GetFromStation(station, out var networkedStationController))
+        {
+            netId = networkedStationController.NetId;
+            return true;
+        }
+
+        netId = 0;
+        return false;
+    }
+
+    public static bool TryGetNetId(JobValidator jobValidator, out ushort netId)
+    {
+        if (GetFromJobValidator(jobValidator, out var networkedStationController))
+        {
+            netId = networkedStationController.NetId;
+            return true;
+        }
+
+        netId = 0;
+        return false;
+    }
+
+    public static Dictionary<ushort, string> GetAll()
     {
         Dictionary<ushort, string> result = [];
 
-        foreach (var kvp in stationIdToNetworkedStationController )
+        foreach (var kvp in stationIdToNetworkedStationController)
         {
             //Multiplayer.Log($"GetAll() adding {kvp.Value.NetId}, {kvp.Key}");
             result.Add(kvp.Value.NetId, kvp.Key);
@@ -84,7 +156,7 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
     {
         string stationID = stationController.logicStation.ID;
 
-        stationControllerToNetworkedStationController.Add(stationController,networkedStationController);
+        stationControllerToNetworkedStationController.Add(stationController, networkedStationController);
         stationIdToNetworkedStationController.Add(stationID, networkedStationController);
         stationIdToStationController.Add(stationID, stationController);
         stationToNetworkedStationController.Add(stationController.logicStation, networkedStationController);
@@ -105,7 +177,7 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
     }
     #endregion
 
-     const int MAX_FRAMES = 120;
+    const int MAX_FRAMES = 120;
 
     protected override bool IsIdServerAuthoritative => true;
 
@@ -177,7 +249,7 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
             string stationName = validator.transform.parent.name ?? "";
             stationName += "_office_anchor";
 
-            if(this.transform.parent.name.Equals(stationName, StringComparison.OrdinalIgnoreCase))
+            if (this.transform.parent.name.Equals(stationName, StringComparison.OrdinalIgnoreCase))
             {
                 JobValidator = validator;
                 RegisterJobValidator(validator, this);
@@ -194,7 +266,7 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
         NetworkedJob networkedJob = new GameObject($"NetworkedJob {job.ID}").AddComponent<NetworkedJob>();
         networkedJob.Initialize(job, this);
         NetworkedJobs.Add(networkedJob);
-   
+
         NewJobs.Add(networkedJob);
 
         //Setup handlers
@@ -248,11 +320,14 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
 
     private void AddJob(JobData jobData)
     {
-        Job newJob = CreateJobFromJobData(jobData);
+        var newJobData = JobData.ToJob(jobData);
+
+        Job newJob = newJobData.newJob;
+        var netIdToTask = newJobData.netIdToTask;
+
         var carNetIds = jobData.GetCars();
 
-        NetworkedJob networkedJob = CreateNetworkedJob(newJob, jobData.NetID, carNetIds);
-
+        NetworkedJob networkedJob = CreateNetworkedJob(newJob, jobData.NetID, carNetIds, netIdToTask);
         NetworkedJobs.Add(networkedJob);
 
         if (networkedJob.Job.State == JobState.Available)
@@ -267,6 +342,9 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
         }
         else if (networkedJob.Job.State == JobState.InProgress)
         {
+            StationController.logicStation.AddJobToStation(newJob);
+            StationController.processedNewJobs.Add(newJob);
+
             takenJobs.Add(newJob);
             newJob.TakeJob(true); //take job as if loaded from save to prevent debt controller kicking in
         }
@@ -277,34 +355,18 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
             return;
         }
 
-       
+
         Multiplayer.LogDebug(() => $"AddJob({jobData.ID}) Starting plate update {newJob.ID} count: {jobData.GetCars().Count}");
         StartCoroutine(UpdateCarPlates(carNetIds, newJob.ID));
 
         Multiplayer.Log($"Added NetworkedJob {newJob.ID} to NetworkedStationController {StationController.logicStation.ID}");
     }
 
-    private Job CreateJobFromJobData(JobData jobData)
-    {
-
-        List<Task> tasks = jobData.Tasks.Select(taskData => taskData.ToTask()).ToList();
-        StationsChainData chainData = new(jobData.ChainData.ChainOriginYardId, jobData.ChainData.ChainDestinationYardId);
-
-        Job newJob = new(tasks, jobData.JobType, jobData.TimeLimit, jobData.InitialWage, chainData, jobData.ID, jobData.RequiredLicenses)
-        {
-            startTime = jobData.StartTime,
-            finishTime = jobData.FinishTime,
-            State = jobData.State
-        };
-
-        return newJob;
-    }
-
     private IEnumerator DelayCreateJob(JobData jobData)
     {
         int frameCounter = 0;
 
-        Multiplayer.LogDebug(()=>$"DelayCreateJob({jobData.NetID}) job type: {jobData.JobType}");
+        Multiplayer.LogDebug(() => $"DelayCreateJob([{jobData.NetID}, {jobData.ID}]) job type: {jobData.JobType}");
 
         yield return new WaitForEndOfFrame();
 
@@ -312,7 +374,7 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
         {
             if (CheckCarsLoaded(jobData))
             {
-                Multiplayer.LogDebug(() => $"DelayCreateJob({jobData.NetID}) job type: {jobData.JobType}. Successfully created cars!");
+                Multiplayer.LogDebug(() => $"DelayCreateJob([{jobData.NetID}, {jobData.ID}]) job type: {jobData.JobType}. Successfully created cars!");
                 AddJob(jobData);
                 yield break;
             }
@@ -321,7 +383,7 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
             yield return new WaitForEndOfFrame();
         }
 
-        Multiplayer.LogWarning($"Timeout waiting for cars to load for job {jobData.NetID}");
+        Multiplayer.LogWarning($"Timeout waiting for cars to load for job [{jobData.NetID}, {jobData.ID}]");
     }
 
     private bool CheckCarsLoaded(JobData jobData)
@@ -329,7 +391,7 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
         //extract all cars from the job and verify they have been initialised
         foreach (var carNetId in jobData.GetCars())
         {
-            if (!NetworkedTrainCar.Get(carNetId, out NetworkedTrainCar car) || !car.Client_Initialized)
+            if (!NetworkedTrainCar.TryGet(carNetId, out NetworkedTrainCar car) || !car.Client_Initialized)
             {
                 //car not spawned or not yet initialised
                 return false;
@@ -339,11 +401,12 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
         return true;
     }
 
-    private NetworkedJob CreateNetworkedJob(Job job, ushort netId, List<ushort> carNetIds)
+    private NetworkedJob CreateNetworkedJob(Job job, ushort netId, List<ushort> carNetIds, Dictionary<ushort, Task> netIdToTask)
     {
         NetworkedJob networkedJob = new GameObject($"NetworkedJob {job.ID}").AddComponent<NetworkedJob>();
         networkedJob.NetId = netId;
         networkedJob.Initialize(job, this);
+        networkedJob.SetTasksFromServer(netIdToTask);
         networkedJob.OnJobDirty += OnJobDirty;
         networkedJob.JobCars = carNetIds;
         return networkedJob;
@@ -356,11 +419,12 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
             if (!NetworkedJob.Get(job.JobNetID, out NetworkedJob netJob))
                 continue;
 
+            netJob.Job.startTime = job.StartTime;
+            netJob.Job.finishTime = job.FinishTime;
+
             UpdateJobState(netJob, job);
             UpdateJobOverview(netJob, job);
 
-            netJob.Job.startTime = job.StartTime;
-            netJob.Job.finishTime = job.FinishTime;
         }
     }
 
@@ -528,7 +592,7 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
             while (frameCounter < MAX_FRAMES)
             {
 
-                if (NetworkedTrainCar.GetTrainCar(carNetId, out trainCar) &&
+                if (NetworkedTrainCar.TryGet(carNetId, out trainCar) &&
                     trainCar != null &&
                     trainCar.trainPlatesCtrl?.trainCarPlates != null &&
                     trainCar.trainPlatesCtrl.trainCarPlates.Count > 0)
@@ -552,8 +616,8 @@ public class NetworkedStationController : IdMonoBehaviour<ushort, NetworkedStati
 
     private void GenerateOverview(NetworkedJob networkedJob, ushort itemNetId, ItemPositionData posData)
     {
-        Multiplayer.Log($"GenerateOverview({networkedJob.Job.ID}, {itemNetId}) Position: {posData.Position}, Less currentMove: {posData.Position + WorldMover.currentMove} ");
-        JobOverview jobOverview = BookletCreator_JobOverview.Create(networkedJob.Job, posData.Position + WorldMover.currentMove, posData.Rotation,WorldMover.OriginShiftParent);
+        Multiplayer.Log($"GenerateOverview([{networkedJob.Job.ID},{networkedJob.Job.jobType}], {itemNetId}) Position: {posData.Position}, Less currentMove: {posData.Position + WorldMover.currentMove}");
+        JobOverview jobOverview = BookletCreator_JobOverview.Create(networkedJob.Job, posData.Position + WorldMover.currentMove, posData.Rotation, WorldMover.OriginShiftParent);
 
         NetworkedItem netItem = jobOverview.GetOrAddComponent<NetworkedItem>();
         netItem.Initialize(jobOverview, itemNetId, false);

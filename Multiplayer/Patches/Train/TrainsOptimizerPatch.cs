@@ -1,10 +1,9 @@
 using HarmonyLib;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Text;
 using DV.Logic.Job;
-using DV.Utils;
+using DV.Optimizers;
 
 namespace Multiplayer.Patches.Train;
 [HarmonyPatch(typeof(TrainsOptimizer))]

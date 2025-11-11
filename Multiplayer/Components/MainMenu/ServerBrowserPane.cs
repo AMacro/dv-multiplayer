@@ -1,26 +1,27 @@
+using DV;
 using DV.Localization;
 using DV.Platform.Steam;
 using DV.UI;
 using DV.UIFramework;
 using DV.Utils;
-using DV;
 using LiteNetLib;
+using Multiplayer.API;
 using Multiplayer.Components.MainMenu.ServerBrowser;
 using Multiplayer.Components.Networking;
 using Multiplayer.Components.UI.Controls;
 using Multiplayer.Networking.Data;
 using Multiplayer.Utils;
-using Steamworks.Data;
 using Steamworks;
-using System.Collections.Generic;
+using Steamworks.Data;
+using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
-using System;
 using TMPro;
-using UnityEngine.UI;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace Multiplayer.Components.MainMenu
 {
@@ -85,6 +86,7 @@ namespace Multiplayer.Components.MainMenu
 
         private Lobby[] lobbies;
 
+        private bool incompatibleMods = true;
 
         #region setup
 
@@ -102,6 +104,9 @@ namespace Multiplayer.Components.MainMenu
 
         public void OnEnable()
         {
+            //ensure no incompatible mods are loaded
+            incompatibleMods = ModCompatibilityManager.Instance.CheckModCompatibility();
+
             this.SetupListeners(true);
 
             buttonDirectIP.ToggleInteractable(true);
@@ -419,16 +424,16 @@ namespace Multiplayer.Components.MainMenu
                 return;
 
             selectedServer = gridView.SelectedItem;
-            if (selectedServer != null)
+            if (selectedServer != null && incompatibleMods == false)
             {
                 UpdateDetailsPane();
 
                 //Check if we can connect to this server
                 Multiplayer.Log($"Server: \"{selectedServer.GameVersion}\" \"{selectedServer.MultiplayerVersion}\"");
-                Multiplayer.Log($"Client: \"{BuildInfo.BUILD_VERSION_MAJOR}\" \"{Multiplayer.Ver}\"");
-                Multiplayer.Log($"Result: \"{selectedServer.GameVersion == BuildInfo.BUILD_VERSION_MAJOR.ToString()}\" \"{selectedServer.MultiplayerVersion == Multiplayer.Ver}\"");
+                Multiplayer.Log($"Client: \"{Multiplayer.LocalBuildInfo}\" \"{Multiplayer.Ver}\"");
+                Multiplayer.Log($"Result: \"{selectedServer.GameVersion == Multiplayer.LocalBuildInfo}\" \"{selectedServer.MultiplayerVersion == Multiplayer.Ver}\"");
 
-                bool canConnect = selectedServer.GameVersion == BuildInfo.BUILD_VERSION_MAJOR.ToString() &&
+                bool canConnect = selectedServer.GameVersion == Multiplayer.LocalBuildInfo &&
                                   selectedServer.MultiplayerVersion == Multiplayer.Ver;
 
                 buttonJoin.ToggleInteractable(canConnect);
@@ -469,7 +474,7 @@ namespace Multiplayer.Components.MainMenu
                 details += "<alpha=#50>" + Locale.SERVER_BROWSER__PASSWORD_REQUIRED + ":</color> " + (selectedServer.HasPassword ? Locale.SERVER_BROWSER__YES : Locale.SERVER_BROWSER__NO) + "<br>";
                 details += "<alpha=#50>" + Locale.SERVER_BROWSER__MODS_REQUIRED + ":</color> " + (string.IsNullOrEmpty(selectedServer.RequiredMods) ? Locale.SERVER_BROWSER__NO : Locale.SERVER_BROWSER__YES) + "<br>";
                 details += "<br>";
-                details += "<alpha=#50>" + Locale.SERVER_BROWSER__GAME_VERSION + ":</color> " + (selectedServer.GameVersion != BuildInfo.BUILD_VERSION_MAJOR.ToString() ? "<color=\"red\">" : "") + selectedServer.GameVersion + "</color><br>";
+                details += "<alpha=#50>" + Locale.SERVER_BROWSER__GAME_VERSION + ":</color> " + (selectedServer.GameVersion != Multiplayer.LocalBuildInfo ? "<color=\"red\">" : "") + selectedServer.GameVersion + "</color><br>";
                 details += "<alpha=#50>" + Locale.SERVER_BROWSER__MOD_VERSION + ":</color> " + (selectedServer.MultiplayerVersion != Multiplayer.Ver ? "<color=\"red\">" : "") + selectedServer.MultiplayerVersion + "</color><br>";
                 details += "<br>";
                 details += selectedServer.ServerDetails;
@@ -1008,7 +1013,7 @@ namespace Multiplayer.Components.MainMenu
                 string hasPass = lobby.GetData(SteamworksUtils.LOBBY_HAS_PASSWORD);
                 Multiplayer.Log($"Lobby ({lobby.Id}) has password: {hasPass}");
 
-                if (string.IsNullOrEmpty(hasPass))
+                if (string.IsNullOrEmpty(hasPass) || hasPass == "False")
                 {
                     Multiplayer.Log($"Attempting connection...");
                     InitiateConnection();

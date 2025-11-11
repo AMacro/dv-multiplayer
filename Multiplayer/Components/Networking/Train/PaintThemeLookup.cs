@@ -1,102 +1,123 @@
 using DV.Customization.Paint;
 using DV.Utils;
+using JetBrains.Annotations;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
-using JetBrains.Annotations;
 
 
 namespace Multiplayer.Components.Networking.Train;
 
 public class PaintThemeLookup : SingletonBehaviour<PaintThemeLookup>
 {
-    private readonly Dictionary<string, sbyte> themeIndices = [];
-    private string[] themeNames;
+    private readonly Dictionary<uint, string> hashToThemeName = [];
+    private readonly Dictionary<uint, string> hashToBaseThemeName = [];
 
     protected override void Awake()
     {
         base.Awake();
-        themeNames = Resources.LoadAll<Object>("").Where(x => x is PaintTheme)
-            .Select(x => x.name.ToLower())
+        var themeNames = Resources.LoadAll<Object>("").Where(x => x is PaintTheme)
+            .Select(x => ((PaintTheme)x).AssetName)
             .ToArray();
 
-        for (sbyte i = 0; i < themeNames.Length; i++)
+        foreach (var themeName in themeNames)
         {
-            themeIndices.Add(themeNames[i], i);
+            var id = RegisterTheme(themeName);
+            if (id != 0)
+                hashToBaseThemeName[id] = themeName;
         }
-
-        Multiplayer.LogDebug(() =>
-        {
-            return $"Registered Paint Themes:\r\n{string.Join("\r\n", themeNames.Select((name, index) => $"{index}: {name}"))}";
-        });
     }
 
-    public PaintTheme GetPaintTheme(sbyte index)
+    public PaintTheme GetPaintTheme(uint themeId)
     {
         PaintTheme theme = null;
 
-        var themeName = GetThemeName(index);
+        var themeName = GetThemeNameFromId(themeId);
 
         if (themeName != null)
-            PaintTheme.TryLoad(GetThemeName(index), out theme);
+            PaintTheme.TryLoad(themeName, out theme);
 
         return theme;
     }
 
-    public string GetThemeName(sbyte index)
+    public string GetThemeNameFromId(uint themeId)
     {
-        return (index >= 0 && index < themeNames.Length) ? themeNames[index] : null;
+        hashToThemeName.TryGetValue(themeId, out string themeName);
+
+        return themeName;
     }
 
-    public sbyte GetThemeIndex(PaintTheme theme)
+    public uint GetThemeId(PaintTheme theme)
     {
         if(theme == null)
-            return -1;
+            return 0;
 
-        return GetThemeIndex(theme.assetName);
+        return GetThemeId(theme.AssetName);
     }
 
-    public sbyte GetThemeIndex(string themeName)
+    public uint GetThemeId(string themeName)
     {
-        return themeIndices.TryGetValue(themeName.ToLower(), out sbyte index) ? index : (sbyte)-1;
+        if (string.IsNullOrEmpty(themeName))
+            return 0;
+
+        return Fnv1aHash(themeName);
     }
 
-    /*
-     * Allow other mods to register custom themes
-     
-    public void RegisterTheme(string themeName)
+    public uint RegisterTheme(string themeName)
     {
-        themeName = themeName.ToLower();
-        if (!themeIndices.ContainsKey(themeName))
+        if (string.IsNullOrEmpty(themeName))
+            return 0;
+
+        var hash = GetThemeId(themeName);
+
+        if (hashToThemeName.ContainsKey(hash))
         {
-            // Add to array
-            Array.Resize(ref themeNames, themeNames.Length + 1);
-            int newIndex = themeNames.Length - 1;
-            themeNames[newIndex] = themeName;
-
-            // Add to dictionary
-            themeIndices.Add(themeName, newIndex);
+            Multiplayer.LogWarning($"Theme '{themeName}' is already registered with id: {hash}.");
+            return hash;
         }
+
+        hashToThemeName[hash] = themeName;
+
+        Multiplayer.Log($"Theme '{themeName}' registered with id: {hash}.");
+
+        return hash;
     }
 
     public void UnregisterTheme(string themeName)
     {
-        themeName = themeName.ToLower();
-        if (themeIndices.TryGetValue(themeName, out int index))
-        {
-            // Remove from dictionary
-            themeIndices.Remove(themeName);
+        var hash = GetThemeId(themeName);
 
-            // Remove from array and shift remaining elements
-            for (int i = index; i < themeNames.Length - 1; i++)
-            {
-                themeNames[i] = themeNames[i + 1];
-                themeIndices[themeNames[i]] = i; // Update indices
-            }
-            Array.Resize(ref themeNames, themeNames.Length - 1);
+        if(hashToBaseThemeName.ContainsKey(hash))
+        {
+            Multiplayer.LogWarning($"Tried to unregister a base-game theme '{themeName}'.");
+            return;
+        }
+
+        if (hashToThemeName.TryGetValue(hash, out _))
+        {
+            hashToThemeName.Remove(hash);
+        }
+        else
+        {
+            Multiplayer.LogWarning($"Tried to unregister theme '{themeName}', but theme is not registered.");
         }
     }
-    */
+    
+
+    private uint Fnv1aHash(string text)
+    {
+        unchecked
+        {
+            const uint fnvPrime = 0x01000193;
+            uint hash = 0x811C9DC5;
+            foreach (char c in text)
+            {
+                hash ^= c;
+                hash *= fnvPrime;
+            }
+            return hash;
+        }
+    }
 
     [UsedImplicitly]
     public new static string AllowAutoCreate()

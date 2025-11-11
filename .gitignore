@@ -310,3 +310,4 @@ MultiplayerAssets/ProjectSettings/*
 *.pem
 OtherReffs/UnityChan.dll
 OtherReffs/MultiplayerEditor.dll
+/docs

@@ -102,8 +102,8 @@ public readonly struct TrainsetSpawnPart
         if(data.IsRestorationLoco)
             writer.Put((byte) data.RestorationState);
 
-        writer.Put(PaintThemeLookup.Instance.GetThemeIndex(data.PaintExterior));
-        writer.Put(PaintThemeLookup.Instance.GetThemeIndex(data.PaintInterior));
+        writer.Put(PaintThemeLookup.Instance.GetThemeId(data.PaintExterior));
+        writer.Put(PaintThemeLookup.Instance.GetThemeId(data.PaintInterior));
 
 
         CouplingData.Serialize(writer, data.FrontCoupling);
@@ -133,12 +133,12 @@ public readonly struct TrainsetSpawnPart
         if (isRestoration)
             restorationState = (LocoRestorationController.RestorationState)reader.GetByte();
 
-        sbyte extThemeIndex = reader.GetSByte();
-        sbyte intThemeIndex = reader.GetSByte();
+        uint extThemeId = reader.GetUInt();
+        uint intThemeId = reader.GetUInt();
 
 
-        PaintTheme exteriorPaint = PaintThemeLookup.Instance.GetPaintTheme(extThemeIndex);
-        PaintTheme interiorPaint = PaintThemeLookup.Instance.GetPaintTheme(intThemeIndex);
+        PaintTheme exteriorPaint = PaintThemeLookup.Instance.GetPaintTheme(extThemeId);
+        PaintTheme interiorPaint = PaintThemeLookup.Instance.GetPaintTheme(intThemeId);
 
         var frontCoupling = CouplingData.Deserialize(reader);
         var rearCoupling = CouplingData.Deserialize(reader);

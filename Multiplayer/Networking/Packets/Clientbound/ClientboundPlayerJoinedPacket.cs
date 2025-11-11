@@ -4,7 +4,7 @@ namespace Multiplayer.Networking.Packets.Clientbound;
 
 public class ClientboundPlayerJoinedPacket
 {
-    public byte Id { get; set; }
+    public byte PlayerId { get; set; }
     public string Username { get; set; }
     //public byte[] Guid { get; set; }
     public ushort CarID { get; set; }

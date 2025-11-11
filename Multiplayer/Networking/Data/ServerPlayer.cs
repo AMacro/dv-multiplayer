@@ -1,15 +1,32 @@
-using System;
-using System.Collections.Generic;
-using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Components.Networking.World;
+using Multiplayer.Components.Networking;
+using Multiplayer.Networking.TransportLayers;
+using Multiplayer.Utils;
+using System.Collections.Generic;
+using System;
 using UnityEngine;
 
 namespace Multiplayer.Networking.Data;
 
-public class ServerPlayer
+public class ServerPlayer : IDisposable
 {
-    public byte Id { get; set; }
+    #region ID Management
+    private static readonly IdPool<byte> idPool = new();
+
+    public void Dispose()
+    {
+        Multiplayer.LogDebug(() => $"Disposing ServerPlayer {Username} ({PlayerId})");
+        if (PlayerId != 0)
+        {
+            idPool.ReleaseId(PlayerId);
+            PlayerId = 0;
+        }
+    }
+    #endregion
+
+    public ITransportPeer Peer { get; private set; }
+    public byte PlayerId { get; private set; }
     public bool IsLoaded { get; set; }
     public string Username { get; set; }
     public string OriginalUsername { get; set; }
@@ -26,6 +43,17 @@ public class ServerPlayer
     private Vector3 _lastWorldPos = Vector3.zero;
     private Vector3 _lastAbsoluteWorldPosition = Vector3.zero;
 
+    public ServerPlayer(ITransportPeer peer, string username, string originalUsername, Guid guid)
+    {
+        PlayerId = idPool.NextId;
+
+        Peer = peer;
+
+        Username = username;
+        OriginalUsername = originalUsername;
+        Guid = guid;
+    }
+
     #region Positioning
     public Vector3 AbsoluteWorldPosition
     {
@@ -35,7 +63,7 @@ public class ServerPlayer
             Vector3 pos;
             try
             {
-                if (CarId == 0 || !NetworkedTrainCar.Get(CarId, out NetworkedTrainCar car))
+                if (CarId == 0 || !NetworkedTrainCar.TryGet(CarId, out NetworkedTrainCar car))
                 {
                     if (CarId != 0)
                         Multiplayer.LogDebug(() => $"AbsoluteWorldPosition() noID {Username}: CarId: {CarId}");
@@ -69,7 +97,7 @@ public class ServerPlayer
             Vector3 pos;
             try
             {
-                if (CarId == 0 || !NetworkedTrainCar.Get(CarId, out NetworkedTrainCar car))
+                if (CarId == 0 || !NetworkedTrainCar.TryGet(CarId, out NetworkedTrainCar car))
                 {
                     if(CarId != 0)
                         Multiplayer.LogDebug(() =>$"WorldPosition() noID {Username}: CarId: {CarId}");
@@ -96,7 +124,7 @@ public class ServerPlayer
             return pos;
         }
     }  
-    public float WorldRotationY => CarId == 0 || !NetworkedTrainCar.Get(CarId, out NetworkedTrainCar car)
+    public float WorldRotationY => CarId == 0 || !NetworkedTrainCar.TryGet(CarId, out NetworkedTrainCar car)
         ? RawRotationY
         : (Quaternion.Euler(0, RawRotationY, 0) * car.transform.rotation).eulerAngles.y;
     #endregion
@@ -143,6 +171,6 @@ public class ServerPlayer
 
     public override string ToString()
     {
-        return $"{Id} ({Username}, {Guid.ToString()})";
+        return $"{PlayerId} ({Username}, {Guid.ToString()})";
     }
 }

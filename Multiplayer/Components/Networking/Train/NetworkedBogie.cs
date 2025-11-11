@@ -64,7 +64,7 @@ public class NetworkedBogie : TickedQueue<BogieData>
 
         if (snapshot.IncludesTrackData)
         {
-            if (!NetworkedRailTrack.Get(snapshot.TrackNetId, out NetworkedRailTrack track))
+            if (!NetworkedRailTrack.TryGet(snapshot.TrackNetId, out NetworkedRailTrack track))
             {
                 Multiplayer.LogWarning($"NetworkedBogie.Process({identifier}) Failed to find track {snapshot.TrackNetId} for bogie: {Bogie.Car.ID}");
                 return;

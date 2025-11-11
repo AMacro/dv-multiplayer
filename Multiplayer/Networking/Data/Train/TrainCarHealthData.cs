@@ -1,5 +1,6 @@
 using DV.Damage;
 using LiteNetLib.Utils;
+using Multiplayer.Utils;
 using System;
 
 namespace Multiplayer.Networking.Data.Train;
@@ -22,9 +23,17 @@ public readonly struct TrainCarHealthData
     }
     public void LoadTo(TrainCar trainCar)
     {
+        //Multiplayer.LogDebug(() => $"TrainCarHealthData.LoadTo([{trainCar.ID}, {trainCar.GetNetId()}])");
         var dmgCtrl = trainCar.GetComponent<DamageController>();
         if (dmgCtrl != null)
         {
+            //Multiplayer.LogDebug(() => $"TrainCarHealthData.LoadTo([{trainCar.ID}, {trainCar.GetNetId()}])\r\n" +
+            //$"Damage Controller: Body: {dmgCtrl?.bodyDamage?.HealthPercentage}, " +
+            //$"Wheels: {dmgCtrl?.wheels?.HealthPercentage}, " +
+            //$"Mechanical: {dmgCtrl?.mechanicalPT?.HealthPercentage}, " +
+            //$"Electrical: {dmgCtrl?.electricalPT?.HealthPercentage}, " +
+            //$"Windows: {dmgCtrl?.windows?.windowsBroken}");
+
             dmgCtrl.bodyDamage.LoadCarDamageState(BodyHP);
             dmgCtrl.wheels?.SetCurrentHealthPercentage(WheelsHP);
             dmgCtrl.mechanicalPT?.SetCurrentHealthPercentage(MechanicalPT);
@@ -32,13 +41,13 @@ public readonly struct TrainCarHealthData
 
             if (dmgCtrl.windows != null)
                 dmgCtrl.windows.windowsBroken = WindowsBroken;
+
+            return;
         }
-        else
-        {
-            //freight cars don't have damage controller, so we need to check if they have a damage model
-            var dmgModel = trainCar.GetComponent<CarDamageModel>();
-            dmgModel?.SetHealth(BodyHP);
-        }
+
+        var dmgModel = trainCar.GetComponent<CarDamageModel>();
+        //Multiplayer.LogDebug(() => $"TrainCarHealthData.LoadTo([{trainCar.ID}, {trainCar.GetNetId()}]) Using CarDamageModel: {dmgModel !=null}");
+        dmgModel?.SetHealth(BodyHP);
     }
 
     public static TrainCarHealthData From(TrainCar trainCar)

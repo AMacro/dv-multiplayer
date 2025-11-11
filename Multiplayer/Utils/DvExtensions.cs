@@ -1,14 +1,12 @@
-using System;
+using DV.Localization;
 using DV.UI;
 using DV.UIFramework;
-using DV.Localization;
+using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Components.Networking.World;
+using Multiplayer.Networking.Data;
 using UnityEngine;
 using UnityEngine.UI;
-using System.Diagnostics;
-using Multiplayer.Components.Networking;
-using Multiplayer.Networking.Data;
 
 
 
@@ -128,18 +126,11 @@ public static class DvExtensions
         foreach (ServerPlayer serverPlayer in NetworkLifecycle.Instance.Server.ServerPlayers)
         {
             float sqDist = (serverPlayer.WorldPosition - anchor).sqrMagnitude;
-            /*
-            if(origin == "UnusedTrainCarDeleter.AreDeleteConditionsFulfilled_Patch0")
-                Multiplayer.LogDebug(() => $"AnyPlayerSqrMag(): car: {UnusedTrainCarDeleterPatch.current?.ID}, player: {serverPlayer.Username}, result: {sqDist}");
-            */
+
             if (sqDist < result)
                 result = sqDist;
         }
 
-        /*
-        if (origin == "UnusedTrainCarDeleter.AreDeleteConditionsFulfilled_Patch0")
-            Multiplayer.LogDebug(() => $"AnyPlayerSqrMag(): player: result: {result}");
-        */
         return result;
     }
 

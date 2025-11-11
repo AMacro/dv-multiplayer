@@ -57,6 +57,18 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
     {
         return itemBaseToNetworkedItem.TryGetValue(item, out networkedItem);
     }
+
+    public static bool TryGetNetId(ItemBase item, out ushort netID)
+    {
+        if (itemBaseToNetworkedItem.TryGetValue(item, out var networkedItem))
+        {
+            netID = networkedItem.NetId;
+            return true;
+        }
+
+        netID = 0;
+        return false;
+    }
     #endregion
 
     private const float PositionThreshold = 0.1f;
@@ -568,7 +580,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         gameObject.SetActive(true);
         Multiplayer.LogDebug(() => $"NetworkedItem.HandleAttachedState() ItemNetId: {snapshot?.ItemNetId} attempting attachment to car {snapshot.CarNetId}, at the front {snapshot.AttachedFront}");
 
-        if (!NetworkedTrainCar.GetTrainCar(snapshot.CarNetId, out TrainCar trainCar))
+        if (!NetworkedTrainCar.TryGet(snapshot.CarNetId, out TrainCar trainCar))
         {
             Multiplayer.LogWarning($"NetworkedItem.HandleAttachedState() CarNetId: {snapshot?.CarNetId} not found for ItemNetId: {snapshot?.ItemNetId}");
             return;

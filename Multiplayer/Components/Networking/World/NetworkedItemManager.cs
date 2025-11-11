@@ -55,7 +55,7 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
         if (!NetworkLifecycle.Instance.IsHost())
             return;
 
-        //B99 temporary patch NetworkLifecycle.Instance.Server.PlayerDisconnect += PlayerDisconnected;
+        //B99 temporary patch NetworkLifecycle.Instance.Server.PlayerDisconnected += PlayerDisconnected;
 
         try
         {

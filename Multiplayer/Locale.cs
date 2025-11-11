@@ -28,6 +28,21 @@ namespace Multiplayer
         #region Main Menu
         public static string MAIN_MENU__JOIN_SERVER => Get(MAIN_MENU__JOIN_SERVER_KEY);
         public const string MAIN_MENU__JOIN_SERVER_KEY = $"{PREFIX_MAIN_MENU}/join_server";
+
+        public static string MAIN_MENU__INCOMPATIBLE_MODS => Get(MAIN_MENU__INCOMPATIBLE_MODS_KEY);
+        public const string MAIN_MENU__INCOMPATIBLE_MODS_KEY = $"{PREFIX_MAIN_MENU}/incompatible_mods";
+
+        public static string MAIN_MENU__UPDATE_TITLE => Get(MAIN_MENU__MAIN_MENU__UPDATE_TITLE_KEY);
+        public const string MAIN_MENU__MAIN_MENU__UPDATE_TITLE_KEY = $"{PREFIX_MAIN_MENU}/update_title";
+
+        public static string MAIN_MENU__UPDATE_LATEST => Get(MAIN_MENU__UPDATE_LATEST_KEY);
+        public const string MAIN_MENU__UPDATE_LATEST_KEY = $"{PREFIX_MAIN_MENU}/update_latest";
+
+        public static string MAIN_MENU__UPDATE_INSTALLED => Get(MAIN_MENU__UPDATE_INSTALLED_KEY);
+        public const string MAIN_MENU__UPDATE_INSTALLED_KEY = $"{PREFIX_MAIN_MENU}/update_installed";
+
+        public static string MAIN_MENU__UPDATE_ACTION => Get(MAIN_MENU__UPDATE_ACTION_KEY);
+        public const string MAIN_MENU__UPDATE_ACTION_KEY = $"{PREFIX_MAIN_MENU}/update_action";
         #endregion
 
         #region Server Browser
@@ -129,6 +144,9 @@ namespace Multiplayer
 
         public static string DISCONN_REASON__MODS_EXTRA => Get(DISCONN_REASON__MODS_EXTRA_KEY);
         public const string DISCONN_REASON__MODS_EXTRA_KEY = $"{PREFIX_DISCONN_REASON}/mods_extra";
+
+        public static string DISCONN_REASON__MODS_INCOMPATIBLE => Get(DISCONN_REASON__MODS_INCOMPATIBLE_KEY);
+        public const string DISCONN_REASON__MODS_INCOMPATIBLE_KEY = $"{PREFIX_DISCONN_REASON}/mods_incompatible";
         #endregion
 
         #region Career Manager
@@ -164,6 +182,17 @@ namespace Multiplayer
         public const string CHAT_HELP_MSG_KEY = $"{PREFIX_CHAT_INFO}/help/msg";
         public static string CHAT_HELP_PLAYER_NAME => Get(CHAT_HELP_PLAYER_NAME_KEY);
         public const string CHAT_HELP_PLAYER_NAME_KEY = $"{PREFIX_CHAT_INFO}/help/playername";
+
+        public static string CHAT_WHISPER_NOT_FOUND => Get(CHAT_WHISPER_NOT_FOUND_KEY);
+        public const string CHAT_WHISPER_NOT_FOUND_KEY = $"{PREFIX_CHAT_INFO}/whisper/not_found";
+
+        public static string CHAT_KICK_UNABLE => Get(CHAT_KICK_UNABLE_KEY);
+        public const string CHAT_KICK_UNABLE_KEY = $"{PREFIX_CHAT_INFO}/kick/unable";
+        public static string CHAT_KICK_KICKED => Get(CHAT_KICK_KICKED_KEY);
+        public const string CHAT_KICK_KICKED_KEY = $"{PREFIX_CHAT_INFO}/kick/kicked";
+
+
+
         #endregion
 
         #region Pause Menu

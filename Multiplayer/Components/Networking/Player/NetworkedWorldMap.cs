@@ -9,14 +9,14 @@ public class NetworkedMapMarkersController : MonoBehaviour
 {
     private MapMarkersController markersController;
     private GameObject textPrefab;
-    private readonly Dictionary<byte, WorldMapIndicatorRefs> playerIndicators = [];
+    private readonly Dictionary<NetworkedPlayer, WorldMapIndicatorRefs> playerIndicators = [];
 
     private void Awake()
     {
         markersController = GetComponent<MapMarkersController>();
         textPrefab = markersController.GetComponentInChildren<TMP_Text>().gameObject;
         foreach (NetworkedPlayer networkedPlayer in NetworkLifecycle.Instance.Client.ClientPlayerManager.Players)
-            OnPlayerConnected(networkedPlayer.Id, networkedPlayer);
+            OnPlayerConnected(networkedPlayer);
         NetworkLifecycle.Instance.Client.ClientPlayerManager.OnPlayerConnected += OnPlayerConnected;
         NetworkLifecycle.Instance.Client.ClientPlayerManager.OnPlayerDisconnected += OnPlayerDisconnected;
         NetworkLifecycle.Instance.OnTick += OnTick;
@@ -33,7 +33,7 @@ public class NetworkedMapMarkersController : MonoBehaviour
         NetworkLifecycle.Instance.Client.ClientPlayerManager.OnPlayerDisconnected -= OnPlayerDisconnected;
     }
 
-    private void OnPlayerConnected(byte id, NetworkedPlayer player)
+    private void OnPlayerConnected(NetworkedPlayer player)
     {
         Transform root = new GameObject($"MapMarkerPlayer({player.Username})") {
             transform = {
@@ -62,15 +62,15 @@ public class NetworkedMapMarkersController : MonoBehaviour
         text.fontSizeMax = text.fontSize;
         text.enableAutoSizing = true;
 
-        playerIndicators[id] = refs;
+        playerIndicators[player] = refs;
     }
 
-    private void OnPlayerDisconnected(byte id, NetworkedPlayer player)
+    private void OnPlayerDisconnected(NetworkedPlayer player)
     {
-        if (!playerIndicators.TryGetValue(id, out WorldMapIndicatorRefs refs))
+        if (!playerIndicators.TryGetValue(player, out WorldMapIndicatorRefs refs))
             return;
         Destroy(refs.gameObject);
-        playerIndicators.Remove(id);
+        playerIndicators.Remove(player);
     }
 
     private void OnTick(uint obj)
@@ -88,15 +88,15 @@ public class NetworkedMapMarkersController : MonoBehaviour
             return;
         }
 
-        foreach (KeyValuePair<byte, WorldMapIndicatorRefs> kvp in playerIndicators)
+        foreach (KeyValuePair<NetworkedPlayer, WorldMapIndicatorRefs> kvp in playerIndicators)
         {
             if(kvp.Value == null)
                 Multiplayer.LogDebug(() => $"NetworkedWorldMap.UpdatePlayers() key: {kvp.Key}, value is null: {kvp.Value == null}");
 
-            if (!NetworkLifecycle.Instance.Client.ClientPlayerManager.TryGetPlayer(kvp.Key, out NetworkedPlayer networkedPlayer))
+            if (!NetworkLifecycle.Instance.Client.ClientPlayerManager.TryGetPlayer(kvp.Key.PlayerId, out NetworkedPlayer networkedPlayer))
             {
                 Multiplayer.LogWarning($"Player indicator for {kvp.Key} exists but {nameof(NetworkedPlayer)} does not!");
-                OnPlayerDisconnected(kvp.Key, null);
+                OnPlayerDisconnected(kvp.Key);
                 continue;
             }
 
