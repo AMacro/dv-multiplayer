@@ -24,7 +24,6 @@ public static class CarSpawner_Patch
         NetworkLifecycle.Instance.Server?.SendDestroyTrainCar(networkedTrainCar);
     }
 
-    //Called from 
     [HarmonyPatch(nameof(CarSpawner.SpawnCars))]
     [HarmonyPostfix]
     private static void SpawnCars(List<TrainCar> __result)
@@ -38,10 +37,9 @@ public static class CarSpawner_Patch
         if (__result == null || __result.Count == 0)
             return;
 
-        //Coupling is delayed by AutoCouple(), so a true trainset for the entire consist doesn't exist yet
+        // Coupling is delayed by AutoCouple(), so a true trainset for the entire consist doesn't exist yet
         Multiplayer.LogDebug(() => $"SpawnCars() {__result?.Count} cars spawned, sending to players");
         NetworkLifecycle.Instance.Server.SendSpawnTrainset(__result, true, true);
-
     }
 
     [HarmonyPatch(nameof(CarSpawner.SpawnCarFromRemote))]

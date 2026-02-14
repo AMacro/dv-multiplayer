@@ -30,6 +30,16 @@ public static class CommsRadioCarSpawnerPatch
         if (NetworkLifecycle.Instance.IsHost())
             return true;
 
+        if (__instance.spawnCooldownActive)
+            return false;
+
+        if (!__instance.canSpawnAtPoint)
+        {
+            __instance.ClearFlags();
+            CommsRadioController.PlayAudioFromRadio(__instance.cancelSound, __instance.transform);
+            return false;
+        }
+
         if (__instance.destinationTrack == null || !__instance.closestPointOnDestinationTrack.HasValue)
         {
             SpawnFail(__instance, "CommsRadioCarSpawner unable to spawn car, destination track does not exist");

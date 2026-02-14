@@ -55,6 +55,7 @@ public class NetworkTrainsetWatcher : SingletonBehaviour<NetworkTrainsetWatcher>
     private void Server_TickSet(Trainset set, uint tick)
     {
         bool anyCarMoving = false;
+        bool anyCarTeleporting = false;
         bool maxTicksReached = false;
         bool anyTracksDirty = false;
 
@@ -75,7 +76,7 @@ public class NetworkTrainsetWatcher : SingletonBehaviour<NetworkTrainsetWatcher>
         cachedSendPacket.FirstNetId = set.firstCar.GetNetId();
         cachedSendPacket.LastNetId = set.lastCar.GetNetId();
 
-        //car may not be initialised, missing a valid NetID
+        // Car may not be initialised, missing a valid NetID
         if (cachedSendPacket.FirstNetId == 0 || cachedSendPacket.LastNetId == 0)
             return;
 
@@ -130,16 +131,20 @@ public class NetworkTrainsetWatcher : SingletonBehaviour<NetworkTrainsetWatcher>
             else if (!trainCar.isStationary)
                 anyCarMoving = true;
 
-            // We can finish checking early if we have either a car moving or a car not sync'd within the max-tick threshold
-            if (anyCarMoving || maxTicksReached)
+            anyCarTeleporting = trainCar.IsTeleporting;
+            if (anyCarTeleporting)
+                Multiplayer.LogDebug(() => $"Server_TickSet() {trainCar?.ID} in set {set.id} is teleporting");
+
+            // We can finish checking early if we have either a car moving/teleporting or a car not sync'd within the max-tick threshold
+            if (anyCarMoving || anyCarTeleporting || maxTicksReached)
             {
                 //Multiplayer.LogDebug(() => $"Server_TickSet() TrainCar {trainCar.ID} ({netTC?.NetId}) from set: {cachedSendPacket.FirstNetId} is moving or due for sync! stationary: {trainCar.isStationary}, RB velocity: {trainCar.rb.velocity} {trainCar.rb.velocity.magnitude}, tracks dirty: {netTC?.BogieTracksDirty} sync: {netTC?.TicksSinceSync >= MAX_UNSYNC_TICKS}");
                 break;
             }
         }
 
-        //if any car is dirty or exceeded its max ticks we will re-sync the entire train
-        if (!anyCarMoving && !maxTicksReached)
+        // If any car is dirty or exceeded its max ticks we will re-sync the entire train
+        if (!anyCarMoving && !maxTicksReached || anyCarTeleporting)
             return;
 
         TrainsetMovementPart[] trainsetParts = new TrainsetMovementPart[set.cars.Count];
@@ -162,13 +167,12 @@ public class NetworkTrainsetWatcher : SingletonBehaviour<NetworkTrainsetWatcher>
                 Vector3? position = null;
                 Quaternion? rotation = null;
 
-                //Have we exceeded the max ticks?
+                // Have we exceeded the max ticks?
                 if (maxTicksReached)
                 {
                     position = trainCar.transform.position - WorldMover.currentMove;
                     rotation = trainCar.transform.rotation;
 
-                    //reset this car's states
                     networkedTrainCar.TicksSinceSync = 0;
                 }
 

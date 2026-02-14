@@ -1,5 +1,6 @@
 using DV;
 using DV.Customization.Paint;
+using DV.Garages;
 using DV.InventorySystem;
 using DV.Logic.Job;
 using DV.Scenarios.Common;
@@ -153,8 +154,8 @@ public class NetworkServer : NetworkManager
 
 
         // World sync
-        netPacketProcessor.SubscribeReusable<ServerboundClientReadyPacket, ITransportPeer>(OnServerboundClientReadyPacket);
         netPacketProcessor.SubscribeReusable<ServerboundSaveGameDataRequestPacket, ITransportPeer>(OnServerboundSaveGameDataRequestPacket);
+        netPacketProcessor.SubscribeReusable<ServerboundClientReadyPacket, ITransportPeer>(OnServerboundClientReadyPacket);
         netPacketProcessor.SubscribeReusable<ServerboundTimeAdvancePacket, ITransportPeer>(OnServerboundTimeAdvancePacket);
 
         netPacketProcessor.SubscribeReusable<CommonChangeJunctionPacket, ITransportPeer>(OnCommonChangeJunctionPacket);
@@ -197,6 +198,7 @@ public class NetworkServer : NetworkManager
         netPacketProcessor.SubscribeReusable<ServerboundTrainDeleteRequestPacket, ITransportPeer>(OnServerboundTrainDeleteRequestPacket);
         netPacketProcessor.SubscribeReusable<ServerboundTrainRerailRequestPacket, ITransportPeer>(OnServerboundTrainRerailRequestPacket);
         netPacketProcessor.SubscribeReusable<ServerboundTrainSpawnRequestPacket, ITransportPeer>(OnServerboundTrainSpawnRequestPacket);
+        netPacketProcessor.SubscribeReusable<ServerboundWorkTrainRequestPacket, ITransportPeer>(OnServerboundWorkTrainRequestPacket);
 
 
         // Jobs
@@ -670,15 +672,32 @@ public class NetworkServer : NetworkManager
         }, DeliveryMethod.ReliableOrdered, SelfPeer);
     }
 
+    public void SendMoveTrainCarToTrack(ushort netId, ushort destinationTrack, Vector3 worldPos, Vector3 forward, bool isTeleporting)
+    {
+        LogDebug(() => $"SendMoveTrainCarToTrack({netId}, {destinationTrack}, {worldPos}, {forward}, {isTeleporting})");
+        SendPacketToAll
+        (
+            new ClientboundMoveTrainPacket
+            {
+                NetId = netId,
+                TrackId = destinationTrack,
+                Position = worldPos,
+                Forward = forward,
+                IsTeleporting = isTeleporting 
+            }, DeliveryMethod.ReliableOrdered, true
+        );
+    }
+
     public void SendWindowsBroken(ushort netId, Vector3 forceDirection)
     {
         SendPacketToAll
-            (
+        (
             new ClientboundWindowsBrokenPacket
             {
                 NetId = netId,
                 ForceDirection = forceDirection
-            }, DeliveryMethod.ReliableUnordered, SelfPeer);
+            }, DeliveryMethod.ReliableUnordered, SelfPeer
+        );
     }
 
     public void SendWindowsRepaired(ushort netId)
@@ -1525,7 +1544,16 @@ public class NetworkServer : NetworkManager
                 break;
         }
 
-        CarSpawner.Instance.DeleteCar(trainCar);
+        var garageRef = trainCar.GetComponent<HomeGarageReference>();
+        if (garageRef != null && garageRef.garageCarSpawner != null)
+        {
+            garageRef.garageCarSpawner.ReturnCarHome(trainCar);
+        }
+        else
+        {
+            CarSpawner.Instance.DeleteCar(trainCar);
+            UnusedTrainCarDeleter.Instance.ClearInvalidCarReferencesAfterManualDelete();
+        }
     }
 
     private void OnServerboundTrainRerailRequestPacket(ServerboundTrainRerailRequestPacket packet, ITransportPeer peer)
@@ -1601,6 +1629,147 @@ public class NetworkServer : NetworkManager
         Vector3 forward = packet.WithTrackDirection ? spawnPoint.forward : -spawnPoint.forward;
 
         TrainCar spawnedCar = CarSpawner.Instance.SpawnCarFromRemote(livery.prefab, networkedRailTrack.RailTrack, (Vector3)spawnPoint.position, forward);
+    }
+
+    private void OnServerboundWorkTrainRequestPacket(ServerboundWorkTrainRequestPacket packet, ITransportPeer peer)
+    {
+        TrainCar trainCar;
+
+        var rpcResponse = new SpawnResponse() { Response = SpawnResponse.ResponseType.InUse };
+
+        if (!TryGetServerPlayer(peer, out ServerPlayer player))
+            return;
+
+        LogDebug(() => $"OnServerboundWorkTrainRequestPacket() from : {player.Username}, trackNetId: {packet.TrackNetId}, liveryId: {packet.LiveryId}, index: {packet.Index}, withTrackDirection: {packet.WithTrackDirection}");
+
+        if (!NetworkedRailTrack.TryGet(packet.TrackNetId, out NetworkedRailTrack networkedRailTrack) || networkedRailTrack == null)
+        {
+            LogWarning($"{player.Username} tried to request a work train on invalid track netId: {packet.TrackNetId}");
+            return;
+        }
+
+        if (!Components.TrainComponentLookup.Instance.LiveryFromId(packet.LiveryId, out TrainCarLivery livery) || livery == null || livery.prefab == null)
+        {
+            LogWarning($"{player.Username} tried to request a work train with invalid livery Id: {packet.LiveryId}");
+            return;
+        }
+
+        // Check if this is a garage loco
+        bool isGarageCar = GarageCarSpawner.Spawners.TryGetValue(livery, out var selectedGarageSpawner);
+
+        // Check funds
+        if (isGarageCar)
+        {
+            var price = Mathf.Min(selectedGarageSpawner.garageType.summonPrice, Globals.G.GameParams.WorkTrainSummonMaxPrice);
+            if (!Inventory.Instance.RemoveMoney(price))
+            {
+                LogWarning($"{player.Username} tried to request a work train without enough money to do so!");
+                rpcResponse.Response = SpawnResponse.ResponseType.InsufficientFunds;
+                SendRpcResponse(packet.TicketId, rpcResponse, peer);
+
+                return;
+            }
+        }
+
+        trainCar = isGarageCar ? selectedGarageSpawner.GetCar(livery) : CarSpawner.Instance.AllCars.FirstOrDefault(tc => tc.carLivery == livery);
+
+        // Check spawn location on track is valid
+        var kinked = networkedRailTrack.RailTrack.GetKinkedPointSet().points;
+        if (packet.Index < 0 || packet.Index >= kinked.Length)
+        {
+            LogWarning($"{player.Username} tried to spawn a car at an invalid index: {packet.Index}");
+            return;
+        }
+
+        var spawnPoint = kinked[packet.Index];
+        var startPoint = (Vector3)kinked.First().position;
+        var endpoint = (Vector3)kinked.Last().position;
+
+        // Check there's enough space for the car
+        var carBounds = CarSpawner.GetBoundsOfCar(livery.prefab);
+        if (!CarSpawner.IsThereSpaceForCarOnPoint(spawnPoint, startPoint, endpoint, carBounds.extents))
+        {
+            LogWarning($"{player.Username} tried to spawn a car, but there's no room on the track");
+            return;
+        }
+
+        // Check player is within range of the spawn point
+        float playerDistanceToSpawn = (player.AbsoluteWorldPosition - (Vector3)spawnPoint.position).magnitude;
+        if (playerDistanceToSpawn > CommsRadioCarSpawner.SIGNAL_RANGE && !Mathf.Approximately(playerDistanceToSpawn, CommsRadioCarSpawner.SIGNAL_RANGE))
+        {
+            LogWarning($"{player.Username} tried to spawn a train {playerDistanceToSpawn:F2}m away (max: {CommsRadioCarSpawner.SIGNAL_RANGE}m)");
+            return;
+        }
+
+        Vector3 forward = packet.WithTrackDirection ? spawnPoint.forward : -spawnPoint.forward;
+
+        if (trainCar == null)
+        {
+            LogDebug(() => $"OnServerboundWorkTrainRequestPacket() {player.Username} tried to request a work train of {livery.id} but no existing car found, spawning new car");
+            trainCar = CarSpawner.Instance.SpawnCrewVehicle(livery, networkedRailTrack.RailTrack, (Vector3)spawnPoint.position, forward, selectedGarageSpawner);
+
+            SendSpawnTrainset([trainCar], true, true, true);
+        }
+        else
+        {
+            // Check if is currently in use/recently used
+            if (trainCar.IsTeleporting || !trainCar.isStationary)
+            {
+                LogDebug(() => $"OnServerboundWorkTrainRequestPacket() {player.Username} tried to request a work train of {livery.id} but the car is in use teleporting: {trainCar.IsTeleporting}, stationary: {trainCar.isStationary}");
+
+                SendRpcResponse(packet.TicketId, rpcResponse, peer);
+                return;
+            }
+
+            bool recentlyVisited = false;
+            bool attachedToJob = false;
+            int ctr = 0;
+            var cars = trainCar.trainset.cars;
+            while (!recentlyVisited && ctr < cars.Count)
+            {
+                var car = cars[ctr];
+
+                if (car.IsLoco)
+                {
+                    var visitChecker = car.visitChecker;
+                    recentlyVisited = (visitChecker != null && visitChecker.IsRecentlyVisited);
+                }
+                else
+                {
+                    var job = JobsManager.Instance.GetJobOfCar(car.logicCar);
+                    attachedToJob = (job != null && job.State == JobState.InProgress);
+                }
+                ctr++;
+            }
+
+            if (recentlyVisited || attachedToJob)
+            {
+                LogDebug(() => $"OnServerboundWorkTrainRequestPacket() {player.Username} tried to request a work train of {livery.id} but the car is in use ({(recentlyVisited ? "recently visited" : "")}{(recentlyVisited && attachedToJob ? ", " : "")}{(attachedToJob ? "attached to an active job" : "")})");
+                SendRpcResponse(packet.TicketId, rpcResponse, peer);
+                return;
+            }
+
+            // Confirm no players are currently in the car
+            if (!NetworkedTrainCar.TryGetFromTrainCar(trainCar, out var networkedTrainCar))
+            {
+                LogError($"OnServerboundWorkTrainRequestPacket() {player.Username} tried to request a work train of {livery.id} but NetworkedTrainCar was not found for {trainCar?.ID}");
+                SendRpcResponse(packet.TicketId, rpcResponse, peer);
+                return;
+            }
+
+            if (networkedTrainCar.HasPlayers)
+            {
+                LogDebug(() => $"OnServerboundWorkTrainRequestPacket() {player.Username} tried to request a work train of {livery.id} but the car is occupied");
+                SendRpcResponse(packet.TicketId, rpcResponse, peer);
+                return;
+            }
+
+            // Checks passed, call the work train
+            trainCar = CarSpawner.Instance.SpawnCrewVehicle(livery, networkedRailTrack.RailTrack, (Vector3)spawnPoint.position, forward, selectedGarageSpawner);
+        }
+
+        rpcResponse.Response = SpawnResponse.ResponseType.Success;
+        SendRpcResponse(packet.TicketId, rpcResponse, peer);
     }
 
     private void OnServerboundLicensePurchaseRequestPacket(ServerboundLicensePurchaseRequestPacket packet, ITransportPeer peer)

@@ -133,6 +133,7 @@ public class NetworkClient : NetworkManager
         netPacketProcessor.SubscribeReusable<ClientboundRemoveLoadingScreenPacket>(OnClientboundRemoveLoadingScreen);
 
         netPacketProcessor.SubscribeNetSerializable<ClientboundRpcResponsePacket>(OnClientboundRpcResponsePacket);
+
         netPacketProcessor.SubscribeReusable<ClientboundTickSyncPacket>(OnClientboundTickSyncPacket);
         netPacketProcessor.SubscribeReusable<ClientboundBeginWorldSyncPacket>(OnClientboundBeginWorldSyncPacket);
         netPacketProcessor.SubscribeReusable<ClientboundGameParamsPacket>(OnClientboundGameParamsPacket);
@@ -176,6 +177,7 @@ public class NetworkClient : NetworkManager
         netPacketProcessor.SubscribeReusable<ClientboundWarehouseControllerUpdatePacket>(OnClientboundWarehouseControllerUpdatePacket);
 
         netPacketProcessor.SubscribeReusable<ClientboundRerailTrainPacket>(OnClientboundRerailTrainPacket);
+        netPacketProcessor.SubscribeReusable<ClientboundMoveTrainPacket>(OnClientboundMoveTrainPacket);
         netPacketProcessor.SubscribeReusable<ClientboundWindowsBrokenPacket>(OnClientboundWindowsBrokenPacket);
         netPacketProcessor.SubscribeReusable<ClientboundWindowsRepairedPacket>(OnClientboundWindowsRepairedPacket);
         netPacketProcessor.SubscribeReusable<ClientboundMoneyPacket>(OnClientboundMoneyPacket);
@@ -593,7 +595,7 @@ public class NetworkClient : NetworkManager
             }
         }
 
-        NetworkedCarSpawner.SpawnCars(packet.SpawnParts, packet.AutoCouple, packet.PlayerSpawned);
+        NetworkedCarSpawner.SpawnCars(packet.SpawnParts, packet.AutoCouple);
     }
 
     private void OnClientboundDestroyTrainCarPacket(ClientboundDestroyTrainCarPacket packet)
@@ -944,7 +946,7 @@ public class NetworkClient : NetworkManager
 
     private void OnClientboundRerailTrainPacket(ClientboundRerailTrainPacket packet)
     {
-
+        LogDebug(() => $"OnClientboundRerailTrainPacket() NetId: {packet.NetId}, TrackId: {packet.TrackId}, Position: {packet.Position}, Forward: {packet.Forward}, currentMove: {WorldMover.currentMove}");
         if (!NetworkedTrainCar.TryGet(packet.NetId, out TrainCar trainCar))
             return;
         if (!NetworkedRailTrack.TryGet(packet.TrackId, out NetworkedRailTrack networkedRailTrack))
@@ -953,6 +955,23 @@ public class NetworkClient : NetworkManager
         Log($"Rerailing [{trainCar?.ID}, {packet.NetId}] to track {networkedRailTrack?.RailTrack?.LogicTrack()?.ID}");
         LogDebug(() => $"Rerailing [{trainCar?.ID}, {packet.NetId}] track: [{networkedRailTrack?.RailTrack?.LogicTrack()?.ID}, {packet.TrackId}], raw position: {packet.Position}, adjusted position: {packet.Position + WorldMover.currentMove}, forward: {packet.Forward}");
         trainCar.Rerail(networkedRailTrack.RailTrack, packet.Position + WorldMover.currentMove, packet.Forward);
+    }
+
+    private void OnClientboundMoveTrainPacket(ClientboundMoveTrainPacket packet)
+    {
+        LogDebug(() => $"OnClientboundMoveTrainPacket() received for netId: {packet.NetId}, trackId: {packet.TrackId}, position: {packet.Position}, forward: {packet.Forward}, isTeleporting: {packet.IsTeleporting}");
+        if (!NetworkedTrainCar.TryGet(packet.NetId, out TrainCar trainCar))
+            return;
+        if (!NetworkedRailTrack.TryGet(packet.TrackId, out NetworkedRailTrack networkedRailTrack))
+            return;
+
+        Log($"Moving [{trainCar?.ID}, {packet.NetId}] to track {networkedRailTrack?.RailTrack?.LogicTrack()?.ID}");
+        LogDebug(() => $"Moving [{trainCar?.ID}, {packet.NetId}] track: [{networkedRailTrack?.RailTrack?.LogicTrack()?.ID}, {packet.TrackId}], raw position: {packet.Position}, adjusted position: {packet.Position + WorldMover.currentMove}, forward: {packet.Forward}, front coupled: {trainCar.frontCoupler.coupledTo != null}, rear coupled:{trainCar.rearCoupler.coupledTo != null}, derailed: {trainCar.derailed}");
+
+        if (!packet.IsTeleporting)
+            trainCar.MoveToTrackWithCarUncouple(networkedRailTrack.RailTrack, packet.Position + WorldMover.currentMove, packet.Forward);
+        else
+            LogDebug(() => $"OnClientboundMoveTrainPacket() netId: {packet.NetId} Attempting to move train, teleport not implemented");
     }
 
     private void OnClientboundWindowsBrokenPacket(ClientboundWindowsBrokenPacket packet)
@@ -1519,6 +1538,18 @@ public class NetworkClient : NetworkManager
     {
         SendPacketToServer(new ServerboundTrainSpawnRequestPacket
         {
+            LiveryId = liveryId,
+            TrackNetId = trackNetId,
+            Index = position,
+            WithTrackDirection = withTrackDirection
+        }, DeliveryMethod.ReliableUnordered);
+    }
+
+    public void SendWorkTrainRequest(uint ticketId, string liveryId, ushort trackNetId, int position, bool withTrackDirection)
+    {
+        SendPacketToServer(new ServerboundWorkTrainRequestPacket
+        {
+            TicketId = ticketId,
             LiveryId = liveryId,
             TrackNetId = trackNetId,
             Index = position,

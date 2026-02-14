@@ -43,6 +43,22 @@ public static class TrainCarPatch
     }
 
     [HarmonyPrefix]
+    [HarmonyPatch(nameof(TrainCar.MoveToTrackWithCarUncouple))]
+    private static void MoveToTrackWithCarUncouple(TrainCar __instance, RailTrack destinationTrack, Vector3 worldPos, Vector3 forward)
+    {
+        Multiplayer.LogDebug(() => $"MoveToTrackWithCarUncouple({__instance?.ID}) isHost: {NetworkLifecycle.Instance.IsHost()}, isProcessingPacket: {NetworkLifecycle.Instance.IsProcessingPacket}, isDerailed: {__instance.derailed}, destinationTrack: {destinationTrack?.name}, worldPos: {worldPos}, forward: {forward}");
+
+        if (!NetworkLifecycle.Instance.IsHost() || NetworkLifecycle.Instance.IsProcessingPacket)
+            return;
+        if (!__instance.TryNetworked(out NetworkedTrainCar networkedTrainCar))
+            return;
+        if (__instance.derailed)
+            return;
+
+        NetworkLifecycle.Instance.Server.SendMoveTrainCarToTrack(networkedTrainCar.NetId, NetworkedRailTrack.GetFromRailTrack(destinationTrack).NetId, worldPos - WorldMover.currentMove, forward, false);
+    }
+
+    [HarmonyPrefix]
     [HarmonyPatch(nameof(TrainCar.UpdateCouplerJoints))]
     private static bool UpdateCouplerJoints(TrainCar __instance)
     {

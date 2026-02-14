@@ -12,7 +12,7 @@ namespace Multiplayer.Components.Networking.Train;
 
 public static class NetworkedCarSpawner
 {
-    
+
     public static void SpawnCars(TrainsetSpawnPart[] parts, bool autoCouple, bool playerSpawned = false)
     {
         NetworkedTrainCar[] cars = new NetworkedTrainCar[parts.Length];
@@ -22,7 +22,7 @@ public static class NetworkedCarSpawner
         {
             cars[i] = SpawnCar(parts[i], true);
 
-            if (playerSpawned && CommsRadioCarSpawnerPatch.SpawnVehicleSound != null)
+            if (parts[i].PlayerSpawnedCar && CommsRadioCarSpawnerPatch.SpawnVehicleSound != null)
                 CommsRadioController.PlayAudioFromCar(CommsRadioCarSpawnerPatch.SpawnVehicleSound, cars[i].TrainCar, false);
         }
 
