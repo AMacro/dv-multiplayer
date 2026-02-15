@@ -17,6 +17,7 @@ using Multiplayer.Components.Networking.Jobs;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Components.Networking.World;
 using Multiplayer.Networking.Data;
+using Multiplayer.Networking.Data.RPCs;
 using Multiplayer.Networking.Data.Train;
 using Multiplayer.Networking.Packets.Clientbound;
 using Multiplayer.Networking.Packets.Clientbound.Jobs;
@@ -454,6 +455,20 @@ public class NetworkServer : NetworkManager
     }
 
     #endregion
+
+    public void SendRpcResponse(uint ticketId, IRpcResponse response, ITransportPeer peer)
+    {
+        SendNetSerializablePacket
+        (
+            peer,
+            new ClientboundRpcResponsePacket
+            {
+                TicketId = ticketId,
+                Response = response
+            },
+            DeliveryMethod.ReliableOrdered
+        );
+    }
 
     public void KickPlayer(ServerPlayer player)
     {

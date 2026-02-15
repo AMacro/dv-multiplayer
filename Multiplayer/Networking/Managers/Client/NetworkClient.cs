@@ -132,6 +132,7 @@ public class NetworkClient : NetworkManager
         netPacketProcessor.SubscribeReusable<ClientboundDisconnectPacket>(OnClientboundDisconnectPacket);
         netPacketProcessor.SubscribeReusable<ClientboundRemoveLoadingScreenPacket>(OnClientboundRemoveLoadingScreen);
 
+        netPacketProcessor.SubscribeNetSerializable<ClientboundRpcResponsePacket>(OnClientboundRpcResponsePacket);
         netPacketProcessor.SubscribeReusable<ClientboundTickSyncPacket>(OnClientboundTickSyncPacket);
         netPacketProcessor.SubscribeReusable<ClientboundBeginWorldSyncPacket>(OnClientboundBeginWorldSyncPacket);
         netPacketProcessor.SubscribeReusable<ClientboundGameParamsPacket>(OnClientboundGameParamsPacket);
@@ -357,6 +358,12 @@ public class NetworkClient : NetworkManager
 
         Log($"Player denied: {text}");
         onDisconnect(DisconnectReason.ConnectionRejected, text);
+    }
+
+    private void OnClientboundRpcResponsePacket(ClientboundRpcResponsePacket packet)
+    {
+        LogDebug(() => $"Received RPC response for ticket: {packet.TicketId}, response type: {packet.ResponseType}");
+        RpcManager.Instance.ResolveTicket(packet.TicketId, packet.Response);
     }
 
     private void OnClientboundPlayerJoinedPacket(ClientboundPlayerJoinedPacket packet)
