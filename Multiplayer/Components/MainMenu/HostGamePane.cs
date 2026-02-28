@@ -30,7 +30,7 @@ public class HostGamePane : MonoBehaviour
     private const int MIN_PORT = 1024;
     private const int MAX_PORT = 49151;
     private const int MIN_PLAYERS = 2;
-    private const int MAX_PLAYERS = 10;
+    private const int MAX_PLAYERS = 20;
 
     private const int DEFAULT_PORT = 7777;
 
