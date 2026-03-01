@@ -4,7 +4,7 @@ using Multiplayer.Networking.Serialization;
 using Multiplayer.Utils;
 using UnityEngine;
 
-namespace Multiplayer.Networking.Data;
+namespace Multiplayer.Networking.Data.World;
 
 public readonly struct PitStopPlugData(ushort netId, PlugInteractionType state, byte playerId, ushort trainCarNetId, sbyte socketIndex, Vector3 pos, Quaternion rot)
 {

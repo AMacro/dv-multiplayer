@@ -1,4 +1,5 @@
-using Multiplayer.Networking.Data;
+using Multiplayer.Networking.Data.Jobs;
+
 namespace Multiplayer.Networking.Packets.Clientbound.Jobs;
 
 public class ServerboundJobValidateRequestPacket

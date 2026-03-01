@@ -4,6 +4,7 @@ using DV.InventorySystem;
 using DV.Items;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Networking.Data;
+using Multiplayer.Networking.Data.Items;
 using Multiplayer.Utils;
 using System;
 using System.Collections;

@@ -1,6 +1,6 @@
 using Multiplayer.Components.Networking.Jobs;
 using Multiplayer.Components.Networking.World;
-using Multiplayer.Networking.Data;
+using Multiplayer.Networking.Data.Jobs;
 using System.Collections.Generic;
 
 namespace Multiplayer.Networking.Packets.Clientbound.Jobs;

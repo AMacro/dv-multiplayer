@@ -1,7 +1,7 @@
 using LiteNetLib.Utils;
-using Multiplayer.Networking.Data;
 using System.Collections.Generic;
 using System;
+using Multiplayer.Networking.Data.Items;
 
 namespace Multiplayer.Networking.Packets.Common;
 

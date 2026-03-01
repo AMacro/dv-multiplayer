@@ -1,9 +1,7 @@
-using Multiplayer.Components.Networking;
-using Multiplayer.Networking.Data.RPCs;
 using System;
 using UnityEngine;
 
-namespace Multiplayer.Networking.Data;
+namespace Multiplayer.Networking.Data.RPCs;
 
 public class RpcTicket
 {

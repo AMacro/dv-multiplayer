@@ -9,6 +9,7 @@ using System;
 using Multiplayer.Utils;
 using DV;
 using DV.Interaction;
+using Multiplayer.Networking.Data.Items;
 
 namespace Multiplayer.Components.Networking.World;
 

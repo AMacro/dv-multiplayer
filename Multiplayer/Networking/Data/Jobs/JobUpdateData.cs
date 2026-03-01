@@ -1,6 +1,8 @@
 using DV.ThingTypes;
 using LiteNetLib.Utils;
-namespace Multiplayer.Networking.Data;
+using Multiplayer.Networking.Data.Items;
+
+namespace Multiplayer.Networking.Data.Jobs;
 
 public struct JobUpdateStruct : INetSerializable
 {

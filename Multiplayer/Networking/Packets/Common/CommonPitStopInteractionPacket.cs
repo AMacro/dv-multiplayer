@@ -1,5 +1,4 @@
-
-using Multiplayer.Networking.Data;
+using Multiplayer.Networking.Data.World;
 
 namespace Multiplayer.Networking.Packets.Common;
 

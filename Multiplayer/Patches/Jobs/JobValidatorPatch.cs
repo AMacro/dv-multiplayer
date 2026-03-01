@@ -4,7 +4,7 @@ using HarmonyLib;
 using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.Jobs;
 using Multiplayer.Components.Networking.World;
-using Multiplayer.Networking.Data;
+using Multiplayer.Networking.Data.Jobs;
 using UnityEngine;
 
 namespace Multiplayer.Patches.Jobs;

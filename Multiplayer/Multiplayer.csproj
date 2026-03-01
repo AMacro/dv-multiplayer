@@ -105,6 +105,9 @@
         <Reference Include="UnityEngine.InputLegacyModule" />
         <Reference Include="VRTK" />
     </ItemGroup>
+    <ItemGroup>
+      <Folder Include="Networking\Packets\Common\RPC\" />
+    </ItemGroup>
     <Target Name="PostBuildMacros">
         <GetAssemblyIdentity AssemblyFiles="$(TargetPath)">
             <Output TaskParameter="Assemblies" ItemName="Targets" />

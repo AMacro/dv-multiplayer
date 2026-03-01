@@ -1,18 +1,11 @@
-using DV.Localization;
 using DV.UI;
 using DV.UIFramework;
 using HarmonyLib;
-using Multiplayer.Components.MainMenu;
 using Multiplayer.Components.Networking;
-using Multiplayer.Utils;
 using System;
 using System.Reflection;
-using UnityEngine;
-using UnityEngine.UI;
 
 namespace Multiplayer.Patches.PauseMenu;
-
-
 
 [HarmonyPatch(typeof(PauseMenuController))]
 public static class PauseMenuController_Patch

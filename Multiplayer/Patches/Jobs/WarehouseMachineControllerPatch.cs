@@ -4,7 +4,7 @@ using HarmonyLib;
 using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.Jobs;
 using Multiplayer.Components.Networking.Train;
-using Multiplayer.Networking.Data;
+using Multiplayer.Networking.Data.World;
 using static WarehouseMachineController;
 
 namespace Multiplayer.Patches.Jobs;

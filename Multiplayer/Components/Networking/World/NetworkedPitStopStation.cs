@@ -3,6 +3,7 @@ using DV.CashRegister;
 using DV.Optimizers;
 using DV.ThingTypes;
 using Multiplayer.Networking.Data;
+using Multiplayer.Networking.Data.World;
 using Multiplayer.Networking.Managers.Server;
 using Multiplayer.Networking.Packets.Clientbound.World;
 using Multiplayer.Networking.Packets.Common;

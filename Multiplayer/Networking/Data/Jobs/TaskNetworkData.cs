@@ -10,7 +10,7 @@ using System.Linq;
 using System;
 using DV.ThingTypes.TransitionHelpers;
 
-namespace Multiplayer.Networking.Data;
+namespace Multiplayer.Networking.Data.Jobs;
 
 #region Extension of TaskTypes
 public static class TaskNetworkDataFactory

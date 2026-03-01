@@ -2,7 +2,7 @@ using Multiplayer.Components.Networking;
 using System;
 using System.Collections.Generic;
 
-namespace Multiplayer.Networking.Data;
+namespace Multiplayer.Networking.Data.Items;
 
 public class TrackedValue<T>
 {

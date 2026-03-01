@@ -5,7 +5,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace Multiplayer.Networking.Data;
+namespace Multiplayer.Networking.Data.Items;
 
 public class ItemUpdateData
 {

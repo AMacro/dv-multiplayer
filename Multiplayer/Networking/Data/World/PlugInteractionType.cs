@@ -1,5 +1,4 @@
-
-namespace Multiplayer.Networking.Data
+namespace Multiplayer.Networking.Data.World
 {
     public enum PlugInteractionType : byte
     {

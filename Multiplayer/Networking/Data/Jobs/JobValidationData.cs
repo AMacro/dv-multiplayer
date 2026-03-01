@@ -1,5 +1,4 @@
-
-namespace Multiplayer.Networking.Data;
+namespace Multiplayer.Networking.Data.Jobs;
 
 public enum ValidationType : byte
 {

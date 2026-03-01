@@ -1,6 +1,5 @@
 using DV.Utils;
 using JetBrains.Annotations;
-using Multiplayer.Networking.Data;
 using Multiplayer.Networking.Data.RPCs;
 using Multiplayer.Utils;
 using System;

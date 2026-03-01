@@ -4,7 +4,7 @@ using MPAPI.Interfaces;
 using MPAPI.Types;
 using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.Train;
-using Multiplayer.Networking.Data;
+using Multiplayer.Networking.Data.Jobs;
 using System;
 using System.Collections.Generic;
 

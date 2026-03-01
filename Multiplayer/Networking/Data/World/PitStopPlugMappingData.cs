@@ -3,7 +3,7 @@ using LiteNetLib.Utils;
 using Multiplayer.Components.Networking.World;
 using System.Collections.Generic;
 
-namespace Multiplayer.Networking.Data;
+namespace Multiplayer.Networking.Data.World;
 
 public readonly struct PitStopPlugMappingData(ushort netId, Dictionary<ResourceType, ushort> plugMapping)
 {

@@ -2,7 +2,7 @@ using DV.CabControls;
 using DV.InventorySystem;
 using DV.Logic.Job;
 using Multiplayer.Components.Networking.World;
-using Multiplayer.Networking.Data;
+using Multiplayer.Networking.Data.Jobs;
 using System;
 using System.Collections.Generic;
 using UnityEngine;

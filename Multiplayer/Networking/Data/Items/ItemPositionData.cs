@@ -3,7 +3,7 @@ using Multiplayer.Components.Networking.World;
 using Multiplayer.Networking.Serialization;
 using UnityEngine;
 
-namespace Multiplayer.Networking.Data;
+namespace Multiplayer.Networking.Data.Items;
 
 public struct ItemPositionData
 {

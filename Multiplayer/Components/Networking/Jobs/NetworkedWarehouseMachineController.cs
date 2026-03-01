@@ -2,7 +2,7 @@ using DV.Logic.Job;
 using DV.ThingTypes;
 using DV.ThingTypes.TransitionHelpers;
 using Multiplayer.Components.Networking.Train;
-using Multiplayer.Networking.Data;
+using Multiplayer.Networking.Data.World;
 using Multiplayer.Networking.Packets.Clientbound.Jobs;
 using System.Collections.Generic;
 using static WarehouseMachineController;

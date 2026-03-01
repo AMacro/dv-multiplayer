@@ -2,6 +2,7 @@ using DV.CabControls;
 using DV.Interaction;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Networking.Data;
+using Multiplayer.Networking.Data.World;
 using Multiplayer.Networking.Packets.Common;
 using Multiplayer.Utils;
 using System;

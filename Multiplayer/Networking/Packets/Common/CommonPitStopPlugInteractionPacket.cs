@@ -1,6 +1,6 @@
 
 using LiteNetLib.Utils;
-using Multiplayer.Networking.Data;
+using Multiplayer.Networking.Data.World;
 using Multiplayer.Networking.Serialization;
 using UnityEngine;
 

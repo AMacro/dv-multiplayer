@@ -8,8 +8,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System;
+using Multiplayer.Networking.Data.Items;
 
-namespace Multiplayer.Networking.Data;
+namespace Multiplayer.Networking.Data.Jobs;
 
 public class JobData
 {
