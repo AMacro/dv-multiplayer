@@ -1,4 +1,5 @@
 using DV;
+using DV.JObjectExtstensions;
 using DV.LocoRestoration;
 using DV.Simulation.Brake;
 using DV.ThingTypes;
@@ -6,18 +7,33 @@ using Multiplayer.Components.Networking.World;
 using Multiplayer.Networking.Data.Train;
 using Multiplayer.Patches.CommsRadio;
 using Multiplayer.Utils;
+using Newtonsoft.Json.Linq;
+using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 namespace Multiplayer.Components.Networking.Train;
 
 public static class NetworkedCarSpawner
 {
+    private static readonly List<RestorationData> _restorationData = [];
+
+    static NetworkedCarSpawner()
+    {
+        SceneSwitcher.SceneRequested += (DVScenes scene) =>
+        {
+            Multiplayer.LogDebug(() => $"NetworkedCarSpawner Scene switch requested: {scene}");
+
+            if (scene == DVScenes.MainMenu)
+                _restorationData.Clear();
+        };
+    }
 
     public static void SpawnCars(TrainsetSpawnPart[] parts, bool autoCouple, bool playerSpawned = false)
     {
         NetworkedTrainCar[] cars = new NetworkedTrainCar[parts.Length];
 
-        //spawn the cars
+        // Spawn the cars
         for (int i = 0; i < parts.Length; i++)
         {
             cars[i] = SpawnCar(parts[i], true);
@@ -26,16 +42,16 @@ public static class NetworkedCarSpawner
                 CommsRadioController.PlayAudioFromCar(CommsRadioCarSpawnerPatch.SpawnVehicleSound, cars[i].TrainCar, false);
         }
 
-        //Set brake params
+        // Set brake params
         for (int i = 0; i < cars.Length; i++)
             SetBrakeParams(parts[i].BrakeData, cars[i].TrainCar);
 
-        //couple them if marked as coupled
-        //- we need to do this back to front otherwise the TrainSet indicies will be wrong!
+        // Couple them if marked as coupled
+        // - we need to do this back to front otherwise the TrainSet indicies will be wrong!
         for (int i = cars.Length - 1; i >= 0; i--)
             Couple(in parts[i], cars[i].TrainCar, autoCouple);
 
-        //update speed queue data
+        // Update speed queue data
         for (int i = 0; i < cars.Length; i++)
             cars[i].Client_trainSpeedQueue.ReceiveSnapshot(parts[i].Speed, NetworkLifecycle.Instance.Tick);
     }
@@ -79,18 +95,16 @@ public static class NetworkedCarSpawner
 
         spawnPart.CarHealthData.LoadTo(trainCar);
 
-        //Restoration vehicle hack
-        //todo: make it work properly
-        if (spawnPart.IsRestorationLoco)
-            switch(spawnPart.RestorationState)
+        // If restoration loco, store the restoration data for processing after all trainsets are spawned
+        if (spawnPart.RestorationType != RestorationType.None)
+        {
+            _restorationData.Add(new RestorationData
             {
-                case LocoRestorationController.RestorationState.S0_Initialized:
-                case LocoRestorationController.RestorationState.S1_UnlockedRestorationLicense:
-                case LocoRestorationController.RestorationState.S2_LocoUnblocked:
-                    BlockLoco(trainCar);
-
-                    break;
-            }
+                NetId = spawnPart.NetId,
+                RestorationState = spawnPart.RestorationState,
+                SecondCarNetId = spawnPart.SecondCarNetId
+            });
+        }
 
         if (trainCar.PaintExterior != null && spawnPart.PaintExterior != null)
             trainCar.PaintExterior.currentTheme = spawnPart.PaintExterior;
@@ -151,7 +165,7 @@ public static class NetworkedCarSpawner
         HandleCoupling(spawnPart.RearCoupling, trainCar.rearCoupler);
     }
 
-    private static void HandleCoupling(CouplingData couplingData,  Coupler currentCoupler)
+    private static void HandleCoupling(CouplingData couplingData, Coupler currentCoupler)
     {
 
         CouplingData cd = couplingData;
@@ -168,7 +182,7 @@ public static class NetworkedCarSpawner
             }
             else
             {
-                var otherCoupler = couplingData.ConnectionToFront ? otherCar.frontCoupler : otherCar.rearCoupler;      
+                var otherCoupler = couplingData.ConnectionToFront ? otherCar.frontCoupler : otherCar.rearCoupler;
                 SetCouplingState(currentCoupler, otherCoupler, couplingData.State);
             }
         }
@@ -219,9 +233,9 @@ public static class NetworkedCarSpawner
             return;
         }
 
-        if(bs.hasHandbrake)
+        if (bs.hasHandbrake)
             bs.SetHandbrakePosition(brakeSystemData.HandBrakePosition);
-        if(bs.hasTrainBrake)
+        if (bs.hasTrainBrake)
             bs.trainBrakePosition = brakeSystemData.TrainBrakePosition;
 
         bs.SetBrakePipePressure(brakeSystemData.BrakePipePressure);
@@ -232,22 +246,68 @@ public static class NetworkedCarSpawner
 
     }
 
-    private static void BlockLoco(TrainCar trainCar)
+    public static void ApplyRestorationStates()
     {
-        trainCar.blockInteriorLoading = true;
-        trainCar.preventFastTravelWithCar = true;
-        trainCar.preventFastTravelDestination = true;
+        Multiplayer.LogDebug(() => $"Applying restoration states for {_restorationData.Count} cars");
 
-        if (trainCar.FastTravelDestination != null)
+        foreach (var data in _restorationData)
         {
-            trainCar.FastTravelDestination.showOnMap = false;
-            trainCar.FastTravelDestination.RefreshMarkerVisibility();
+            JObject restorationData = [];
+            LocoRestorationController.RestorationState state = data.RestorationState;
+
+            // Temporarily disable parts ordered state until we have a better way to sync the ordering process
+            if (state == LocoRestorationController.RestorationState.S6_PartPickedUp)
+                state = LocoRestorationController.RestorationState.S5_PartOrdered;
+
+            restorationData.SetInt(LocoRestorationController.STATE_SAVE_KEY, (int)state);
+
+            // Find the TrainCar and retrieve GUID
+            if (!NetworkedTrainCar.TryGet(data.NetId, out TrainCar trainCar))
+            {
+                Multiplayer.LogWarning($"Unable to apply restoration state for TrainCar with netId: {data.NetId}, could not find NetworkedTrainCar");
+                continue;
+            }
+
+            restorationData.SetString(LocoRestorationController.LOCO_GUID_SAVE_KEY, trainCar.CarGUID);
+
+            // If loco has tender, find the second car and retrieve its GUID
+            if (data.SecondCarNetId != 0)
+            {
+                if (!NetworkedTrainCar.TryGet(data.SecondCarNetId, out TrainCar secondCar))
+                {
+                    Multiplayer.LogWarning($"Unable to apply restoration state for TrainCar with netId: {data.NetId} could not find second car with netId: {data.SecondCarNetId}");
+                    continue;
+                }
+                restorationData.SetString(LocoRestorationController.SECOND_CAR_GUID_SAVE_KEY, secondCar.CarGUID);
+            }
+
+            // Apply the restoration state to the loco's LocoRestorationController
+            var restorationController = LocoRestorationController.allLocoRestorationControllers.Where(r => r.SaveID == trainCar.carLivery.id).FirstOrDefault();
+            if (restorationController != null)
+            {
+                var locoBlocker = trainCar.GetComponentInChildren<LocoZoneBlocker>(true);
+                var prefabBlocker = restorationController.locoBlockerPrefab;
+                var secondCarBlocker = restorationController.secondCarBlockerPrefab;
+
+                var liveryBlocker = restorationController.locoLivery.prefab.GetComponentInChildren<LocoZoneBlocker>(true);
+
+                Multiplayer.LogDebug(() => $"Found LocoRestorationController for TrainCar with netId: {data.NetId}, SaveID: {restorationController.SaveID}, Car has blocker: {locoBlocker != null}, prefabBlocker: {prefabBlocker != null}, secondCarBlocker: {secondCarBlocker != null}, liveryBlocker: {liveryBlocker != null}");
+
+                if (locoBlocker == null && prefabBlocker == null && liveryBlocker != null)
+                {
+                    Multiplayer.LogDebug(() => $"Adding blocker to LocoRestorationController");
+                    restorationController.locoBlockerPrefab = liveryBlocker.gameObject;
+                }
+
+                Multiplayer.LogDebug(() => $"Applying restoration state for TrainCar with netId: {data.NetId}, restoration state: {state}");
+                restorationController.LoadData(restorationData);
+            }
+            else
+            {
+                Multiplayer.LogWarning($"Unable to apply restoration state for TrainCar with netId: {data.NetId} could not find LocoRestorationController");
+            }
         }
 
-        trainCar.preventDebtDisplay = true;
-        trainCar.preventRerail = true;
-        trainCar.preventDelete = true;
-        trainCar.preventService = true;
-        trainCar.preventCouple = true;
+        Multiplayer.LogDebug(() => $"Finished applying restoration states");
     }
 }

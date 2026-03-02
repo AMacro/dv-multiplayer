@@ -28,7 +28,7 @@ public class ServerPlayerWrapper : IPlayer
 
     public Vector3 Position => _serverPlayer.WorldPosition;
     public float RotationY => _serverPlayer.WorldRotationY;
-    public bool IsLoaded => _serverPlayer.IsLoaded;
+    public bool IsLoaded => _serverPlayer.LoadingState == PlayerLoadingState.Complete;
     public bool IsHost => _isHost;
     public int Ping => 0; // Server doesn't track ping for players
     public bool IsOnCar => _serverPlayer.CarId != 0;

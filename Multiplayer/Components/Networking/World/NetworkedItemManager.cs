@@ -177,7 +177,7 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
 
         foreach (var player in NetworkLifecycle.Instance.Server.ServerPlayers)
         {
-            if (!player.IsLoaded)
+            if (player.LoadingState < PlayerLoadingState.ReadyForItems)
                 continue;
 
             foreach (var item in allItems)
@@ -227,7 +227,7 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
 
         foreach (var player in NetworkLifecycle.Instance.Server.ServerPlayers)
         {
-            if (!player.IsLoaded)
+            if (player.LoadingState < PlayerLoadingState.ReadyForItems)
                 continue;
 
             List<ItemUpdateData> playerUpdates = new List<ItemUpdateData>();
@@ -459,8 +459,6 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
     }
     public void CacheWorldItems()
     {
-        //B99 temporary patch
-        return;
         if (NetworkLifecycle.Instance.IsHost())
             return;
 

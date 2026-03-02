@@ -68,7 +68,7 @@ public class NetworkedSaveGameManager : SingletonBehaviour<NetworkedSaveGameMana
 
         foreach (ServerPlayer player in NetworkLifecycle.Instance.Server.ServerPlayers)
         {
-            if (player.Peer == NetworkLifecycle.Instance.Server.SelfPeer || !player.IsLoaded)
+            if (player.Peer == NetworkLifecycle.Instance.Server.SelfPeer || player.LoadingState != PlayerLoadingState.Complete)
                 continue;
 
             JObject playerData = [];

@@ -1,10 +1,14 @@
+using DV.JObjectExtstensions;
+using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Components.Networking.World;
-using Multiplayer.Components.Networking;
+using Multiplayer.Components.SaveGame;
 using Multiplayer.Networking.TransportLayers;
 using Multiplayer.Utils;
-using System.Collections.Generic;
+using Newtonsoft.Json.Linq;
 using System;
+using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Multiplayer.Networking.Data;
@@ -27,7 +31,10 @@ public class ServerPlayer : IDisposable
 
     public ITransportPeer Peer { get; private set; }
     public byte PlayerId { get; private set; }
-    public bool IsLoaded { get; set; }
+    internal PlayerLoadingState LoadingState { get; set; } = PlayerLoadingState.None;
+    public DateTime LastLogin { get; set; }
+    private float PreviousPlayTime { get; set; }
+    public float TotalPlaytime => PreviousPlayTime + (DateTime.UtcNow - LastLogin).Minutes;
     public string Username { get; set; }
     public string OriginalUsername { get; set; }
     public Guid Guid { get; set; }
@@ -48,6 +55,7 @@ public class ServerPlayer : IDisposable
         PlayerId = idPool.NextId;
 
         Peer = peer;
+        LastLogin = DateTime.UtcNow;
 
         Username = username;
         OriginalUsername = originalUsername;

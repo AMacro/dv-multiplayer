@@ -61,6 +61,9 @@ public class NetworkClient : NetworkManager
     private ITransportPeer selfPeer;
     public byte PlayerId { get; private set; }
     public readonly ClientPlayerManager ClientPlayerManager;
+    internal PlayerLoadingState LoadingState { get; set; } = PlayerLoadingState.None;
+    internal uint trainSetsToSpawn = uint.MaxValue;
+    internal uint trainSetsSpawned = 0;
 
     // One way ping in milliseconds
     public int Ping { get; private set; }
@@ -137,12 +140,11 @@ public class NetworkClient : NetworkManager
         netPacketProcessor.SubscribeNetSerializable<ClientboundRpcResponsePacket>(OnClientboundRpcResponsePacket);
 
         netPacketProcessor.SubscribeReusable<ClientboundTickSyncPacket>(OnClientboundTickSyncPacket);
-        netPacketProcessor.SubscribeReusable<ClientboundBeginWorldSyncPacket>(OnClientboundBeginWorldSyncPacket);
         netPacketProcessor.SubscribeReusable<ClientboundGameParamsPacket>(OnClientboundGameParamsPacket);
         netPacketProcessor.SubscribeReusable<ClientboundSaveGameDataPacket>(OnClientboundSaveGameDataPacket);
         netPacketProcessor.SubscribeReusable<ClientboundWeatherPacket>(OnClientboundWeatherPacket);
         netPacketProcessor.SubscribeReusable<ClientboundRailwayStatePacket>(OnClientboundRailwayStatePacket);
-        netPacketProcessor.SubscribeReusable<ClientboundStationControllerLookupPacket>(OnClientboundStationControllerLookupPacket);
+        netPacketProcessor.SubscribeReusable<ClientboundLoadStateInfoPacket>(OnClientboundLoadStateInfoPacket);
 
 
         netPacketProcessor.SubscribeReusable<ClientboundPlayerJoinedPacket>(OnClientboundPlayerJoinedPacket);
@@ -247,34 +249,107 @@ public class NetworkClient : NetworkManager
         }
     }
 
-    private void OnLoaded()
+    private IEnumerator SyncWorldState()
     {
-        Log($"WorldStreamingInit.LoadingFinished()");
+        /*
+         * This coroutine must not be started prior to WorldStreamingInit.LoadingFinished, otherwise it will be killed
+         * Both GameSettings and SaveGameData have been applied at this point and the current loading state is PlayerLoadingState.ReadyForGameData
+         */
+
+        Log($"World loaded beginning sync");
+
+        Log($"Starting Item Manager...");
         NetworkedItemManager.Instance.CheckInstance();
-        Log($"WorldStreamingInit.LoadingFinished() CacheWorldItems()");
+        Log($"Caching World Items...");
         NetworkedItemManager.Instance.CacheWorldItems();
-        Log($"WorldStreamingInit.LoadingFinished() InitialiseCashRegisters()");
+        Log($"Initialising Cash Registers...");
         NetworkedCashRegisterWithModules.InitialiseCashRegisters();
-        Log($"WorldStreamingInit.LoadingFinished() InitialisePitStops()");
+        Log($"Initialising Pit Stops...");
         NetworkedPitStopStation.InitialisePitStops();
-        Log($"WorldStreamingInit.LoadingFinished() SendReadyPacket()");
-        CoroutineManager.Instance.StartCoroutine(WaitForReadyBlocks());
 
-        WorldStreamingInit.LoadingFinished -= OnLoaded;
-    }
-
-    private IEnumerator WaitForReadyBlocks()
-    {
+        // Wait for ready blocks to clear
+        Log($"Waiting for ready-blocks...");
         DisplayLoadingInfo displayLoadingInfo = Object.FindObjectOfType<DisplayLoadingInfo>();
         foreach (string modName in readyBlocks)
             displayLoadingInfo?.OnLoadingStatusChanged($"Waiting for mod {modName} to load", false, 100);
 
         while (readyBlocks.Count > 0)
+            yield return null;
+
+        /* 
+         * ReadyForWorldState
+         * Request world state data (tracks and turntables)
+         */
+
+        Log("Syncing world state");
+        displayLoadingInfo.OnLoadingStatusChanged(Locale.LOADING_INFO__SYNC_WORLD_STATE, false, 100); //todo add additional status info and % complete
+        SendLoadStateUpdate(PlayerLoadingState.ReadyForWorldState);
+
+        // Transition is triggered by OnClientboundRailwayStatePacket()
+        while (LoadingState != PlayerLoadingState.ReadyForTrainSets)
+            yield return null;
+
+        /*
+         * ReadyForTrainSets
+         * Trainsets have been requested
+         */
+
+        uint lastLoggedSets = 0;
+
+        // Wait for trainset count from server
+        while (trainSetsToSpawn == uint.MaxValue)
+            yield return null;
+
+        // Wait for all Trainsets to be spawned
+        while (trainSetsSpawned < trainSetsToSpawn)
         {
+            if (lastLoggedSets != trainSetsSpawned)
+            {
+                Log($"Waiting for train sets to spawn... {trainSetsSpawned}/{trainSetsToSpawn}");
+                lastLoggedSets = trainSetsSpawned;
+            }
+
             yield return null;
         }
 
-        SendReadyPacket();
+        // Trainsets spawned, apply restoration states for demonstrators
+        NetworkedCarSpawner.ApplyRestorationStates();
+
+        /*
+         * ReadyForCustomizers
+         */
+
+        //TODO: implement
+        yield return new WaitForSeconds(0.5f);
+
+        /* 
+         * ReadyForItems
+         */
+        Log($"Train sets spawned, requesting items");
+        SendLoadStateUpdate(PlayerLoadingState.ReadyForItems);
+
+        yield return new WaitForSeconds(0.5f);
+
+        /* 
+         * ReadyForJobs
+         */
+
+        Log($"Requesting jobs");
+        SendLoadStateUpdate(PlayerLoadingState.ReadyForJobs);
+
+        yield return new WaitForSeconds(0.5f);
+
+
+        /* 
+         * ReadyForTiles
+         */
+
+        Log($"Requesting Hazmat Tiles");
+        SendLoadStateUpdate(PlayerLoadingState.ReadyForTiles);
+
+        yield return new WaitForSeconds(0.5f);
+
+        SendLoadStateUpdate(PlayerLoadingState.Complete);
     }
 
     #region Net Events
@@ -296,13 +371,17 @@ public class NetworkClient : NetworkManager
         if (MainMenuThingsAndStuff.Instance != null)
         {
             //MainMenuThingsAndStuff.Instance.SwitchToDefaultMenu();
+            LogDebug(() => $"OnPeerDisconnected() queuing GoBackToMainMenu via NetworkLifecycle");
             NetworkLifecycle.Instance.TriggerMainMenuEventLater();
         }
         else
         {
+            LogDebug(() => $"OnPeerDisconnected() {nameof(MainMenuThingsAndStuff.Instance)} is null, calling GoBackToMainMenu directly");
             MainMenu.GoBackToMainMenu();
+            NetworkLifecycle.Instance.TriggerMainMenuEventLater();
         }
 
+        LogDebug(() => $"OnPeerDisconnected() calling onDisconnect({disconnectReason}, {disconnectMessage})");
         onDisconnect(disconnectReason, disconnectMessage);
     }
 
@@ -326,20 +405,35 @@ public class NetworkClient : NetworkManager
 
     private void OnClientboundLoginResponsePacket(ClientboundLoginResponsePacket packet)
     {
-
         if (packet.Accepted)
         {
             Log($"Player accepted");
             PlayerId = packet.PlayerId;
 
+            if (!string.IsNullOrEmpty(packet.UsernameOverride))
+            {
+                Log($"Username overridden to {packet.UsernameOverride}");
+                // todo: set the local username to the overridden username
+            }
+
             if (NetworkLifecycle.Instance.IsHost())
-                SendReadyPacket();
-            else
-                SendSaveGameDataRequest();
+            {
+                // Host can skip straight to world state sync as they already have the world loaded
+                SendLoadStateUpdate(PlayerLoadingState.ReadyForWorldState);
+                return;
+            }
+
+            // Request Game Params and Save Game Data
+            SendLoadStateUpdate(PlayerLoadingState.ReadyForGameData);
+
+            WorldStreamingInit.LoadingFinished += () =>
+            {
+                LogDebug(() => "Loading finished, beginning sync");
+                CoroutineManager.Instance.StartCoroutine(SyncWorldState());
+            };
 
             return;
         }
-
 
         string text = Locale.Get(packet.ReasonKey, packet.ReasonArgs);
 
@@ -362,6 +456,20 @@ public class NetworkClient : NetworkManager
 
         Log($"Player denied: {text}");
         onDisconnect(DisconnectReason.ConnectionRejected, text);
+    }
+
+    private void OnClientboundLoadStateInfoPacket(ClientboundLoadStateInfoPacket packet)
+    {
+        Log($"Received load state info for loading state: {packet.LoadingState}, item count: {packet.ItemsToLoad}");
+        switch (packet.LoadingState)
+        {
+            case PlayerLoadingState.ReadyForTrainSets:
+                trainSetsToSpawn = packet.ItemsToLoad;
+                break;
+            default:
+                LogWarning($"Unexpected loading state: {packet.LoadingState}");
+                break;
+        }
     }
 
     private void OnClientboundRpcResponsePacket(ClientboundRpcResponsePacket packet)
@@ -459,29 +567,15 @@ public class NetworkClient : NetworkManager
         Object.DontDestroyOnLoad(go);
 
         SceneSwitcher.SwitchToScene(DVScenes.Game);
-        WorldStreamingInit.LoadingFinished += OnLoaded;
 
         TrainStress.globalIgnoreStressCalculation = true;
 
     }
 
-    private void OnClientboundBeginWorldSyncPacket(ClientboundBeginWorldSyncPacket packet)
-    {
-        Log("Syncing world state");
-
-        DisplayLoadingInfo displayLoadingInfo = Object.FindObjectOfType<DisplayLoadingInfo>();
-        if (displayLoadingInfo == null)
-        {
-            LogDebug(() => $"Received {nameof(ClientboundBeginWorldSyncPacket)} but couldn't find {nameof(DisplayLoadingInfo)}!");
-            return;
-        }
-
-        displayLoadingInfo.OnLoadingStatusChanged(Locale.LOADING_INFO__SYNC_WORLD_STATE, false, 100);
-    }
-
     private void OnClientboundWeatherPacket(ClientboundWeatherPacket packet)
     {
-        Log("Received weather state");
+        if (LoadingState < PlayerLoadingState.Complete)
+            Log("Received weather state");
 
         WeatherDriver.Instance.LoadSaveData(JObject.FromObject(packet), Globals.G.GameParams.WeatherEditorAlwaysAllowed);
     }
@@ -518,39 +612,6 @@ public class NetworkClient : NetworkManager
         TimeAdvance.AdvanceTime(packet.amountOfTimeToSkipInSeconds);
     }
 
-    //Force stations to be mapped to same netId across all clients and server - probably should implement for junctions, etc.
-    private void OnClientboundStationControllerLookupPacket(ClientboundStationControllerLookupPacket packet)
-    {
-
-        if (packet == null)
-        {
-            LogError("OnClientBoundStationControllerLookupPacket received null packet");
-            return;
-        }
-
-        if (packet.NetID == null || packet.StationID == null)
-        {
-            LogError($"OnClientBoundStationControllerLookupPacket received packet with null arrays: NetID is null: {packet.NetID == null}, StationID is null: {packet.StationID == null}");
-            return;
-        }
-
-        for (int i = 0; i < packet.NetID.Length; i++)
-        {
-            if (!NetworkedStationController.GetFromStationId(packet.StationID[i], out NetworkedStationController netStationCont))
-            {
-                LogError($"OnClientBoundStationControllerLookupPacket() could not find station: {packet.StationID[i]}");
-            }
-            else if (packet.NetID[i] > 0)
-            {
-                netStationCont.NetId = packet.NetID[i];
-            }
-            else
-            {
-                LogError($"OnClientBoundStationControllerLookupPacket() station: {packet.StationID[i]} mapped to NetID 0");
-            }
-        }
-    }
-
     private void OnClientboundRailwayStatePacket(ClientboundRailwayStatePacket packet)
     {
         Log("Received railway state");
@@ -568,6 +629,9 @@ public class NetworkClient : NetworkManager
                 return;
             turntable.SetRotation(packet.TurntableRotations[i], true, true);
         }
+
+        Log("Requesting cars");
+        SendLoadStateUpdate(PlayerLoadingState.ReadyForTrainSets);
     }
 
     private void OnCommonChangeJunctionPacket(CommonChangeJunctionPacket packet)
@@ -598,6 +662,9 @@ public class NetworkClient : NetworkManager
         }
 
         NetworkedCarSpawner.SpawnCars(packet.SpawnParts, packet.AutoCouple);
+
+        if (LoadingState == PlayerLoadingState.ReadyForTrainSets)
+            trainSetsSpawned++;
     }
 
     private void OnClientboundDestroyTrainCarPacket(ClientboundDestroyTrainCarPacket packet)
@@ -1246,16 +1313,11 @@ public class NetworkClient : NetworkManager
     }
     #endregion
 
-    public void SendSaveGameDataRequest()
+    private void SendLoadStateUpdate(PlayerLoadingState newState)
     {
-        Log("Requesting game data from server");
-        SendPacketToServer(new ServerboundSaveGameDataRequestPacket(), DeliveryMethod.ReliableOrdered);
-    }
-
-    private void SendReadyPacket()
-    {
-        Log("World loaded, sending ready packet");
-        SendPacketToServer(new ServerboundClientReadyPacket(), DeliveryMethod.ReliableOrdered);
+        Log($"Sending Load State {newState}");
+        SendPacketToServer(new ServerboundLoadStateUpdatePacket { LoadState = newState }, DeliveryMethod.ReliableOrdered);
+        LoadingState = newState;
     }
 
     public void SendPlayerPosition(Vector3 position, Vector3 moveDir, float rotationY, ushort carId, bool isJumping, bool isOnCar, bool reliable)

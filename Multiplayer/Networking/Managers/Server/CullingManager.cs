@@ -83,7 +83,7 @@ public class CullingManager : IDisposable
             {
                 foreach (var player in NetworkLifecycle.Instance.Server.ServerPlayers)
                 {
-                    if (player.PlayerId == NetworkLifecycle.Instance.Server.SelfId || !player.IsLoaded)
+                    if (player.PlayerId == NetworkLifecycle.Instance.Server.SelfId || player.LoadingState != PlayerLoadingState.Complete)
                         continue;
 
                     float sqrDistance = (player.WorldPosition - _referenceObject.transform.position).sqrMagnitude;
