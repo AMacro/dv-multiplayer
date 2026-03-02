@@ -127,5 +127,5 @@ pm/quit_msg,Message when disconnecting from server (quit game),Disconnect and qu
 ps/insufficient,Message when player is missing permissions,Insufficient Permissions,,,,,,,,
 ,,,,,,,,,,,,,,,,,,,,,,,,,,,
 ,Comms Radio,,,,,,,,,,,,,,,,,,,,,,,,,,
-cr/in_use,Message when work train is in use,Locomotive In Use,,机车正在使用中,機車正在使用中,,,,,
+cr/in_use,Message when work train is in use,Locomotive In Use,,机车正在使用中,機車正在使用中,,,,,,Lok wird benutzt
 ,,,,,,,,,,,,,,,,,,,,,,,,,,,

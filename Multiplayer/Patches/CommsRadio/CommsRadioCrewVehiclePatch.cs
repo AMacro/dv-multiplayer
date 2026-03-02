@@ -45,7 +45,7 @@ public static class CommsRadioCrewVehiclePatch
         }
 
         var ticket = RpcManager.Instance
-            .CreateTicket(NetworkLifecycle.Instance.Client.Ping * 8f / 1000)
+            .CreateTicket(Mathf.Max(NetworkLifecycle.Instance.Client.Ping * 8f / 1000, 2f))
             .OnResolve
             (
                 response =>
@@ -66,7 +66,7 @@ public static class CommsRadioCrewVehiclePatch
 
                         string text = CommsRadioLocalization.WORK_TRAIN_SUMMON_PROMPT(LocalizationAPI.L(__instance.selectedCar.livery.localizationKey), __instance.SummonPrice);
 
-                        text += "\n\n" + spawnResponse.Response switch
+                        text += "\n" + spawnResponse.Response switch
                         {
                             ResponseType.InsufficientPermissions => Locale.PERMISSIONS_INSUFFICIENT,
                             ResponseType.InsufficientFunds => CommsRadioLocalization.INSUFFICIENT_FUNDS,
