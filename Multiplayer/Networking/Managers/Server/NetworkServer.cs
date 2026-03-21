@@ -1127,6 +1127,7 @@ public class NetworkServer : NetworkManager
         {
             Accepted = true,
             PlayerId = serverPlayer.PlayerId,
+            OverrideUsername = serverPlayer.OriginalUsername == serverPlayer.Username ? string.Empty : overrideUsername,
         };
 
         SendPacket(peer, acceptPacket, DeliveryMethod.ReliableUnordered);
@@ -1191,7 +1192,7 @@ public class NetworkServer : NetworkManager
         {
             PlayerId = serverPlayer.PlayerId,
             Username = serverPlayer.Username,
-            //Guid = serverPlayer.Guid.ToByteArray()
+            CrewName = serverPlayer.CrewName,
         };
         SendPacketToAll(clientboundPlayerJoinedPacket, DeliveryMethod.ReliableOrdered, peer);
 
@@ -1268,7 +1269,7 @@ public class NetworkServer : NetworkManager
             {
                 PlayerId = player.PlayerId,
                 Username = player.Username,
-                //Guid = player.Guid.ToByteArray(),
+                CrewName = player.CrewName,
                 CarID = player.CarId,
                 Position = player.RawPosition,
                 Rotation = player.RawRotationY

@@ -60,6 +60,10 @@ public class NetworkClient : NetworkManager
 
     private ITransportPeer selfPeer;
     public byte PlayerId { get; private set; }
+    public string Username { get; private set; }
+    public string CrewName { get; private set; }
+    public string DisplayName => string.IsNullOrEmpty(CrewName) ? Username : $"[{CrewName}] {Username}";
+
     public readonly ClientPlayerManager ClientPlayerManager;
 
     // One way ping in milliseconds
@@ -86,6 +90,8 @@ public class NetworkClient : NetworkManager
         {
             NetworkedPlayer.CaptureItemAnchorOffset();
         };
+
+        Username = Multiplayer.Settings.GetUserName();
     }
 
     public void Start(string address, int port, string password, bool isSinglePlayer, Action<DisconnectReason, string> onDisconnect)
@@ -98,7 +104,7 @@ public class NetworkClient : NetworkManager
 
         ServerboundClientLoginPacket serverboundClientLoginPacket = new()
         {
-            Username = Multiplayer.Settings.GetUserName(),
+            Username = this.Username,
             Guid = Multiplayer.Settings.GetGuid().ToByteArray(),
             Password = password,
             BuildVersion = MainMenuControllerPatch.MenuProvider.BuildVersionString,
@@ -332,6 +338,12 @@ public class NetworkClient : NetworkManager
             Log($"Player accepted");
             PlayerId = packet.PlayerId;
 
+            if (!string.IsNullOrEmpty(packet.OverrideUsername))
+            {
+                Log($"A player with username '{Username}' already exists, your temporary username is '{packet.OverrideUsername}'");
+                Username = packet.OverrideUsername;
+            }
+
             if (NetworkLifecycle.Instance.IsHost())
                 SendReadyPacket();
             else
@@ -339,7 +351,6 @@ public class NetworkClient : NetworkManager
 
             return;
         }
-
 
         string text = Locale.Get(packet.ReasonKey, packet.ReasonArgs);
 
@@ -373,7 +384,7 @@ public class NetworkClient : NetworkManager
     private void OnClientboundPlayerJoinedPacket(ClientboundPlayerJoinedPacket packet)
     {
         //Guid guid = new(packet.Guid);
-        ClientPlayerManager.AddPlayer(packet.PlayerId, packet.Username);
+        ClientPlayerManager.AddPlayer(packet.PlayerId, packet.Username, packet.CrewName);
 
         ClientPlayerManager.UpdatePosition(packet.PlayerId, packet.Position, Vector3.zero, packet.Rotation, false, packet.CarID != 0, packet.CarID);
     }
