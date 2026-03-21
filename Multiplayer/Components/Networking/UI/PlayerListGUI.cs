@@ -7,12 +7,11 @@ namespace Multiplayer.Components.Networking.UI;
 public class PlayerListGUI : MonoBehaviour
 {
     private bool showPlayerList;
-    private string localPlayerUsername;
+    private string LocalPlayerUsername => NetworkLifecycle.Instance?.Client?.DisplayName ?? Multiplayer.Settings.GetUserName();
 
     public void RegisterListeners()
     {
         ScreenspaceMouse.Instance.ValueChanged += OnToggle;
-        localPlayerUsername = Multiplayer.Settings.GetUserName();
     }
 
     public void UnRegisterListeners()
@@ -51,12 +50,12 @@ public class PlayerListGUI : MonoBehaviour
         int i = 0;
         foreach (NetworkedPlayer player in players)
         {
-            playerList[i] = $"{player.Username} ({player.GetPing().ToString()}ms)";
+            playerList[i] = $"{player.DisplayName} ({player.GetPing().ToString()}ms)";
             i++;
         }
 
         // The Player of the Client is not in the PlayerManager, so we need to add it separately
-        playerList[playerList.Length - 1] = $"{localPlayerUsername} ({NetworkLifecycle.Instance.Client.Ping}ms)";
+        playerList[playerList.Length - 1] = $"{LocalPlayerUsername} ({NetworkLifecycle.Instance.Client.Ping}ms)";
         return playerList;
     }
 }
