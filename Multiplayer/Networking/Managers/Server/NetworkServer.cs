@@ -789,6 +789,19 @@ public class NetworkServer : NetworkManager
         }, DeliveryMethod.ReliableUnordered, SelfPeer);
     }
 
+    public void SendPlayerPreferencesUpdate(ServerPlayer player)
+    {
+        Log($"Sending player preferences update for '{player.Username}'");
+
+        var packet = new ClientboundPlayerPreferencesUpdatePacket
+        {
+            PlayerId = player.PlayerId,
+            CrewName = player.CrewName
+        };
+
+        SendPacketToAll(packet, DeliveryMethod.ReliableUnordered);
+    }
+
     public void SendTrainUncouple(Coupler coupler, bool playAudio, bool dueToBrokenCouple, bool viaChainInteraction)
     {
         ushort couplerNetId = coupler.train.GetNetId();

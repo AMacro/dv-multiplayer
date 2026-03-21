@@ -155,6 +155,7 @@ public class NetworkClient : NetworkManager
         netPacketProcessor.SubscribeReusable<ClientboundPlayerDisconnectPacket>(OnClientboundPlayerDisconnectPacket);
 
         netPacketProcessor.SubscribeReusable<ClientboundPlayerPositionPacket>(OnClientboundPlayerPositionPacket);
+        netPacketProcessor.SubscribeReusable<ClientboundPlayerPreferencesUpdatePacket>(OnClientboundPlayerPreferencesUpdatePacket);
         netPacketProcessor.SubscribeReusable<ClientboundPingUpdatePacket>(OnClientboundPingUpdatePacket);
 
         netPacketProcessor.SubscribeReusable<ClientboundTimeAdvancePacket>(OnClientboundTimeAdvancePacket);
@@ -414,6 +415,18 @@ public class NetworkClient : NetworkManager
     private void OnClientboundPlayerPositionPacket(ClientboundPlayerPositionPacket packet)
     {
         ClientPlayerManager.UpdatePosition(packet.PlayerId, packet.Position, packet.MoveDir, packet.RotationY, packet.IsJumping, packet.IsOnCar, packet.CarID);
+    }
+
+    private void OnClientboundPlayerPreferencesUpdatePacket(ClientboundPlayerPreferencesUpdatePacket packet)
+    {
+        Log($"Received player preferences update for '{packet.PlayerId}'");
+
+        if (packet.PlayerId == PlayerId)
+        {
+            CrewName = packet.CrewName;
+        }
+
+        ClientPlayerManager.UpdatePreferences(packet.PlayerId, packet.CrewName);
     }
 
     private void OnClientboundPingUpdatePacket(ClientboundPingUpdatePacket packet)

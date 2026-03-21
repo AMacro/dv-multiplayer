@@ -13,6 +13,7 @@ public class ClientPlayerManager
 
     public Action<NetworkedPlayer> OnPlayerConnected;
     public Action<NetworkedPlayer> OnPlayerDisconnected;
+    public Action<NetworkedPlayer> OnPlayerPrefsUpdated;
     public IReadOnlyCollection<NetworkedPlayer> Players => playerMap.Values;
 
     private readonly GameObject playerPrefab;
@@ -62,6 +63,20 @@ public class ClientPlayerManager
             return;
         player.UpdateCar(carId);
         player.UpdatePosition(position, moveDir, rotation, isJumping, isOnCar);
+    }
+
+    // Currently only updates crew name, but can be expanded to include other preferences in the future, e.g. player model, marker color, etc.
+    public void UpdatePreferences(byte playerId, string crewName)
+    {
+        Multiplayer.LogDebug(()=>$"Updating preferences for playerId: {playerId}, CrewName:{crewName}");
+
+        if (!TryGetPlayer(playerId, out NetworkedPlayer player))
+            return;
+
+        Multiplayer.LogDebug(() => $"Updating preferences for playerId: {playerId}, CrewName: {crewName}, Found: {player.Username}");
+
+        player.CrewName = crewName;
+        OnPlayerPrefsUpdated?.Invoke(player);
     }
 
     //public void UpdateCar(byte playerId, ushort carId)

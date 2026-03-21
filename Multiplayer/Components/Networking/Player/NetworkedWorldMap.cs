@@ -19,6 +19,8 @@ public class NetworkedMapMarkersController : MonoBehaviour
             OnPlayerConnected(networkedPlayer);
         NetworkLifecycle.Instance.Client.ClientPlayerManager.OnPlayerConnected += OnPlayerConnected;
         NetworkLifecycle.Instance.Client.ClientPlayerManager.OnPlayerDisconnected += OnPlayerDisconnected;
+        NetworkLifecycle.Instance.Client.ClientPlayerManager.OnPlayerPrefsUpdated += OnPlayerPrefsUpdated;
+
         NetworkLifecycle.Instance.OnTick += OnTick;
     }
 
@@ -31,6 +33,7 @@ public class NetworkedMapMarkersController : MonoBehaviour
             return;
         NetworkLifecycle.Instance.Client.ClientPlayerManager.OnPlayerConnected -= OnPlayerConnected;
         NetworkLifecycle.Instance.Client.ClientPlayerManager.OnPlayerDisconnected -= OnPlayerDisconnected;
+        NetworkLifecycle.Instance.Client.ClientPlayerManager.OnPlayerPrefsUpdated -= OnPlayerPrefsUpdated;
     }
 
     private void OnPlayerConnected(NetworkedPlayer player)
@@ -63,6 +66,19 @@ public class NetworkedMapMarkersController : MonoBehaviour
         refs.text.enableAutoSizing = true;
 
         playerIndicators[player] = refs;
+    }
+
+    private void OnPlayerPrefsUpdated(NetworkedPlayer player)
+    {
+        Multiplayer.LogDebug(() => $"NetworkedMapMarkersController.OnPlayerPrefsUpdated() player: {player}, playerIndicators contains player: {playerIndicators.ContainsKey(player)}");
+
+        if (!playerIndicators.TryGetValue(player, out WorldMapIndicatorRefs refs))
+            return;
+
+        if (refs.text == null)
+            return;
+
+        refs.text.SetText(player.DisplayName);
     }
 
     private void OnPlayerDisconnected(NetworkedPlayer player)
