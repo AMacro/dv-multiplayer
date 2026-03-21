@@ -168,7 +168,7 @@ public class ChatManager
                 return;
         }
 
-        message = $"<alpha=#50>{sender.Username}:</color> <noparse>{message}</noparse>";
+        message = $"<alpha=#50>{sender.DisplayName}:</color> <noparse>{message}</noparse>";
         NetworkLifecycle.Instance.Server.SendChat(message, sender);
     }
 
@@ -226,7 +226,7 @@ public class ChatManager
                 return;
         }
 
-        whisperMessage = "<i><alpha=#50>" + sender.Username + ":</color> <noparse>" + whisperMessage + "</noparse></i>";
+        whisperMessage = "<i><alpha=#50>" + sender.DisplayName + ":</color> <noparse>" + whisperMessage + "</noparse></i>";
 
         NetworkLifecycle.Instance.Server.SendWhisper(whisperMessage, recipient);
     }
