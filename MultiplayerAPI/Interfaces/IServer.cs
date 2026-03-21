@@ -181,4 +181,22 @@ public interface IServer
     void RegisterChatFilter(ChatFilterDelegate callback);
 
     #endregion
+
+    #region Player Management
+    /// <summary>
+    /// Kicks a player from the server with an optional reason.
+    /// </summary>
+    /// <param name="player">The player to be kicked.</param>
+    void KickPlayer(IPlayer player);
+
+    /// <summary>
+    /// Sets the crew name for the specified player.
+    /// </summary>
+    /// <param name="player">The player whose crew name will be set.</param>
+    /// <param name="crewName">The new crew name to assign to the player.</param>
+    /// <remarks>
+    /// This method is experimental and may be replaced in future.
+    /// </remarks>
+    void SetPlayerCrewName(IPlayer player, string crewName);
+    #endregion
 }

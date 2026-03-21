@@ -88,6 +88,21 @@ public class ServerAPIProvider : IServer
     public float AnyPlayerSqrMag(Vector3 anchor) => DvExtensions.AnyPlayerSqrMag(anchor);
     #endregion
 
+    #region Player Management
+    public void KickPlayer(IPlayer player)
+    {
+        server.KickPlayer(GetServerPlayerFromIPlayer(player));
+    }
+
+    public void SetPlayerCrewName(IPlayer player, string crewName)
+    {
+        var serverPlayer = GetServerPlayerFromIPlayer(player);
+
+        if (serverPlayer != null)
+            serverPlayer.CrewName = crewName;
+    }
+    #endregion
+
     #region Chat
     public void SendServerChatMessage(string message, IPlayer excludePlayer = null)
     {
