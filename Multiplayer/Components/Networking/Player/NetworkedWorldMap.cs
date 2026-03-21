@@ -51,16 +51,16 @@ public class NetworkedMapMarkersController : MonoBehaviour
         GameObject textGo = Instantiate(textPrefab, root);
         textGo.transform.localPosition = new Vector3(0, 0.001f, 0);
         textGo.transform.localEulerAngles = new Vector3(90f, 0, 0);
-        refs.text = textGo.GetComponent<RectTransform>();
-        TMP_Text text = textGo.GetComponent<TMP_Text>();
+        refs.textRect = textGo.GetComponent<RectTransform>();
+        refs.text = textGo.GetComponent<TMP_Text>();
 
-        text.name = "Player Name";
-        text.text = player.Username;
-        text.alignment = TextAlignmentOptions.Center;
-        text.fontSize /= 1.25f;
-        text.fontSizeMin = text.fontSize / 2.0f;
-        text.fontSizeMax = text.fontSize;
-        text.enableAutoSizing = true;
+        refs.text.name = "Player Name";
+        refs.text.text = player.DisplayName;
+        refs.text.alignment = TextAlignmentOptions.Center;
+        refs.text.fontSize /= 1.25f;
+        refs.text.fontSizeMin = refs.text.fontSize / 2.0f;
+        refs.text.fontSizeMax = refs.text.fontSize;
+        refs.text.enableAutoSizing = true;
 
         playerIndicators[player] = refs;
     }
@@ -125,7 +125,7 @@ public class NetworkedMapMarkersController : MonoBehaviour
 
             Vector3 position = markersController.GetMapPosition(playerTransform.position - WorldMover.currentMove, true);
             refs.indicator.localPosition = position;
-            refs.text.localPosition = position with { y = position.y + 0.025f };
+            refs.textRect.localPosition = position with { y = position.y + 0.025f };
         }
     }
 }
