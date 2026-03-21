@@ -35,6 +35,7 @@ public class NetworkedPlayer : MonoBehaviour
     private const float LERP_SPEED = 5.0f;
 
     public byte PlayerId { get; set; }
+    public string CrewName { get; set; }
 
     private AnimationHandler animationHandler;
     private NameTag nameTag;
@@ -49,6 +50,16 @@ public class NetworkedPlayer : MonoBehaviour
         {
             username = value;
             nameTag.SetUsername(value);
+        }
+    }
+
+    public string DisplayName
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(CrewName))
+                return username;
+            return $"[{CrewName}] {username}";
         }
     }
 

@@ -11,6 +11,7 @@ namespace Multiplayer.Networking.Data;
 
 public class ServerPlayer : IDisposable
 {
+    public const byte MAX_CREW_NAME_LENGTH = 5;
     #region ID Management
     private static readonly IdPool<byte> idPool = new();
 
@@ -34,6 +35,44 @@ public class ServerPlayer : IDisposable
     public Vector3 RawPosition { get; set; }
     public float RawRotationY { get; set; }
     public ushort CarId { get; set; }
+    private string _crewName;
+    public string CrewName
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(_crewName))
+                return string.Empty;
+            return _crewName;
+        }
+        set
+        {
+            if (value != null)
+            {
+                if (value.Length > MAX_CREW_NAME_LENGTH)
+                {
+                    Multiplayer.LogWarning($"CrewName for player {Username} exceeds max length of {MAX_CREW_NAME_LENGTH}. Truncating.");
+                    _crewName = value.Substring(0, MAX_CREW_NAME_LENGTH);
+                }
+
+                _crewName = value;
+            }
+            else
+            {
+                _crewName = string.Empty;
+            }
+
+            NetworkLifecycle.Instance.Server.SendPlayerPreferencesUpdate(this);
+        }
+    }
+    public string DisplayName
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(CrewName))
+                return Username;
+            return $"[{CrewName}] {Username}";
+        }
+    }
 
     public Dictionary<NetworkedItem, uint> KnownItems { get; private set; } = new Dictionary<NetworkedItem, uint>(); //NetworkedItem, last updated tick
     public Dictionary<NetworkedItem, float> NearbyItems { get; private set; } = new Dictionary<NetworkedItem, float>(); //NetworkedItem, time since near the item
@@ -91,7 +130,8 @@ public class ServerPlayer : IDisposable
         }
     }
 
-    public Vector3 WorldPosition {
+    public Vector3 WorldPosition
+    {
         get
         {
             Vector3 pos;
@@ -99,8 +139,8 @@ public class ServerPlayer : IDisposable
             {
                 if (CarId == 0 || !NetworkedTrainCar.TryGet(CarId, out NetworkedTrainCar car))
                 {
-                    if(CarId != 0)
-                        Multiplayer.LogDebug(() =>$"WorldPosition() noID {Username}: CarId: {CarId}");
+                    if (CarId != 0)
+                        Multiplayer.LogDebug(() => $"WorldPosition() noID {Username}: CarId: {CarId}");
 
                     pos = RawPosition + WorldMover.currentMove;
                 }

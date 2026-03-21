@@ -21,6 +21,13 @@ public class ClientPlayerWrapper : IPlayer
         get => _networkedPlayer.Username;
         set => _networkedPlayer.Username = value;
     }
+    public string CrewName
+    {
+        get => _networkedPlayer.CrewName;
+        set => _networkedPlayer.CrewName = value;
+    }
+    public string DisplayName => _networkedPlayer.DisplayName;
+
     public Vector3 Position => _networkedPlayer.transform.position;
     public float RotationY => _networkedPlayer.transform.rotation.eulerAngles.y;
     public bool IsLoaded => true; // If we have the object, it's loaded

@@ -18,9 +18,22 @@ namespace MPAPI.Interfaces
         public byte PlayerId { get; }
 
         /// <summary>
-        /// Gets the username/display name of the player.
+        /// Gets the username of the player.
         /// </summary>
         public string Username { get; }
+
+        /// <summary>
+        /// Gets the crew name of the player.
+        /// </summary>
+        public string CrewName { get; }
+
+        /// <summary>
+        /// Gets the display name of the player.
+        /// </summary>
+        /// <remarks>
+        /// The display name is the player's username if they are not in a crew, or "[CrewName] Username" if they are in a crew.
+        /// </remarks>
+        public string DisplayName { get; }
 
         /// <summary>
         /// Gets the current world position of the player.

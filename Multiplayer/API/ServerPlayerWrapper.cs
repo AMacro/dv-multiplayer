@@ -26,6 +26,14 @@ public class ServerPlayerWrapper : IPlayer
         set => _serverPlayer.Username = value;
     }
 
+    public string CrewName
+    {
+        get => _serverPlayer.CrewName;
+        set => _serverPlayer.CrewName = value;
+    }
+
+    public string DisplayName => _serverPlayer.DisplayName;
+
     public Vector3 Position => _serverPlayer.WorldPosition;
     public float RotationY => _serverPlayer.WorldRotationY;
     public bool IsLoaded => _serverPlayer.IsLoaded;
