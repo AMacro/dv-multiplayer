@@ -11,7 +11,7 @@ namespace Multiplayer.Networking.Data;
 
 public class ServerPlayer : IDisposable
 {
-    public const byte MAX_CREW_NAME_LENGTH = 5;
+    public const byte MAX_CREW_NAME_LENGTH = 6;
     #region ID Management
     private static readonly IdPool<byte> idPool = new();
 
@@ -53,8 +53,10 @@ public class ServerPlayer : IDisposable
                     Multiplayer.LogWarning($"CrewName for player {Username} exceeds max length of {MAX_CREW_NAME_LENGTH}. Truncating.");
                     _crewName = value.Substring(0, MAX_CREW_NAME_LENGTH);
                 }
-
-                _crewName = value;
+                else
+                {
+                    _crewName = value;
+                }
             }
             else
             {
