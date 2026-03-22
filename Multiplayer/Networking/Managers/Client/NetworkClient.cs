@@ -1,5 +1,6 @@
 using DV;
 using DV.Common;
+using DV.Customization;
 using DV.Customization.Paint;
 using DV.Damage;
 using DV.InventorySystem;
@@ -154,6 +155,7 @@ public class NetworkClient : NetworkManager
         netPacketProcessor.SubscribeReusable<ClientboundGameParamsPacket>(OnClientboundGameParamsPacket);
         netPacketProcessor.SubscribeReusable<ClientboundSaveGameDataPacket>(OnClientboundSaveGameDataPacket);
         netPacketProcessor.SubscribeReusable<ClientboundRailwayStatePacket>(OnClientboundRailwayStatePacket);
+        netPacketProcessor.SubscribeReusable<ClientboundCustomizationsPacket>(OnClientboundCustomizationsPacket);
 
 
         // General Sync
@@ -684,6 +686,16 @@ public class NetworkClient : NetworkManager
         }
 
         railwayStateLoaded = true;
+    }
+
+    private void OnClientboundCustomizationsPacket(ClientboundCustomizationsPacket packet)
+    {
+        Log("Received customizations");
+
+        WorldCustomization.I.ClearHoles();
+
+        foreach (var hole in packet.Holes   )
+            WorldCustomization.I.AddHole(hole.Position, hole.Rotation);
     }
 
     private void OnCommonChangeJunctionPacket(CommonChangeJunctionPacket packet)

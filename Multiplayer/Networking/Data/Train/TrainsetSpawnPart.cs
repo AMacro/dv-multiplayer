@@ -3,6 +3,7 @@ using DV.LocoRestoration;
 using LiteNetLib.Utils;
 using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.Train;
+using Multiplayer.Networking.Data.Items;
 using Multiplayer.Networking.Serialization;
 using Multiplayer.Utils;
 using System;
@@ -35,6 +36,8 @@ public readonly struct TrainsetSpawnPart
     public readonly PaintTheme PaintExterior;
     public readonly PaintTheme PaintInterior;
 
+    public readonly CustomizationHoleData[] CustomizationHoles;
+
     // Coupling data
     public readonly CouplingData FrontCoupling;
     public readonly CouplingData RearCoupling;
@@ -54,7 +57,7 @@ public readonly struct TrainsetSpawnPart
     public TrainsetSpawnPart(
           ushort netId, string liveryId, string carId, string carGuid, bool exploded, TrainCarHealthData carHealthData,
           bool playerSpawnedCar, RestorationType restorationType, LocoRestorationController.RestorationState restorationState, ushort secondCarNetId, ushort[] transportingCarNetIds,
-          PaintTheme paintExterior, PaintTheme paintInterior,
+          PaintTheme paintExterior, PaintTheme paintInterior, CustomizationHoleData[] customizationHoles,
           CouplingData frontCoupling, CouplingData rearCoupling,
           float speed, Vector3 position, Quaternion rotation,
           BogieData bogie1, BogieData bogie2, BrakeSystemData brakeData)
@@ -74,6 +77,7 @@ public readonly struct TrainsetSpawnPart
 
         PaintExterior = paintExterior;
         PaintInterior = paintInterior;
+        CustomizationHoles = customizationHoles;
 
         FrontCoupling = frontCoupling;
         RearCoupling = rearCoupling;
@@ -126,6 +130,10 @@ public readonly struct TrainsetSpawnPart
         PaintThemeLookup.Instance.TryGetNetId(data.PaintInterior, out var intPaintNetId);
         writer.Put(intPaintNetId);
 
+        // Holes with no gadgets
+        writer.Put(data.CustomizationHoles != null ? data.CustomizationHoles.Length : 0);
+        foreach (var hole in data.CustomizationHoles)
+            CustomizationHoleData.Serialize(writer, hole);
 
         CouplingData.Serialize(writer, data.FrontCoupling);
         CouplingData.Serialize(writer, data.RearCoupling);
@@ -172,9 +180,15 @@ public readonly struct TrainsetSpawnPart
         uint extThemeId = reader.GetUInt();
         uint intThemeId = reader.GetUInt();
 
-
         PaintThemeLookup.Instance.TryGet(extThemeId, out PaintTheme exteriorPaint);
         PaintThemeLookup.Instance.TryGet(intThemeId, out PaintTheme interiorPaint);
+
+        // Holes with no gadgets
+        int holeCount = reader.GetInt();
+
+        CustomizationHoleData[] customizationHoles = new CustomizationHoleData[holeCount];
+        for (int i = 0; i < holeCount; i++)
+            customizationHoles[i] = CustomizationHoleData.Deserialize(reader);
 
         var frontCoupling = CouplingData.Deserialize(reader);
         var rearCoupling = CouplingData.Deserialize(reader);
@@ -191,7 +205,7 @@ public readonly struct TrainsetSpawnPart
             netId, liveryId, carId, carGuid, exploded, healthData,
             playerSpawnedCar,
             restorationType, restorationState, secondCarNetId, transportationCarNetIds,
-            exteriorPaint, interiorPaint,
+			exteriorPaint, interiorPaint, customizationHoles,
             frontCoupling, rearCoupling,
             speed, position, rotation,
             bogie1, bogie2, brakeSet);
@@ -226,6 +240,10 @@ public readonly struct TrainsetSpawnPart
             }
         }
 
+        CustomizationHoleData[] customizationHoleData = [];
+        if (trainCar?.Customization?.Holes.Count > 0)
+            customizationHoleData = CustomizationHoleData.FromHoles(trainCar.Customization.Holes);
+
         return new TrainsetSpawnPart(
                 networkedTrainCar.NetId,
                 trainCar.carLivery.id,
@@ -242,6 +260,7 @@ public readonly struct TrainsetSpawnPart
 
                 trainCar?.PaintExterior?.currentTheme,
                 trainCar?.PaintInterior?.currentTheme,
+                customizationHoleData,
 
                 frontCoupling: CouplingData.From(trainCar.frontCoupler),
                 rearCoupling: CouplingData.From(trainCar.rearCoupler),

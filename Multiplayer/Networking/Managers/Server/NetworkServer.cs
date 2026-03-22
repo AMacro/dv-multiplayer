@@ -1253,6 +1253,12 @@ public class NetworkServer : NetworkManager
                     }, DeliveryMethod.ReliableOrdered);
                 }
 
+                // Send customisations (holes drilled in world space)
+                SendPacket(peer, new ClientboundCustomizationsPacket
+                {
+                    Holes = CustomizationHoleData.FromHoles(WorldCustomization.I.Holes)
+                }, DeliveryMethod.ReliableOrdered);
+
                 break;
 
             case PlayerLoadingState.ReadyForTrainSets:

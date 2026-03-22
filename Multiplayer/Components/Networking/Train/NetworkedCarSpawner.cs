@@ -4,6 +4,7 @@ using DV.LocoRestoration;
 using DV.Simulation.Brake;
 using DV.ThingTypes;
 using Multiplayer.Components.Networking.World;
+using Multiplayer.Networking.Data.Items;
 using Multiplayer.Networking.Data.Train;
 using Multiplayer.Patches.CommsRadio;
 using Multiplayer.Utils;
@@ -46,6 +47,10 @@ public static class NetworkedCarSpawner
         for (int i = 0; i < cars.Length; i++)
             SetBrakeParams(parts[i].BrakeData, cars[i].TrainCar);
 
+        // Set Customization
+        for (int i = 0; i < cars.Length; i++)
+            SetCustomizations(parts[i].CustomizationHoles, cars[i].TrainCar);
+
         // Couple them if marked as coupled
         // - we need to do this back to front otherwise the TrainSet indicies will be wrong!
         for (int i = cars.Length - 1; i >= 0; i--)
@@ -54,6 +59,7 @@ public static class NetworkedCarSpawner
         // Update speed queue data
         for (int i = 0; i < cars.Length; i++)
             cars[i].Client_trainSpeedQueue.ReceiveSnapshot(parts[i].Speed, NetworkLifecycle.Instance.Tick);
+
     }
 
     private static NetworkedTrainCar SpawnCar(TrainsetSpawnPart spawnPart, bool preventCoupling = false)
@@ -245,6 +251,24 @@ public static class NetworkedCarSpawner
         bs.SetControlReservoirPressure(brakeSystemData.ControlResPressure);
         bs.ForceCylinderPressure(brakeSystemData.BrakeCylPressure);
 
+    }
+
+    private static void SetCustomizations(CustomizationHoleData[] customizationHoles, TrainCar trainCar)
+    {
+        if (customizationHoles == null || customizationHoles.Length == 0)
+            return;
+
+        var custom = trainCar.Customization;
+        if (custom == null)
+        {
+            Multiplayer.LogWarning($"Attempting to Set Customizations on car {trainCar?.ID} ({trainCar?.GetNetId()}), but Customization is missing");
+            return;
+        }
+
+        custom.ClearHoles();
+
+        foreach (var hole in customizationHoles)
+            custom.AddHole(hole.Position, hole.Rotation);
     }
 
     public static void ApplyRestorationStates()
