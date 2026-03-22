@@ -14,7 +14,6 @@ namespace Multiplayer.API;
 
 public class ServerAPIProvider : IServer
 {
-    private readonly Dictionary<byte, ServerPlayerWrapper> _playerWrapperCache = [];
     private readonly NetworkServer server;
 
     public event Action<IPlayer> OnPlayerConnected;
@@ -25,11 +24,12 @@ public class ServerAPIProvider : IServer
 
     public int PlayerCount => server.PlayerCount;
 
-    public IReadOnlyCollection<IPlayer> Players => server.ServerPlayers.Select(GetWrapper).ToList().AsReadOnly();
+    public IReadOnlyCollection<IPlayer> Players => server.ServerPlayerWrappers;
 
     public IPlayer GetPlayer(byte PlayerId)
     {
-        _playerWrapperCache.TryGetValue(PlayerId, out var player);
+        server.PlayerWrapperCache.TryGetValue(PlayerId, out var player);
+
         return player;
     }
     #endregion
@@ -122,7 +122,7 @@ public class ServerAPIProvider : IServer
     {
         ChatCommandCallbackInternal internalCallback = (message, serverPlayer) =>
         {
-            var playerWrapper = GetWrapper(serverPlayer);
+            var playerWrapper = server.GetWrapper(serverPlayer);
             callback(message, playerWrapper);
         };
 
@@ -133,7 +133,7 @@ public class ServerAPIProvider : IServer
     {
         ChatFilterDelegateInternal internalCallback = (ref string message, ServerPlayer serverPlayer) =>
         {
-            var playerWrapper = GetWrapper(serverPlayer);
+            var playerWrapper = server.GetWrapper(serverPlayer);
             return callback(ref message, playerWrapper);
         };
 
@@ -149,16 +149,6 @@ public class ServerAPIProvider : IServer
         server.PlayerConnected += OnPlayerConnectedInternal;
         server.PlayerDisconnected += OnPlayerDisconnectedInternal;
         server.PlayerReady += OnPlayerReadyInternal;
-    }
-
-    private ServerPlayerWrapper GetWrapper(ServerPlayer serverPlayer)
-    {
-        if (!_playerWrapperCache.TryGetValue(serverPlayer.PlayerId, out var wrapper))
-        {
-            wrapper = new ServerPlayerWrapper(serverPlayer);
-            _playerWrapperCache[serverPlayer.PlayerId] = wrapper;
-        }
-        return wrapper;
     }
 
     private ITransportPeer GetPeerFromPlayer(IPlayer player, string operationName)
@@ -198,18 +188,20 @@ public class ServerAPIProvider : IServer
 
     private void OnPlayerConnectedInternal(ServerPlayer serverPlayer)
     {
-        OnPlayerConnected?.Invoke(GetWrapper(serverPlayer));
+        OnPlayerConnected?.Invoke(server.GetWrapper(serverPlayer));
     }
 
     private void OnPlayerDisconnectedInternal(ServerPlayer serverPlayer)
     {
-        OnPlayerDisconnected?.Invoke(GetWrapper(serverPlayer));
-        _playerWrapperCache.Remove(serverPlayer.PlayerId);
+        // Get wrapper before removing from cache
+        var wrapper = server.GetWrapper(serverPlayer);
+        OnPlayerDisconnected?.Invoke(wrapper);
+        server.PlayerWrapperCache.Remove(serverPlayer.PlayerId);
     }
 
     private void OnPlayerReadyInternal(ServerPlayer serverPlayer)
     {
-        OnPlayerReady?.Invoke(GetWrapper(serverPlayer));
+        OnPlayerReady?.Invoke(server.GetWrapper(serverPlayer));
     }
     #endregion
 }

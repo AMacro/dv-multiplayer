@@ -12,7 +12,6 @@ namespace Multiplayer.API
 {
     public class ClientAPIProvider : IClient
     {
-        private readonly Dictionary<byte, ClientPlayerWrapper> _playerWrapperCache = [];
         private readonly NetworkClient client;
 
         public event Action<IPlayer> OnPlayerConnected;
@@ -30,12 +29,12 @@ namespace Multiplayer.API
 
         #region Client Properties
         public byte PlayerId => client.PlayerId;
-        public IReadOnlyCollection<IPlayer> Players => client.ClientPlayerManager.Players.Select(GetWrapper).ToList().AsReadOnly();
+        public IReadOnlyCollection<IPlayer> Players => client.ClientPlayerWrappers;
         public int PlayerCount => client.ClientPlayerManager.Players.Count + 1; // add 1 for local player
 
         public IPlayer GetPlayer(byte playerId)
         {
-            _playerWrapperCache.TryGetValue(playerId, out var player);
+            client.PlayerWrapperCache.TryGetValue(playerId, out var player);
             return player;
         }
 
@@ -81,26 +80,15 @@ namespace Multiplayer.API
             client.ClientPlayerManager.OnPlayerDisconnected -= OnPlayerDisconnectedInternal;
         }
 
-
-        private ClientPlayerWrapper GetWrapper(NetworkedPlayer networkedPlayer)
-        {
-            if (!_playerWrapperCache.TryGetValue(networkedPlayer.PlayerId, out var wrapper))
-            {
-                wrapper = new ClientPlayerWrapper(networkedPlayer);
-                _playerWrapperCache[networkedPlayer.PlayerId] = wrapper;
-            }
-            return wrapper;
-        }
-
         private void OnPlayerConnectedInternal(Components.Networking.Player.NetworkedPlayer networkedPlayer)
         {
-            OnPlayerConnected?.Invoke(GetWrapper(networkedPlayer));
+            OnPlayerConnected?.Invoke(client.GetWrapper(networkedPlayer));
         }
 
         private void OnPlayerDisconnectedInternal(Components.Networking.Player.NetworkedPlayer networkedPlayer)
         {
-            OnPlayerDisconnected?.Invoke(GetWrapper(networkedPlayer));
-            _playerWrapperCache.Remove(networkedPlayer.PlayerId);
+            OnPlayerDisconnected?.Invoke(client.GetWrapper(networkedPlayer));
+            client.PlayerWrapperCache.Remove(networkedPlayer.PlayerId);
         }
         #endregion
     }

@@ -65,6 +65,8 @@ public class NetworkClient : NetworkManager
     public string DisplayName => string.IsNullOrEmpty(CrewName) ? Username : $"[{CrewName}] {Username}";
 
     public readonly ClientPlayerManager ClientPlayerManager;
+    public readonly Dictionary<byte, ClientPlayerWrapper> PlayerWrapperCache = [];
+    public IReadOnlyCollection<ClientPlayerWrapper> ClientPlayerWrappers => PlayerWrapperCache.Values;
 
     // One way ping in milliseconds
     public int Ping { get; private set; }
@@ -282,6 +284,16 @@ public class NetworkClient : NetworkManager
         }
 
         SendReadyPacket();
+    }
+
+    public ClientPlayerWrapper GetWrapper(NetworkedPlayer networkedPlayer)
+    {
+        if (!PlayerWrapperCache.TryGetValue(networkedPlayer.PlayerId, out var wrapper))
+        {
+            wrapper = new ClientPlayerWrapper(networkedPlayer);
+            PlayerWrapperCache[networkedPlayer.PlayerId] = wrapper;
+        }
+        return wrapper;
     }
 
     #region Net Events
