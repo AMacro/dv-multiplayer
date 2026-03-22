@@ -1,9 +1,10 @@
-using System;
 using Humanizer;
 using Multiplayer.Components.MainMenu;
 using Multiplayer.Utils;
+using System;
 using UnityEngine;
 using UnityModManagerNet;
+using static Multiplayer.Patches.Mods.RemoteDispatchPatch;
 using Console = DV.Console;
 
 namespace Multiplayer;
@@ -28,6 +29,10 @@ public class Settings : UnityModManager.ModSettings, IDrawable
     public string Username = "Player";
     public string Guid = System.Guid.NewGuid().ToString();
 
+    [Space(10)]
+    [Header("Gameplay")]
+    [Draw("Allow clients to set their own crew names", Tooltip = "Whether to allow clients to set their own crew names.")]
+    public bool AllowClientCrewNames = false;
 
     [Space(10)]
     [Header("Server")]

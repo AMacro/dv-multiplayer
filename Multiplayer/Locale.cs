@@ -216,12 +216,19 @@ public static class Locale
     public const string CHAT_HELP_SERVER_MSG_KEY = $"{PREFIX_CHAT_INFO}/help/servermsg";
     public static string CHAT_HELP_WHISPER_MSG => Get(CHAT_HELP_WHISPER_MSG_KEY);
     public const string CHAT_HELP_WHISPER_MSG_KEY = $"{PREFIX_CHAT_INFO}/help/whispermsg";
+    public static string CHAT_HELP_SET_CREW_NAME_HOST_MSG => Get(CHAT_HELP_SET_CREW_NAME_HOST_MSG_KEY);
+    public const string CHAT_HELP_SET_CREW_NAME_HOST_MSG_KEY = $"{PREFIX_CHAT_INFO}/help/setcrewname_host";
+    public static string CHAT_HELP_SET_CREW_NAME_CLIENT_MSG => Get(CHAT_HELP_SET_CREW_NAME_CLIENT_MSG_KEY);
+    public const string CHAT_HELP_SET_CREW_NAME_CLIENT_MSG_KEY = $"{PREFIX_CHAT_INFO}/help/setcrewname_client";
+
     public static string CHAT_HELP_HELP => Get(CHAT_HELP_HELP_KEY);
     public const string CHAT_HELP_HELP_KEY = $"{PREFIX_CHAT_INFO}/help/help";
     public static string CHAT_HELP_MSG => Get(CHAT_HELP_MSG_KEY);
     public const string CHAT_HELP_MSG_KEY = $"{PREFIX_CHAT_INFO}/help/msg";
     public static string CHAT_HELP_PLAYER_NAME => Get(CHAT_HELP_PLAYER_NAME_KEY);
     public const string CHAT_HELP_PLAYER_NAME_KEY = $"{PREFIX_CHAT_INFO}/help/playername";
+    public static string CHAT_HELP_CREW_NAME => Get(CHAT_HELP_CREW_NAME_KEY);
+    public const string CHAT_HELP_CREW_NAME_KEY = $"{PREFIX_CHAT_INFO}/help/crewname";
 
     public static string CHAT_WHISPER_NOT_FOUND => Get(CHAT_WHISPER_NOT_FOUND_KEY);
     public const string CHAT_WHISPER_NOT_FOUND_KEY = $"{PREFIX_CHAT_INFO}/whisper/not_found";
@@ -230,6 +237,12 @@ public static class Locale
     public const string CHAT_KICK_UNABLE_KEY = $"{PREFIX_CHAT_INFO}/kick/unable";
     public static string CHAT_KICK_KICKED => Get(CHAT_KICK_KICKED_KEY);
     public const string CHAT_KICK_KICKED_KEY = $"{PREFIX_CHAT_INFO}/kick/kicked";
+    public static string CHAT_SET_CREW_DISALLOWED => Get(CHAT_SET_CREW_DISALLOWED_KEY);
+    public const string CHAT_SET_CREW_DISALLOWED_KEY = $"{PREFIX_CHAT_INFO}/setcrew/set_crew_disallowed";
+    public static string CHAT_SET_CREW_PLAYER_NOT_FOUND => Get(CHAT_SET_CREW_PLAYER_NOT_FOUND_KEY);
+    public const string CHAT_SET_CREW_PLAYER_NOT_FOUND_KEY = $"{PREFIX_CHAT_INFO}/setcrew/player_not_found";
+    public static string CHAT_SET_CREW_JOINED_MSG => Get(CHAT_SET_CREW_JOINED_MSG_KEY);
+    public const string CHAT_SET_CREW_JOINED_MSG_KEY = $"{PREFIX_CHAT_INFO}/setcrew/joined";
 
 
 

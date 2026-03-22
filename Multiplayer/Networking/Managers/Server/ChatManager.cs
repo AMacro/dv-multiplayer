@@ -1,10 +1,10 @@
 using Multiplayer.Components.Networking;
 using Multiplayer.Networking.Data;
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.RegularExpressions;
 using System.Text;
-using System;
+using System.Text.RegularExpressions;
 
 namespace Multiplayer.Networking.Managers.Server;
 
@@ -22,6 +22,9 @@ public class ChatManager
     public const string COMMAND_LOG = "log";
     public const string COMMAND_LOG_SHORT = "l";
     public const string COMMAND_KICK = "kick";
+    public const string COMMAND_SET_CREW_NAME = "crew";
+    public const string COMMAND_SET_CREW_NAME_SHORT = "sc";
+
 
     public const string MESSAGE_COLOUR_SERVER = "9CDCFE";
     public const string MESSAGE_COLOUR_HELP = "00FF00";
@@ -71,9 +74,22 @@ public class ChatManager
         (
             COMMAND_KICK,
             null,
-            () => $"Kick a player from the server (must be host)" +
+            () => $"Kick a player from the server (host only)" +
                     $"\r\n\t\t/{COMMAND_KICK}",
             KickMessage
+        );
+
+        RegisterChatCommand
+        (
+            COMMAND_SET_CREW_NAME,
+            COMMAND_SET_CREW_NAME_SHORT,
+            () => $"{Locale.CHAT_HELP_SET_CREW_NAME_HOST_MSG}" +
+                    $"\r\n\t\t/{COMMAND_SET_CREW_NAME} <{Locale.CHAT_HELP_PLAYER_NAME}> <{Locale.CHAT_HELP_CREW_NAME}>" +
+                    $"\r\n\t\t/{COMMAND_SET_CREW_NAME_SHORT} <{Locale.CHAT_HELP_PLAYER_NAME}> <{Locale.CHAT_HELP_CREW_NAME}>" +
+                    $"\r\n{Locale.CHAT_HELP_SET_CREW_NAME_CLIENT_MSG}" +
+                    $"\r\n\t\t/{COMMAND_SET_CREW_NAME} <{Locale.CHAT_HELP_CREW_NAME}>" +
+                    $"\r\n\t\t/{COMMAND_SET_CREW_NAME_SHORT} <{Locale.CHAT_HELP_CREW_NAME}>",
+                SetCrewNameMessage
         );
 
 #if DEBUG
@@ -209,7 +225,7 @@ public class ChatManager
         {
             Multiplayer.LogDebug(() => $"Whispering failed: \"{message}\", sender: {sender?.Username}, senderID: {sender?.PlayerId}, peerName: {recipientName}");
 
-            whisperMessage = $"<color=#{MESSAGE_COLOUR_SERVER}>{Locale.Get(Locale.CHAT_WHISPER_NOT_FOUND_KEY, recipientName)}</color>";
+            whisperMessage = $"<color=#{MESSAGE_COLOUR_SERVER}>{Locale.Get(Locale.CHAT_WHISPER_NOT_FOUND_KEY, [recipientName])}</color>";
             NetworkLifecycle.Instance.Server.SendWhisper(whisperMessage, sender);
             return;
         }
@@ -259,6 +275,57 @@ public class ChatManager
         }
 
         NetworkLifecycle.Instance.Server.SendWhisper(whisper, sender);
+    }
+
+    private void SetCrewNameMessage(string message, ServerPlayer sender)
+    {
+        ServerPlayer playerToSet;
+        string playerName;
+        string crewName;
+
+        if (sender == null)
+            return;
+
+        string[] parts = message.Split([' '], 2, StringSplitOptions.RemoveEmptyEntries);
+
+        if (parts.Length < 1)
+            return;
+
+        if (!NetworkLifecycle.Instance.IsHost(sender))
+        {
+            if (!Multiplayer.Settings.AllowClientCrewNames)
+            {
+                var whisper = $"<color=#{MESSAGE_COLOUR_SERVER}>{Locale.CHAT_SET_CREW_DISALLOWED}</color>";
+                NetworkLifecycle.Instance.Server.SendWhisper(whisper, sender);
+                return;
+            }
+
+            playerToSet = sender;
+            crewName = message;
+        }
+        else
+        {
+            playerName = parts[0];
+            playerToSet = ServerPlayerFromUsername(playerName);
+
+            if (playerToSet == null)
+            {
+                string whisper = $"<color=#{MESSAGE_COLOUR_SERVER}>{Locale.Get(Locale.CHAT_SET_CREW_PLAYER_NOT_FOUND_KEY, [playerName])}</color>";
+                NetworkLifecycle.Instance.Server.SendWhisper(whisper, sender);
+                return;
+            }
+
+            crewName = string.Join(" ", parts.Skip(1));
+        }
+      
+        playerToSet.CrewName = crewName;
+
+        if (crewName != string.Empty)
+        {
+            string announce = $"<color=#{MESSAGE_COLOUR_SERVER}>{Locale.Get(Locale.CHAT_SET_CREW_JOINED_MSG_KEY, [playerToSet.Username, playerToSet.CrewName])}</color>";
+
+            NetworkLifecycle.Instance.Server.SendChat(announce);
+        }
     }
 
     private void HelpMessage(string _, ServerPlayer player)
