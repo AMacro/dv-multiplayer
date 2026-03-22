@@ -1,11 +1,15 @@
-using System;
-using System.Reflection;
 using DV.JObjectExtstensions;
 using HarmonyLib;
-using Multiplayer.Components.Networking;
+using MPAPI.Interfaces;
 using Multiplayer.Components.Networking.Player;
+using Multiplayer.Components.Networking;
 using Newtonsoft.Json.Linq;
+using System.Collections.Generic;
+using System.Reflection;
+using System;
 using UnityEngine;
+using System.Linq;
+using Multiplayer.API;
 
 namespace Multiplayer.Patches.Mods;
 
@@ -45,13 +49,19 @@ public static class RemoteDispatchPatch
         if (!NetworkLifecycle.Instance.IsClientRunning)
             return;
 
-        foreach (NetworkedPlayer player in NetworkLifecycle.Instance.Client.ClientPlayerManager.Players)
+        IEnumerable<IPlayer> players;
+
+        if (NetworkLifecycle.Instance.IsHost())
+            players = NetworkLifecycle.Instance.Server.ServerPlayerWrappers;
+        else
+            players = NetworkLifecycle.Instance.Client.ClientPlayerWrappers;
+
+        foreach (var player in players)
         {
             JObject data = new();
 
-            Transform playerTransform = player.transform;
-            Vector3 position = playerTransform.position - WorldMover.currentMove;
-            float rotation = playerTransform.eulerAngles.y;
+            Vector3 position = player.Position - WorldMover.currentMove;
+            float rotation = player.RotationY;
 
             JArray latLon = new(
                 Math.Round(DEGREES_PER_METER * position.z, DECIMAL_PLACES),
@@ -61,6 +71,8 @@ public static class RemoteDispatchPatch
             data.SetString("color", "aqua");
             data.Add("position", latLon);
             data.SetFloat("rotation", rotation);
+            data.SetString("crew", player.CrewName);
+
             __result.SetJObject(player.Username, data);
         }
     }
