@@ -1,6 +1,8 @@
+using DV.Interaction;
 using DV.Player;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Editor.Components.Player;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Multiplayer.Components.Networking.Player;
@@ -24,7 +26,7 @@ public class NetworkedPlayer : MonoBehaviour
         // - the direction/rotation of the camera
         // - player loading status (maybe posistion hasn't settled yet)
         if (!VRManager.IsVREnabled())
-        { 
+        {
             itemAnchorOffset = PlayerManager.PlayerTransform.InverseTransformPoint(ItemPositionController.Instance.itemAnchor.position);
             Multiplayer.LogDebug(() => $"NetworkedPlayer.CaptureItemAnchorOffset() itemAnchorOffset: {itemAnchorOffset}");
         }
@@ -63,6 +65,9 @@ public class NetworkedPlayer : MonoBehaviour
         }
     }
 
+    internal bool IsVR { get; set; }
+
+    // World Positioning
     internal bool IsOnCar { get; private set; }
     internal TrainCar OccupiedCar { get; private set; }
 
@@ -71,13 +76,21 @@ public class NetworkedPlayer : MonoBehaviour
     private Quaternion targetRotation;
     private Vector2 moveDir;
     private Vector2 targetMoveDir;
-    
-    private GameObject itemHeld;
+
+    // Inventory and item holding
+    private GameObject inventoryRoot;
+    public GameObject RightHandItemGO { get; private set; }
+    private readonly List<Collider> disabledRHItemColliders = [];
+    public GameObject LeftHandItemGO { get; private set; }
+    private readonly List<Collider> disabledLHItemColliders = [];
     private Vector3? itemHoldPos;
     private Quaternion? itemHoldRot;
 
     protected void Awake()
     {
+        inventoryRoot = new GameObject("Inventory");
+        inventoryRoot.transform.SetParent(transform);
+
         animationHandler = GetComponent<AnimationHandler>();
 
         nameTag = GetComponent<NameTag>();
@@ -121,7 +134,7 @@ public class NetworkedPlayer : MonoBehaviour
         float t = Time.deltaTime * LERP_SPEED;
 
         Vector3 position = Vector3.Lerp(IsOnCar ? selfTransform.localPosition : selfTransform.position, IsOnCar ? targetPos : targetPos + WorldMover.currentMove, t);
-        
+
         moveDir = Vector2.Lerp(moveDir, targetMoveDir, t);
         animationHandler.SetMoveDir(moveDir);
 
@@ -160,10 +173,10 @@ public class NetworkedPlayer : MonoBehaviour
             selfTransform.rotation = Quaternion.Lerp(transform.rotation, targetRotation, t);
         }
 
-        if (itemHeld != null)
+        if (RightHandItemGO != null)
         {
-            itemHeld.transform.position = selfTransform.position + GetItemOffsetFromPlayer();
-            itemHeld.transform.rotation = selfTransform.rotation * (itemHoldRot ?? Quaternion.identity);//ItemPositionController.Instance.itemAnchor.localRotation);
+            RightHandItemGO.transform.position = selfTransform.position + GetItemOffsetFromPlayer();
+            RightHandItemGO.transform.rotation = selfTransform.rotation * (itemHoldRot ?? Quaternion.identity);//ItemPositionController.Instance.itemAnchor.localRotation);
         }
     }
 
@@ -192,23 +205,78 @@ public class NetworkedPlayer : MonoBehaviour
     }
 
     /// <summary>
+    /// Attach item to player object when in inventory
+    /// </summary>
+    /// <param name="itemGo">The item GameObject to attach</param>
+    public void AddItemToInventory(GameObject itemGo)
+    {
+        itemGo.transform.SetParent(inventoryRoot.transform, true);
+        itemGo.SetActive(false);
+    }
+
+    /// <summary>
     /// Sets the player's currently held item with optional position and rotation offsets
     /// </summary>
     /// <param name="itemGo">The item GameObject to hold</param>
     /// <param name="targetPos">Optional local position offset</param>
     /// <param name="targetRot">Optional local rotation offset</param>
-    public void HoldItem(GameObject itemGo, Vector3? targetPos = null, Quaternion? targetRot = null)
+    /// <param name="rightHand">Indicates if the item is held in the right hand. Always true for nonVR</param>
+
+    // TODO: This currently only supports right hand holding and will need to be expanded to support left hand items and dual hand items
+    public void HoldItem(GameObject itemGo, Vector3? targetPos = null, Quaternion? targetRot = null, bool rightHand = true)
     {
         Multiplayer.LogDebug(() => $"NetworkedPlayer.HoldItem({itemGo.GetPath()}) Player: {username}, Before position: {itemGo.transform.localPosition}, rotation:  {itemGo.transform.localRotation}, Target pos: {targetPos}, Target rot: {targetRot}");
 
-        itemHeld = itemGo;
+        itemGo.transform.SetParent(selfTransform, true);
+        var itemGrabHandler = itemGo.GetComponentInChildren<GrabHandlerItem>();
+        if (itemGrabHandler != null)
+        {
+            itemGrabHandler.TogglePhysics(false);
+            itemGrabHandler.interactionAllowed = false;
+        }
+
+        // Disable colliders to stop annoying noises and other potential issues
+        disabledRHItemColliders.Clear();
+        foreach (Collider col in itemGo.GetComponentsInChildren<Collider>(true))
+        {
+            Multiplayer.LogDebug(() => $"NetworkedPlayer.HoldItem() Collider: {col.name}, Enabled: {col.enabled}, Type: {col.GetType()}");
+            if (col != null && col.enabled)
+                col.enabled = false;
+
+            disabledRHItemColliders.Add(col);
+        }
+
+        RightHandItemGO = itemGo;
         itemHoldPos = targetPos;
         itemHoldRot = targetRot;
     }
 
+    /// <summary>
+    /// Drops the player's currently held item
+    /// </summary>
+
+    // TODO: This currently only supports right hand holding and will need to be expanded to support left hand items and dual hand items
     public void DropItem()
     {
-        itemHeld = null;
+        // Re-enable previously disabled colliders
+        foreach (Collider col in disabledRHItemColliders)
+        {
+            Multiplayer.LogDebug(() => $"NetworkedPlayer.DropItem() Re-enabling collider: {col.name}, Type: {col.GetType()}");
+            if (col != null)
+                col.enabled = true;
+        }
+        disabledRHItemColliders.Clear();
+
+        var itemGrabHandler = RightHandItemGO.GetComponentInChildren<GrabHandlerItem>();
+        if (itemGrabHandler != null)
+        {
+            itemGrabHandler.TogglePhysics(true);
+            itemGrabHandler.interactionAllowed = true;
+        }
+
+        RightHandItemGO?.transform.SetParent(WorldMover.OriginShiftParent, true);
+
+        RightHandItemGO = null;
         itemHoldPos = null;
         itemHoldRot = null;
     }
