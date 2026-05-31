@@ -86,7 +86,7 @@ public class ServerPlayer : IDisposable
     public Dictionary<NetworkedItem, uint> KnownItems { get; private set; } = new Dictionary<NetworkedItem, uint>(); //NetworkedItem, last updated tick
     public Dictionary<NetworkedItem, float> NearbyItems { get; private set; } = new Dictionary<NetworkedItem, float>(); //NetworkedItem, time since near the item
     public HashSet<ushort> OwnedItems { get; private set; } = new HashSet<ushort>();
-    public StorageBase Storage { get; set; } = new StorageBase();
+    public StorageBase Inventory { get; private set; }
 
     private Vector3 _lastWorldPos = Vector3.zero;
     private Vector3 _lastAbsoluteWorldPosition = Vector3.zero;
@@ -101,6 +101,11 @@ public class ServerPlayer : IDisposable
         Username = username;
         OriginalUsername = originalUsername;
         Guid = guid;
+
+        Inventory = new StorageBase
+        {
+            storageType = DV.ThingTypes.StorageType.Inventory
+        };
     }
 
     #region Positioning

@@ -14,6 +14,7 @@ public class NetworkedSaveGameManager : SingletonBehaviour<NetworkedSaveGameMana
 {
     private const string ROOT_KEY = "Multiplayer";
     private const string PLAYERS_KEY = "Players";
+    private const string INVENTORY_KEY = "Inventory";
 
     protected override void Awake()
     {
@@ -72,12 +73,21 @@ public class NetworkedSaveGameManager : SingletonBehaviour<NetworkedSaveGameMana
                 continue;
 
             JObject playerData = [];
+            // Player position data
             playerData.SetVector3(SaveGameKeys.Player_position, player.AbsoluteWorldPosition);
             playerData.SetFloat(SaveGameKeys.Player_rotation, player.WorldRotationY);
-            //store inventory see StorageSerializer.SaveStorage()
+
+            //Player Inventory data
+            SaveGameData saveGameData = new();
+            playerData.Remove(INVENTORY_KEY);
+            StorageSerializer.SaveStorage(player.Inventory, saveGameData);
+            playerData.Merge(saveGameData.GetJsonObject());
+
             players.SetJObject(player.Guid.ToString(), playerData);
+
         }
 
+        Multiplayer.LogDebug(() => $"Updated save data: {players.ToString()}");
         root.SetJObject(PLAYERS_KEY, players);
         data.SetJObject(ROOT_KEY, root);
     }
