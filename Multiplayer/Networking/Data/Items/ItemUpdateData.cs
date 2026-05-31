@@ -21,6 +21,13 @@ public class ItemUpdateData
         FullSync = ItemState | ItemPosition | ObjectState,
     }
 
+    public enum Hand : byte
+    {
+        nonVR = 0,
+        Left = 1,
+        Right = 2
+    }
+
     public ItemUpdateType UpdateType { get; set; }
     public ushort ItemNetId { get; set; }
     public string PrefabName { get; set; }
@@ -28,113 +35,116 @@ public class ItemUpdateData
     public Vector3 ItemPosition { get; set; }
     public Quaternion ItemRotation { get; set; }
     public Vector3 ThrowDirection { get; set; }
-    public byte Player { get; set; }
+    public byte PlayerId { get; set; }
     public ushort CarNetId { get; set; }
     public bool AttachedFront  { get; set; }
     public Dictionary<string, object> States { get; set; }
+    public Hand PlayerHand { get; set; }
 
-    public void Serialize(NetDataWriter writer)
+    public static void Serialize(NetDataWriter writer, ItemUpdateData data)
     {
-        writer.Put((byte)UpdateType);
-        writer.Put(ItemNetId);
+        writer.Put((byte)data.UpdateType);
+        writer.Put(data.ItemNetId);
 
-        if (UpdateType == ItemUpdateType.Destroy)
+        if (data.UpdateType == ItemUpdateType.Destroy)
             return;
 
-        writer.Put((byte)ItemState);
+        writer.Put((byte)data.ItemState);
 
-        if (UpdateType.HasFlag(ItemUpdateType.Create))
-            writer.Put(PrefabName);
+        if (data.UpdateType.HasFlag(ItemUpdateType.Create))
+            writer.Put(data.PrefabName);
 
-        if (UpdateType.HasFlag(ItemUpdateType.Create) || UpdateType.HasFlag(ItemUpdateType.ItemState))
+        if (data.UpdateType.HasFlag(ItemUpdateType.Create) || data.UpdateType.HasFlag(ItemUpdateType.ItemState))
         {
-            if (ItemState == ItemState.Dropped || ItemState == ItemState.Thrown) // || UpdateType.HasFlag(ItemUpdateType.ItemPosition)
+            if (data.ItemState == ItemState.Dropped || data.ItemState == ItemState.Thrown) // || data.UpdateType.HasFlag(ItemUpdateType.ItemPosition)
             {
-                Vector3Serializer.Serialize(writer, ItemPosition);
-                QuaternionSerializer.Serialize(writer, ItemRotation);
+                Vector3Serializer.Serialize(writer, data.ItemPosition);
+                QuaternionSerializer.Serialize(writer, data.ItemRotation);
 
-                if (ItemState == ItemState.Thrown)
-                    Vector3Serializer.Serialize(writer, ThrowDirection);
+                if (data.ItemState == ItemState.Thrown)
+                    Vector3Serializer.Serialize(writer, data.ThrowDirection);
             }
-            else if (ItemState == ItemState.InInventory || ItemState == ItemState.InHand)
+            else if (data.ItemState == ItemState.InInventory || data.ItemState == ItemState.InHand)
             {
-                writer.Put(Player);
+                writer.Put(data.PlayerId);
             }
-            else if (ItemState == ItemState.Attached)
+            else if (data.ItemState == ItemState.Attached)
             {
-                writer.Put(CarNetId);
-                writer.Put(AttachedFront);
+                writer.Put(data.CarNetId);
+                writer.Put(data.AttachedFront);
             }
         }
 
-        if (UpdateType.HasFlag(ItemUpdateType.Create) || UpdateType.HasFlag(ItemUpdateType.ObjectState))
+        if (data.UpdateType.HasFlag(ItemUpdateType.Create) || data.UpdateType.HasFlag(ItemUpdateType.ObjectState))
         {
-            if (States == null)
+            if (data.States == null)
                 writer.Put(0);
             else
             {
-                writer.Put(States.Count);
-                foreach (var state in States)
+                writer.Put(data.States.Count);
+                foreach (var state in data.States)
                 {
                     writer.Put(state.Key);
-                    SerializeTrackedValue(writer, state.Value);
+                    data.SerializeTrackedValue(writer, state.Value);
                 }
             }
         }
     }
 
-    public void Deserialize(NetDataReader reader)
+    public static ItemUpdateData Deserialize(NetDataReader reader)
     {
-        UpdateType = (ItemUpdateType)reader.GetByte();
-        ItemNetId = reader.GetUShort();
+        ItemUpdateData data = new();
 
-        if (UpdateType == ItemUpdateType.Destroy)
-            return;
+        data.UpdateType = (ItemUpdateType)reader.GetByte();
+        data.ItemNetId = reader.GetUShort();
 
-        ItemState = (ItemState)reader.GetByte();
+        if (data.UpdateType == ItemUpdateType.Destroy)
+            return data;
+        data.ItemState = (ItemState)reader.GetByte();
 
-        if (UpdateType.HasFlag(ItemUpdateType.Create))
-            PrefabName = reader.GetString();
-
-        if (UpdateType.HasFlag(ItemUpdateType.Create) || UpdateType.HasFlag(ItemUpdateType.ItemState))
+        if (data.UpdateType.HasFlag(ItemUpdateType.Create))
+            data.PrefabName = reader.GetString();
+        if (data.UpdateType.HasFlag(ItemUpdateType.Create) || data.UpdateType.HasFlag(ItemUpdateType.ItemState))
         {
-            if (ItemState == ItemState.Dropped || ItemState == ItemState.Thrown) // || UpdateType.HasFlag(ItemUpdateType.ItemPosition)
+            if (data.ItemState == ItemState.Dropped || data.ItemState == ItemState.Thrown) // || data.UpdateType.HasFlag(ItemUpdateType.ItemPosition)
             {
-                ItemPosition = Vector3Serializer.Deserialize(reader);
-                ItemRotation = QuaternionSerializer.Deserialize(reader);
+                data.ItemPosition = Vector3Serializer.Deserialize(reader);
+                data.ItemRotation = QuaternionSerializer.Deserialize(reader);
 
-                if (ItemState == ItemState.Thrown)
+                if (data.ItemState == ItemState.Thrown)
                 {
-                    Multiplayer.LogDebug(() => $"ItemUpdateData.Deserialize() Item Thrown before: {ThrowDirection}");
-                    ThrowDirection = Vector3Serializer.Deserialize(reader);
-                    Multiplayer.LogDebug(() => $"ItemUpdateData.Deserialize() Item Thrown after: {ThrowDirection}");
+                    Multiplayer.LogDebug(() => $"ItemUpdateData.Deserialize() Item Thrown before: {data.ThrowDirection}");
+                    data.ThrowDirection = Vector3Serializer.Deserialize(reader);
+                    Multiplayer.LogDebug(() => $"ItemUpdateData.Deserialize() Item Thrown after: {data.ThrowDirection}");
                 }
             }
-            else if (ItemState == ItemState.InInventory || ItemState == ItemState.InHand)
+            else if (data.ItemState == ItemState.InInventory || data.ItemState == ItemState.InHand)
             {
-                Player = reader.GetByte();
+                data.PlayerId = reader.GetByte();
             }
-            else if (ItemState == ItemState.Attached)
+            else if (data.ItemState == ItemState.Attached)
             {
-                CarNetId = reader.GetUShort();
-                AttachedFront = reader.GetBool();
+                data.CarNetId = reader.GetUShort();
+                data.AttachedFront = reader.GetBool();
             }
         }
 
-        if (UpdateType.HasFlag(ItemUpdateType.Create) || UpdateType.HasFlag(ItemUpdateType.ObjectState))
+        if (data.UpdateType.HasFlag(ItemUpdateType.Create) || data.UpdateType.HasFlag(ItemUpdateType.ObjectState))
         {
             int stateCount = reader.GetInt();
             if (stateCount > 0)
             {
-                States = new Dictionary<string, object>();
+                data.States = new Dictionary<string, object>();
                 for (int i = 0; i < stateCount; i++)
                 {
                     string key = reader.GetString();
-                    object value = DeserializeTrackedValue(reader);
-                    States[key] = value;
+                    object value = data.DeserializeTrackedValue(reader);
+                    data.States[key] = value;
                 }
             }
         }
+
+        return data;
     }
 
     private void SerializeTrackedValue(NetDataWriter writer, object value)

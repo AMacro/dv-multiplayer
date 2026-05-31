@@ -5,12 +5,12 @@ using Multiplayer.Networking.Data.Items;
 
 namespace Multiplayer.Networking.Packets.Common;
 
-public class CommonItemChangePacket : INetSerializable
+public class CommonItemsBulkUpdatePacket //: INetSerializable
 {
     private const int COMPRESS_AFTER_COUNT = 50;
 
-    public List<ItemUpdateData> Items = new List<ItemUpdateData>();
-
+    public List<ItemUpdateData> Items { get; set; }
+    /*
     public void Deserialize(NetDataReader reader)
     {
 
@@ -125,4 +125,5 @@ public class CommonItemChangePacket : INetSerializable
             item.Serialize(writer);
         }
     }
+    */
 }
