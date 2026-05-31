@@ -58,7 +58,7 @@ public static class FlashlightItemPatch
                     __instance.battery.currentPower = value;     //set the value
                     __instance.battery.UpdatePower(0f);          //process a delta of 0 to force an update
                 },
-            (current, last) => Math.Abs(current - last) >= 1.0f, //Don't communicate updates for changes less than 1f
+            (current, last) => (Math.Abs(current - last) >= 1.0f) || (current != last && (current == 0.0f || current == 1.0f)), //Don't communicate updates for changes less than 1.0f, unless hitting upper/lower limits
             true                                                 //This parameter is driven by the server: true
             );
 
