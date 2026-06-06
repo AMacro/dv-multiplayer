@@ -63,12 +63,12 @@ public class ClientPlayerManager
         player.SetPing(ping);
     }
 
-    public void UpdatePosition(byte playerid, Vector3 position, Vector3 moveDir, float rotation, bool isJumping, bool isOnCar, ushort carId)
+    public void UpdatePosition(byte playerid, Vector3 position, Vector3 moveDir, float rotation, float lookPosition, bool isJumping, bool isOnCar, ushort carId)
     {
         if (!TryGetPlayer(playerid, out NetworkedPlayer player))
             return;
         player.UpdateCar(carId);
-        player.UpdatePosition(position, moveDir, rotation, isJumping, isOnCar);
+        player.UpdatePosition(position, moveDir, rotation, lookPosition, isJumping, isOnCar);
     }
 
     // Currently only updates crew name, but can be expanded to include other preferences in the future, e.g. player model, marker color, etc.
