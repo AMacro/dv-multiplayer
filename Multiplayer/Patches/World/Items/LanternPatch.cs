@@ -2,11 +2,9 @@ using HarmonyLib;
 using Multiplayer.Components.Networking.World;
 using Multiplayer.Utils;
 using System;
-using System.Diagnostics;
 
 namespace Multiplayer.Patches.World.Items;
 
-/*
 [HarmonyPatch(typeof(Lantern))]
 public static class LanternPatch
 {
@@ -31,7 +29,7 @@ public static class LanternPatch
 
         var networkedItem = __instance?.gameObject?.GetOrAddComponent<NetworkedItem>();
 
-        if(networkedItem == null)
+        if (networkedItem == null)
         {
             Multiplayer.LogError($"Lantern.Initialize() networkedItem Not Found!");
             return;
@@ -40,16 +38,18 @@ public static class LanternPatch
         try
         {
             // Register the values you want to track with both getters and setters
-            networkedItem.RegisterTrackedValue(
-                    "wickSize",
-                    () => __instance.wickSize,
-                    value =>
-                    {
-                        __instance.UpdateWickRelatedLogic(value);
-                    }
-                    );
+            networkedItem.RegisterTrackedValue
+            (
+                "wickSize",
+                () => __instance.wickSize,
+                value =>
+                {
+                    __instance.UpdateWickRelatedLogic(value);
+                }
+            );
 
-            networkedItem.RegisterTrackedValue(
+            networkedItem.RegisterTrackedValue
+            (
                 "Ignited",
                 () => __instance.igniter.enabled,
                 value =>
@@ -59,14 +59,15 @@ public static class LanternPatch
                             else
                                 __instance.OnFlameExtinguished();
                         }
-                );
+            );
 
             networkedItem.FinaliseTrackedValues();
 
-        }catch(Exception ex)
+        }
+        catch (Exception ex)
         {
             Multiplayer.LogError($"Lantern.Initialize() {ex.Message}\r\n{ex.StackTrace}");
         }
     }
 }
-*/
+
