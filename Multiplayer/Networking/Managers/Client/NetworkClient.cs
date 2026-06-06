@@ -545,7 +545,7 @@ public class NetworkClient : NetworkManager
         Log($"Received player joined packet for player id: {packet.PlayerId}, username: {packet.Username}");
         ClientPlayerManager.AddPlayer(packet.PlayerId, packet.Username, packet.CrewName, packet.CharacterId);
 
-        ClientPlayerManager.UpdatePosition(packet.PlayerId, packet.Position, Vector3.zero, packet.Rotation, false, packet.CarID != 0, packet.CarID);
+        ClientPlayerManager.UpdatePosition(packet.PlayerId, packet.Position, Vector3.zero, packet.Rotation, packet.LookPosition, false, packet.CarID != 0, packet.CarID);
     }
 
     //For other player left the game
@@ -572,7 +572,7 @@ public class NetworkClient : NetworkManager
 
     private void OnClientboundPlayerPositionPacket(ClientboundPlayerPositionPacket packet)
     {
-        ClientPlayerManager.UpdatePosition(packet.PlayerId, packet.Position, packet.MoveDir, packet.RotationY, packet.IsJumping, packet.IsOnCar, packet.CarID);
+        ClientPlayerManager.UpdatePosition(packet.PlayerId, packet.Position, packet.MoveDir, packet.RotationY, packet.LookPosition, packet.IsJumping, packet.IsOnCar, packet.CarID);
     }
 
     private void OnClientboundPlayerPreferencesUpdatePacket(ClientboundPlayerPreferencesUpdatePacket packet)
@@ -1468,7 +1468,7 @@ public class NetworkClient : NetworkManager
         LoadingState = newState;
     }
 
-    public void SendPlayerPosition(Vector3 position, Vector3 moveDir, float rotationY, ushort carId, bool isJumping, bool isOnCar, bool reliable)
+    public void SendPlayerPosition(Vector3 position, Vector3 moveDir, float rotationY, float lookPosition, ushort carId, bool isJumping, bool isOnCar, bool reliable)
     {
         //LogDebug(() => $"SendPlayerPosition({position}, {moveDir}, {rotationY}, {carId}, {isJumping}, {IsOnCar})");
 
@@ -1477,6 +1477,7 @@ public class NetworkClient : NetworkManager
             Position = position,
             MoveDir = new Vector2(moveDir.x, moveDir.z),
             RotationY = rotationY,
+            LookPosition = lookPosition,
             IsJumpingIsOnCar = (byte)((isJumping ? 1 : 0) | (isOnCar ? 2 : 0)),
             CarID = carId
         }, reliable ? DeliveryMethod.ReliableOrdered : DeliveryMethod.Sequenced);

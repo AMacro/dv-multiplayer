@@ -1,6 +1,8 @@
 using DV.Player;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Editor.Components.Player;
+using Multiplayer.Utils;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Multiplayer.Components.Networking.Player;
@@ -67,9 +69,14 @@ public class NetworkedPlayer : MonoBehaviour
     internal bool IsOnCar { get; private set; }
     internal TrainCar OccupiedCar { get; private set; }
 
-    private Transform selfTransform => transform;
+    private Transform selfTransform;
+    private Transform headTransform;
+    private Vector3 headBaseLocalPosition;
+    private Vector3 headBaseLocalEuler;
     private Vector3 targetPos;
     private Quaternion targetRotation;
+    private float currentHeadPitch;
+    private float targetHeadPitch;
     private Vector2 moveDir;
     private Vector2 targetMoveDir;
     
@@ -90,10 +97,16 @@ public class NetworkedPlayer : MonoBehaviour
         OnSettingsUpdated(Multiplayer.Settings);
         Settings.OnSettingsUpdated += OnSettingsUpdated;
 
+        selfTransform = transform;
         targetPos = selfTransform.position;
         targetRotation = selfTransform.rotation;
+        targetHeadPitch = 0f;
         moveDir = Vector2.zero;
         targetMoveDir = Vector2.zero;
+
+        headTransform = gameObject.FindChildByName("Character1_Head").transform;
+        headBaseLocalPosition = selfTransform.InverseTransformPoint(headTransform.position);
+        headBaseLocalEuler = (Quaternion.Inverse(selfTransform.rotation) * headTransform.rotation).eulerAngles;
     }
 
     protected void OnDestroy()
@@ -139,7 +152,10 @@ public class NetworkedPlayer : MonoBehaviour
         float t = Time.deltaTime * LERP_SPEED;
 
         Vector3 position = Vector3.Lerp(IsOnCar ? selfTransform.localPosition : selfTransform.position, IsOnCar ? targetPos : targetPos + WorldMover.currentMove, t);
-        
+
+        // Calculate smoothed head pitch for use in VR and nonVR head positioning and nonVR item positioning
+        currentHeadPitch = Mathf.Lerp(currentHeadPitch, targetHeadPitch, t);
+
         moveDir = Vector2.Lerp(moveDir, targetMoveDir, t);
         animationHandler?.SetMoveDir(moveDir);
 
@@ -177,15 +193,24 @@ public class NetworkedPlayer : MonoBehaviour
             selfTransform.position = position;
             selfTransform.rotation = Quaternion.Lerp(transform.rotation, targetRotation, t);
         }
-
-        if (itemHeld != null)
-        {
-            itemHeld.transform.position = selfTransform.position + GetItemOffsetFromPlayer();
-            itemHeld.transform.rotation = selfTransform.rotation * (itemHoldRot ?? Quaternion.identity);//ItemPositionController.Instance.itemAnchor.localRotation);
-        }
     }
 
-    public void UpdatePosition(Vector3 position, Vector2 moveDir, float rotationY, bool isJumping, bool movePacketIsOnCar)
+    protected void LateUpdate()
+    {
+        // Runs after Animator has applied updates
+
+        if (headTransform == null)
+            return;
+
+        // Base orientation: T-pose head rotation expressed in world space from the player root
+        Quaternion baseHeadWorldRot = selfTransform.rotation * Quaternion.Euler(headBaseLocalEuler);
+
+        // AngleAxis around selfTransform.right unambiguously rotates the head up/down
+        // regardless of how euler angles decompose for this particular bone
+        headTransform.rotation = Quaternion.AngleAxis(currentHeadPitch, selfTransform.right) * baseHeadWorldRot;
+    }
+
+    public void UpdatePosition(Vector3 position, Vector2 moveDir, float rotationY, float lookPosition, bool isJumping, bool movePacketIsOnCar)
     {
         targetPos = position;
         targetMoveDir = moveDir;
@@ -196,6 +221,7 @@ public class NetworkedPlayer : MonoBehaviour
             return;
 
         targetRotation = Quaternion.Euler(0, rotationY, 0);
+        targetHeadPitch = lookPosition;
     }
 
     public void UpdateCar(ushort netId)
@@ -230,12 +256,4 @@ public class NetworkedPlayer : MonoBehaviour
         itemHoldPos = null;
         itemHoldRot = null;
     }
-
-    private Vector3 GetItemOffsetFromPlayer()
-    {
-        Vector3 baseOffset = itemAnchorOffset;
-        Vector3 finalOffset = itemHoldPos.HasValue ? baseOffset + itemHoldPos.Value : baseOffset;
-        return selfTransform.TransformDirection(finalOffset);
-    }
-
 }

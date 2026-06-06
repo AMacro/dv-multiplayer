@@ -42,6 +42,7 @@ public class ServerPlayer : IDisposable
     public string CharacterId { get; set; }
     public Vector3 RawPosition { get; set; }
     public float RawRotationY { get; set; }
+    public float LookPosition { get; set; }
     public ushort CarId { get; set; }
     private string _crewName;
     public string CrewName
