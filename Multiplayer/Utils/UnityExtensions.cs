@@ -109,20 +109,27 @@ public static class UnityExtensions
 
     public static uint ColorToUInt32(this Color color)
     {
-        uint r = (uint)(color.r * 255);
-        uint g = (uint)(color.g * 255);
-        uint b = (uint)(color.b * 255);
-        uint a = (uint)(color.a * 255);
-        return (a << 24) | (r << 16) | (g << 8) | b;
+        Color32 color32 = color;
+
+        uint packedColor =
+            (uint)(color32.a << 24) |
+            (uint)(color32.r << 16) |
+            (uint)(color32.g << 8) |
+            color32.b;
+
+        return packedColor;
     }
 
     public static Color UInt32ToColor(this uint packed)
     {
-        float a = ((packed >> 24) & 0xFF) / 255f;
-        float r = ((packed >> 16) & 0xFF) / 255f;
-        float g = ((packed >> 8) & 0xFF) / 255f;
-        float b = (packed & 0xFF) / 255f;
-        return new Color(r, g, b, a);
+        byte a = (byte)(packed >> 24);
+        byte r = (byte)(packed >> 16);
+        byte g = (byte)(packed >> 8);
+        byte b = (byte)(packed);
+
+        Color32 unpacked = new(r, g, b, a);
+
+        return unpacked;
     }
 
     public static string GetObjectPath(this Component component)
