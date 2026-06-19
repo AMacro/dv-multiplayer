@@ -12,8 +12,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6ab658f490174d2e96148e7e6e27ad3a, type: 3}
   m_Name: AssetIndex
   m_EditorClassIdentifier: 
-  playerPrefab: {fileID: 1707366875631224182, guid: 720cc4622be79f701b73d41dbf0472ea,
-    type: 3}
+  playerPrefabs:
+  - {fileID: 4097905915734581018, guid: a092d7c50f0c2474db9e35e38cf02aa1, type: 3}
+  - {fileID: 4097905915734581018, guid: 5cb5fed3149de5d4b89999b8a42aa49e, type: 3}
+  - {fileID: 1707366875631224182, guid: 720cc4622be79f701b73d41dbf0472ea, type: 3}
   multiplayerIcon: {fileID: 21300000, guid: 981b3e40e34126c43a32b7a54238d2d6, type: 3}
   lockIcon: {fileID: 21300000, guid: b8a707a2b12db584fad32aed46912dd0, type: 3}
   refreshIcon: {fileID: 21300000, guid: 7c3f2166549e6e144ae26c8d527d59b0, type: 3}
