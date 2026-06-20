@@ -8,6 +8,7 @@ namespace Multiplayer.Editor
     public class AssetIndex : ScriptableObject
     {
         [Header("Prefabs")]
+        public GameObject PlayerTag;
         public GameObject[] playerPrefabs;
 
         [Header("Textures")]
