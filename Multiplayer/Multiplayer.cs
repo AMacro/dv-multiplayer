@@ -161,6 +161,7 @@ public static class Multiplayer
         }
 
         AssetIndex = indices[0];
+
         return true;
     }
 

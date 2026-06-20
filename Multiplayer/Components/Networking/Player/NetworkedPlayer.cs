@@ -37,6 +37,7 @@ public class NetworkedPlayer : MonoBehaviour
     public byte PlayerId { get; set; }
     public string CrewName { get; set; }
 
+    private GameObject playerModel;
     private AnimationHandler animationHandler;
     private NameTag nameTag;
     private int ping;
@@ -49,7 +50,7 @@ public class NetworkedPlayer : MonoBehaviour
         set
         {
             username = value;
-            nameTag.SetUsername(value);
+            nameTag?.SetUsername(value);
         }
     }
 
@@ -66,7 +67,7 @@ public class NetworkedPlayer : MonoBehaviour
     internal bool IsOnCar { get; private set; }
     internal TrainCar OccupiedCar { get; private set; }
 
-    private Transform selfTransform;
+    private Transform selfTransform => transform;
     private Vector3 targetPos;
     private Quaternion targetRotation;
     private Vector2 moveDir;
@@ -78,16 +79,17 @@ public class NetworkedPlayer : MonoBehaviour
 
     protected void Awake()
     {
-        animationHandler = GetComponent<AnimationHandler>();
+        nameTag = GetComponentInChildren<NameTag>();
 
-        nameTag = GetComponent<NameTag>();
         nameTag.LookTarget = PlayerManager.ActiveCamera.transform;
         PlayerManager.CameraChanged += () => nameTag.LookTarget = PlayerManager.ActiveCamera.transform;
+
+        if (name != null)
+            nameTag.SetUsername(name);
 
         OnSettingsUpdated(Multiplayer.Settings);
         Settings.OnSettingsUpdated += OnSettingsUpdated;
 
-        selfTransform = transform;
         targetPos = selfTransform.position;
         targetRotation = selfTransform.rotation;
         moveDir = Vector2.zero;
@@ -105,9 +107,19 @@ public class NetworkedPlayer : MonoBehaviour
         nameTag.ShowPing(settings.ShowNameTags && settings.ShowPingInNameTags);
     }
 
+    public void ChangeModel(GameObject newModel)
+    {
+        if (playerModel != null)
+            Destroy(playerModel);
+
+        playerModel = Instantiate(newModel, transform);
+        
+        animationHandler = playerModel.GetComponent<AnimationHandler>();
+    }
+
     public void SetPing(int ping)
     {
-        nameTag.SetPing(ping);
+        nameTag?.SetPing(ping);
         this.ping = ping;
     }
 

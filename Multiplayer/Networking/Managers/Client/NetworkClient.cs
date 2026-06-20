@@ -522,7 +522,7 @@ public class NetworkClient : NetworkManager
     private void OnClientboundPlayerJoinedPacket(ClientboundPlayerJoinedPacket packet)
     {
         Log($"Received player joined packet for player id: {packet.PlayerId}, username: {packet.Username}");
-        ClientPlayerManager.AddPlayer(packet.PlayerId, packet.Username, packet.CrewName);
+        ClientPlayerManager.AddPlayer(packet.PlayerId, packet.Username, packet.CrewName, "");
 
         ClientPlayerManager.UpdatePosition(packet.PlayerId, packet.Position, Vector3.zero, packet.Rotation, false, packet.CarID != 0, packet.CarID);
     }

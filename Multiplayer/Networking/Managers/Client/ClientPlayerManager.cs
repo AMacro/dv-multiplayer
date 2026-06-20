@@ -16,11 +16,13 @@ public class ClientPlayerManager
     public Action<NetworkedPlayer> OnPlayerPrefsUpdated;
     public IReadOnlyCollection<NetworkedPlayer> Players => playerMap.Values;
 
-    private readonly GameObject playerPrefab;
+    private readonly GameObject playerTagPrefab;
+    private readonly GameObject[] playerPrefabs;
 
     public ClientPlayerManager()
     {
-        playerPrefab = Multiplayer.AssetIndex.playerPrefab;
+        playerTagPrefab = Multiplayer.AssetIndex.PlayerTag;
+        playerPrefabs = Multiplayer.AssetIndex.playerPrefabs;
     }
 
     public bool TryGetPlayer(byte playerid, out NetworkedPlayer player)
@@ -28,7 +30,7 @@ public class ClientPlayerManager
         return playerMap.TryGetValue(playerid, out player);
     }
 
-    public void AddPlayer(byte playerId, string username, string crewName)
+    public void AddPlayer(byte playerId, string username, string crewName, string prefabId)
     {
         if (playerMap.ContainsKey(playerId))
         {
@@ -36,12 +38,21 @@ public class ClientPlayerManager
             RemovePlayer(playerId);
         }
 
-        GameObject go = Object.Instantiate(playerPrefab, WorldMover.OriginShiftParent);
+        // Player model holder
+        GameObject go = new($"Player[{username}]");
+        go.transform.SetParent(WorldMover.OriginShiftParent);
         go.layer = LayerMask.NameToLayer(Layers.Player);
+
+        // Setup player tag
+        Object.Instantiate(playerTagPrefab, go.transform);
         NetworkedPlayer networkedPlayer = go.AddComponent<NetworkedPlayer>();
+
         networkedPlayer.PlayerId = playerId;
         networkedPlayer.Username = username;
         networkedPlayer.CrewName = crewName;
+
+        networkedPlayer.ChangeModel(playerPrefabs[0]);
+
         playerMap.Add(playerId, networkedPlayer);
         OnPlayerConnected?.Invoke(networkedPlayer);
     }
