@@ -17,6 +17,7 @@ public static class Locale
 
     private const string PREFIX_MAIN_MENU = $"{PREFIX}mm";
     private const string PREFIX_SERVER_BROWSER = $"{PREFIX}sb";
+    private const string PREFIX_SETTINGS = $"{PREFIX}settings";
     private const string PREFIX_SERVER_HOST = $"{PREFIX}host";
     private const string PREFIX_DISCONN_REASON = $"{PREFIX}dr";
     private const string PREFIX_CAREER_MANAGER = $"{PREFIX}carman";
@@ -45,6 +46,15 @@ public static class Locale
 
     public static string MAIN_MENU__UPDATE_ACTION => Get(MAIN_MENU__UPDATE_ACTION_KEY);
     public const string MAIN_MENU__UPDATE_ACTION_KEY = $"{PREFIX_MAIN_MENU}/update_action";
+    #endregion
+
+    #region Settings Menu
+    public static string SETTINGS__SETTINGS => Get(SETTINGS__SETTINGS_KEY);
+    public const string SETTINGS__SETTINGS_KEY = $"{PREFIX_SETTINGS}/settings";
+    public static string SETTINGS_CHAR_SEL_SETTINGS => Get(SETTINGS_CHAR_SEL_SETTINGS_KEY);
+    public const string SETTINGS_CHAR_SEL_SETTINGS_KEY = $"{PREFIX_SETTINGS}/char_select";
+    public const string SETTINGS_CHAR_SEL_TOOLTIP_KEY = $"{PREFIX_SETTINGS}/char_select__tooltip";
+
     #endregion
 
     #region Server Browser

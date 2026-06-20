@@ -14,6 +14,14 @@ mm/update_latest,Message box title for Multiplayer mod update,Latest version:{0}
 mm/update_installed,Message box title for Multiplayer mod update,Installed version:{0},,,,,,,,,,,,,,,,,,,,,,,,,
 mm/update_action,Message box title for Multiplayer mod update,Run Unity Mod Manager Installer to apply the update.,,,,,,,,,,,,,,,,,,,,,,,,,
 ,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,Settings,,,,,,,,,,,,,,,,,,,,,,,,,,
+settings/settings,settings button,Multiplayer,,,,,,,,,,,,,,,,,,,,,,,,,
+settings/settings__tooltip,settings button tooltip,Multiplayer settings,,,,,,,,,,,,,,,,,,,,,,,,,
+settings/settings__tooltip_disabled,Unused,,,,,,,,,,,,,,,,,,,,,,,,,,
+settings/char_select,character selector,Selecting char,,,,,,,,,,,,,,,,,,,,,,,,,
+settings/char_select__tooltip,Character selector tooltip,Choose a character. Characters are purely cosmetic.,,,,,,,,,,,,,,,,,,,,,,,,,
+settings/char_select__tooltip_disabled,Unused,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,
 ,Server Browser,,,,,,,,,,,,,,,,,,,,,,,,,,
 sb/title,The title of the Server Browser tab,Server Browser,Браузър на сървъра,服务器浏览器,伺服器瀏覽器,Serverový prohlížeč,Server browser,Server browser,Palvelimen selain,Navigateur de serveurs,Server-Browser,सर्वर ब्राउजर,Szerverböngésző,Ricerca Server,サーバーブラウザ,서버 브라우저,Servernettleser,Przeglądarka serwerów,Navegador do servidor,Navegador do servidor,Browser server,Браузер серверов,Serverový prehliadač,Buscar servidores,Serverbläddrare,Sunucu tarayıcısı,Браузер сервера
 sb/manual_connect,Connect to IP,Connect to IP,Свържете се с IP,连接到IP,連接到IP,Připojte se k IP,Opret forbindelse til IP,Maak verbinding met IP,Yhdistä IP-osoitteeseen,Se connecter à une IP,Mit IP verbinden,आईपी ​​से कनेक्ट करें,Csatlakozzon az IP-hez,Connettiti all'IP,IPに接続する,IP에 연결,Koble til IP,Połącz się z IP,Conecte-se ao IP,Ligue-se ao IP,Conectați-vă la IP,Подключиться к IP,Pripojte sa k IP,Conéctese a IP,Anslut till IP,IP'ye bağlan,Підключитися до IP
