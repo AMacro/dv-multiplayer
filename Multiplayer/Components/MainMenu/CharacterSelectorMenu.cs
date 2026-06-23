@@ -12,9 +12,13 @@ namespace Multiplayer.Components.MainMenu;
 public class CharacterSelectorMenu : MonoBehaviour
 {
     private const int PREVIEW_LAYER = 31;
-    private const int PREVIEW_RT_WIDTH = 512;
-    private const int PREVIEW_RT_HEIGHT = 512;
+    private const int PREVIEW_RT_WIDTH = 435;
+    private const int PREVIEW_RT_HEIGHT = 435; 
     private const int LAYOUT_PADDING = 15;
+
+    public GameObject BottomButtons;
+    public ButtonDV ApplyButton;
+    public ButtonDV DiscardButton;
 
     private GameObject selectorGO;
     private Selector characterSelector;
@@ -25,12 +29,11 @@ public class CharacterSelectorMenu : MonoBehaviour
     private RawImage displayImage;
     private ModelRotator modelRotator;
 
-    private GameObject currentModel;
-    private int currentIndex;
+    private GameObject previewModel;
+    private int selectedIndex;
 
     protected void Awake()
     {
-        LogTransformHierarchy(transform.parent.parent.parent);
         // Grab crosshair selector
         var selector = transform.FindChildByName("Crosshair").gameObject;
         selector.SetActive(false);
@@ -58,20 +61,43 @@ public class CharacterSelectorMenu : MonoBehaviour
         rt.offsetMax = Vector2.zero;
 
         var vlg = gameObject.AddComponent<VerticalLayoutGroup>();
-        vlg.childAlignment = TextAnchor.LowerCenter;
+        vlg.childAlignment = TextAnchor.UpperCenter;
         vlg.childControlWidth = true;
         vlg.childControlHeight = true;
         vlg.childForceExpandWidth = true;
         vlg.childForceExpandHeight = false;
         vlg.spacing = 4f;
-        vlg.padding = new RectOffset(LAYOUT_PADDING, LAYOUT_PADDING, 0, LAYOUT_PADDING);
-
+        vlg.padding = new RectOffset(LAYOUT_PADDING, LAYOUT_PADDING, LAYOUT_PADDING, 80);
 
         SetupPreviewSpawnArea();
         SetupPreviewCamera();
         BuildLayout();
 
         ShowModel(0);
+    }
+
+    protected void OnEnable()
+    {
+        if (BottomButtons != null)
+        {
+            BottomButtons.SetActive(true);
+            ApplyButton.Clicked += ApplyChanges;
+            DiscardButton.Clicked += DiscardChanges;
+        }
+
+        Settings.OnSettingsUpdated += SettingsChanged;
+    }
+
+    protected void OnDisable()
+    {
+        if (BottomButtons != null)
+        {
+            BottomButtons.SetActive(false);
+            ApplyButton.Clicked -= ApplyChanges;
+            DiscardButton.Clicked -= DiscardChanges;
+        }
+
+        Settings.OnSettingsUpdated -= SettingsChanged;
     }
 
     private void SetupPreviewSpawnArea()
@@ -106,7 +132,7 @@ public class CharacterSelectorMenu : MonoBehaviour
         previewCamera.backgroundColor = Color.clear;
         previewCamera.nearClipPlane = 0.1f;
         previewCamera.farClipPlane = 10f;
-        previewCamera.fieldOfView = 40f;
+        previewCamera.fieldOfView = 40f; 
         previewCamera.enabled = true;
 
         previewRT = new RenderTexture(PREVIEW_RT_WIDTH, PREVIEW_RT_HEIGHT, 16, RenderTextureFormat.ARGB32);
@@ -121,8 +147,8 @@ public class CharacterSelectorMenu : MonoBehaviour
         root.transform.SetParent(transform, false);
 
         var rootRect = root.AddComponent<RectTransform>();
-        rootRect.anchorMin = new Vector2(0f, 0f);
-        rootRect.anchorMax = new Vector2(1f, 0f);
+        rootRect.anchorMin = Vector2.zero;
+        rootRect.anchorMax = Vector2.one;
         rootRect.offsetMin = Vector2.zero;
         rootRect.offsetMax = Vector2.zero;
 
@@ -136,6 +162,8 @@ public class CharacterSelectorMenu : MonoBehaviour
 
         root.AddComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
+        BuildCharacterSelector(root);
+
         // Add in preview image
         var previewContainer = new GameObject("CharacterPreviewContainer");
         previewContainer.transform.SetParent(root.transform, false);
@@ -144,7 +172,7 @@ public class CharacterSelectorMenu : MonoBehaviour
         var previewLE = previewContainer.AddComponent<LayoutElement>();
         previewLE.preferredWidth = PREVIEW_RT_WIDTH;
         previewLE.preferredHeight = PREVIEW_RT_HEIGHT;
-        previewLE.flexibleWidth = 1f;
+        previewLE.flexibleWidth = 1f; 
 
         var imageGo = new GameObject("CharacterPreviewDisplay");
         imageGo.transform.SetParent(previewContainer.transform, false);
@@ -166,6 +194,11 @@ public class CharacterSelectorMenu : MonoBehaviour
 
         modelRotator = imageGo.AddComponent<ModelRotator>();
 
+        previewContainer.AddComponent<UIElementTooltip>().enabledKey = Locale.SETTINGS_CHAR_SEL_TOOLTIP_KEY;
+    }
+
+    private void BuildCharacterSelector(GameObject root)
+    {
         // Create selector
         selectorGO.transform.SetParent(root.transform, false);
 
@@ -176,7 +209,6 @@ public class CharacterSelectorMenu : MonoBehaviour
         characterSelector.LocalizedValues = false;
         characterSelector.initialized = false;
 
-        
         characterSelector.GetComponent<UIElementTooltip>().enabledKey = Locale.SETTINGS_CHAR_SEL_TOOLTIP_KEY;
 
         characterSelector.valueTMPro.horizontalAlignment = TMPro.HorizontalAlignmentOptions.Center;
@@ -215,45 +247,40 @@ public class CharacterSelectorMenu : MonoBehaviour
         selectorGO.SetActive(true);
     }
 
-    private void CharacterSelector_SelectionChanged(IClickable clickable, int selectedIndex)
-    {
-        ShowModel(selectedIndex);
-    }
-
     private void ShowModel(int index)
     {
-        if (currentModel != null)
-            Destroy(currentModel);
+        if (previewModel != null)
+            Destroy(previewModel);
 
-        currentModel = Instantiate(Multiplayer.AssetIndex.playerPrefabs[index], previewRoot.transform);
-        currentModel.transform.localPosition = Vector3.zero;
-        currentModel.transform.localRotation = Quaternion.identity;
-        currentModel.transform.localScale = Vector3.one;
+        previewModel = Instantiate(Multiplayer.AssetIndex.playerPrefabs[index], previewRoot.transform);
+        previewModel.transform.localPosition = Vector3.zero;
+        previewModel.transform.localRotation = Quaternion.identity;
+        previewModel.transform.localScale = Vector3.one;
 
-        currentModel.SetLayersRecursive(PREVIEW_LAYER);
+        previewModel.SetLayersRecursive(PREVIEW_LAYER);
 
         // Ensure all animators run in unscaled time so they animate in the pause menu
         if (Time.timeScale == 0f)
         {
-            var animators = currentModel.GetComponentsInChildren<Animator>();
+            var animators = previewModel.GetComponentsInChildren<Animator>();
             foreach (var animator in animators)
                 animator.updateMode = AnimatorUpdateMode.UnscaledTime;
 
-            var springManager = currentModel.GetComponentsInChildren<SpringManager>();
+            var springManager = previewModel.GetComponentsInChildren<SpringManager>();
             foreach (var spring in springManager)
                 spring.enabled = false;
 
-            var autoBlink = currentModel.GetComponentsInChildren<AutoBlink>();
+            var autoBlink = previewModel.GetComponentsInChildren<AutoBlink>();
             foreach (var blink in autoBlink)
                 blink.enabled = false;
         }
 
-        if (modelRotator !=null)
-            modelRotator.target = currentModel.transform;
+        if (modelRotator != null)
+            modelRotator.target = previewModel.transform;
 
 #if DEBUG
         // Diagnostic: log where each prefab's bounds sit so you can fix the prefab root offset
-        var renderers = currentModel.GetComponentsInChildren<Renderer>();
+        var renderers = previewModel.GetComponentsInChildren<Renderer>();
         if (renderers.Length > 0)
         {
             Bounds bounds = renderers[0].bounds;
@@ -263,21 +290,41 @@ public class CharacterSelectorMenu : MonoBehaviour
             // bounds.min.y relative to previewRoot tells you the Y offset baked into the prefab
             float localMin = bounds.min.y - previewRoot.transform.position.y;
             float localMax = bounds.max.y - previewRoot.transform.position.y;
-            Multiplayer.Log($"Prefab '{currentModel.name}': bounds min.y={localMin:F4}, max.y={localMax:F4}, height={localMax - localMin:F4}");
+            Multiplayer.Log($"Prefab '{previewModel.name}': bounds min.y={localMin:F4}, max.y={localMax:F4}, height={localMax - localMin:F4}");
         }
 
-        LogTransformHierarchy(currentModel.transform);
+        LogTransformHierarchy(previewModel.transform);
 #endif
     }
 
-#if DEBUG
-    private static void LogTransformHierarchy(Transform t, string indent = "")
+    private void CharacterSelector_SelectionChanged(IClickable clickable, int selectedIndex)
     {
-        Multiplayer.Log($"{indent}{t.name}: pos={t.localPosition}, scale={t.localScale}");
+        ShowModel(selectedIndex);
+    }
+
+    private void SettingsChanged(Settings settings)
+    {
+        //todo: mod settings updated outside of this menu
+    }
+
+
+#if DEBUG
+    private static void LogTransformHierarchy(Transform t, string indent = "", bool includePos = true)
+    {
+        Multiplayer.Log($"{indent}{t.name}{(includePos? $": pos={t.localPosition}, scale={t.localScale}" : "")}");
         foreach (Transform child in t)
-            LogTransformHierarchy(child, indent + "  ");
+            LogTransformHierarchy(child, indent + "  ", includePos);
     }
 #endif
+    private void DiscardChanges(IClickable clickable)
+    {
+        // Reset all settings to their current values
+    }
+
+    private void ApplyChanges(IClickable clickable)
+    {
+        // Save all settings to disk and apply them
+    }
 
     protected void OnDestroy()
     {

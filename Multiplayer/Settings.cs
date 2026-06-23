@@ -29,6 +29,7 @@ public class Settings : UnityModManager.ModSettings, IDrawable
     [Draw("Username", Tooltip = "Your username in-game.", VisibleOn = "UseSteamName|false")]
     public string Username = "Player";
     public string Guid = System.Guid.NewGuid().ToString();
+    public string CharacterId = "MP_UC";
 
     [Space(10)]
     [Header("Gameplay")]
