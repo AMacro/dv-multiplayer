@@ -51,6 +51,44 @@ public static class Locale
     #region Settings Menu
     public static string SETTINGS__SETTINGS => Get(SETTINGS__SETTINGS_KEY);
     public const string SETTINGS__SETTINGS_KEY = $"{PREFIX_SETTINGS}/settings";
+
+    public static string SETTINGS_USE_STEAM_NAME => Get(SETTINGS_USE_STEAM_NAME_KEY);
+    public const string SETTINGS_USE_STEAM_NAME_KEY = $"{PREFIX_SETTINGS}/use_steam_name";
+
+    public static string SETTINGS_PLAYER_NAME => Get(SETTINGS_PLAYER_NAME_KEY);
+    public const string SETTINGS_PLAYER_NAME_KEY = $"{PREFIX_SETTINGS}/player_name";
+
+    public static string SETTINGS_CHOOSE_CHARACTER => Get(SETTINGS_CHOOSE_CHARACTER_KEY);
+    public const string SETTINGS_CHOOSE_CHARACTER_KEY = $"{PREFIX_SETTINGS}/choose_character";
+
+    public static string SETTINGS_SHOW_NAME_TAGS => Get(SETTINGS_SHOW_NAME_TAGS_KEY);
+    public const string SETTINGS_SHOW_NAME_TAGS_KEY = $"{PREFIX_SETTINGS}/show_name_tags";
+
+    public static string SETTINGS_SHOW_PINGS => Get(SETTINGS_SHOW_PINGS_KEY);
+    public const string SETTINGS_SHOW_PINGS_KEY = $"{PREFIX_SETTINGS}/show_pings";
+
+    public static string SETTINGS_SHOW_PLAYER_LIST => Get(SETTINGS_SHOW_PLAYER_LIST_KEY);
+    public const string SETTINGS_SHOW_PLAYER_LIST_KEY = $"{PREFIX_SETTINGS}/show_player_list";
+
+    public static string SETTINGS_PLAYER_LIST_POSITION => Get(SETTINGS_PLAYER_LIST_POSITION_KEY);
+    public const string SETTINGS_PLAYER_LIST_POSITION_KEY = $"{PREFIX_SETTINGS}/player_list_position";
+
+    // requires enum post-fix
+    public const string SETTINGS_POSITION_KEY = $"{PREFIX_SETTINGS}/pos_";
+
+    public static string SETTINGS_SHOW_CHAT => Get(SETTINGS_SHOW_CHAT_KEY);
+    public const string SETTINGS_SHOW_CHAT_KEY = $"{PREFIX_SETTINGS}/show_chat";
+
+    public static string SETTINGS_CHAT_KEY_BINDING => Get(SETTINGS_CHAT_KEY_BINDING_KEY);
+    public const string SETTINGS_CHAT_KEY_BINDING_KEY = $"{PREFIX_SETTINGS}/chat_key";
+    public static string SETTINGS_CHAT_KEY_BINDING_TOOLTIP_ENABLED => Get(SETTINGS_CHAT_KEY_BINDING_TOOLTIP_ENABLED_KEY);
+    public const string SETTINGS_CHAT_KEY_BINDING_TOOLTIP_ENABLED_KEY = $"{SETTINGS_CHAT_KEY_BINDING_KEY}__tooltip";
+    public static string SETTINGS_CHAT_KEY_BINDING_TOOLTIP_DISABLED => Get(SETTINGS_CHAT_KEY_BINDING_TOOLTIP_DISABLED_KEY);
+    public const string SETTINGS_CHAT_KEY_BINDING_TOOLTIP_DISABLED_KEY = $"{SETTINGS_CHAT_KEY_BINDING_KEY}__tooltip_disabled";
+
+    public static string SETTINGS_DEBUG_LOGGING => Get(SETTINGS_DEBUG_LOGGING_KEY);
+    public const string SETTINGS_DEBUG_LOGGING_KEY = $"{PREFIX_SETTINGS}/debug_logging";
+
     public static string SETTINGS_CHAR_SEL_SETTINGS => Get(SETTINGS_CHAR_SEL_SETTINGS_KEY);
     public const string SETTINGS_CHAR_SEL_SETTINGS_KEY = $"{PREFIX_SETTINGS}/char_select";
     public const string SETTINGS_CHAR_SEL_TOOLTIP_KEY = $"{PREFIX_SETTINGS}/char_select__tooltip";

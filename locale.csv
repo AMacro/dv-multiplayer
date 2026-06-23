@@ -16,10 +16,52 @@ mm/update_action,Message box title for Multiplayer mod update,Run Unity Mod Mana
 ,,,,,,,,,,,,,,,,,,,,,,,,,,,
 ,Settings,,,,,,,,,,,,,,,,,,,,,,,,,,
 settings/settings,settings button,Multiplayer,,,,,,,,,,,,,,,,,,,,,,,,,
-settings/settings__tooltip,settings button tooltip,Multiplayer settings,,,,,,,,,,,,,,,,,,,,,,,,,
+settings/settings__tooltip,settings button tooltip,Multiplayer settings.,,,,,,,,,,,,,,,,,,,,,,,,,
 settings/settings__tooltip_disabled,Unused,,,,,,,,,,,,,,,,,,,,,,,,,,
+settings/use_steam_name,use name from steam platform,Use Steam Player Name,,,,,,,,,,,,,,,,,,,,,,,,,
+settings/use_steam_name__tooltip,use name from steam platform,Use your Steam player name.,,,,,,,,,,,,,,,,,,,,,,,,,
+settings/use_steam_name__tooltip_disabled,Unused,,,,,,,,,,,,,,,,,,,,,,,,,,
+settings/player_name,override player name,Player Name,,,,,,,,,,,,,,,,,,,,,,,,,
+settings/player_name__tooltip,override player name,Custom player name.,,,,,,,,,,,,,,,,,,,,,,,,,
+settings/player_name__tooltip_disabled,override player name,Uncheck 'Use Steam Player Name' to use a custom player name.,,,,,,,,,,,,,,,,,,,,,,,,,
+
+settings/choose_character,Button to choose character,Choose Character,,,,,,,,,,,,,,,,,,,,,,,,,
+settings/choose_character__tooltip,Button to choose character,Choose a character.,,,,,,,,,,,,,,,,,,,,,,,,,
+
+settings/show_name_tags,Show name tags,Show Name Tags,,,,,,,,,,,,,,,,,,,,,,,,,
+settings/show_name_tags__tooltip,Show name tags,Show player names above character's head.,,,,,,,,,,,,,,,,,,,,,,,,,
+settings/show_name_tags__tooltip_disabled,Unused,,,,,,,,,,,,,,,,,,,,,,,,,,
+
+settings/show_pings,Show pings,Show Pings,,,,,,,,,,,,,,,,,,,,,,,,,
+settings/show_pings__tooltip,Show name tags,Show player's ping above character's head (requires player name tag to be visible).,,,,,,,,,,,,,,,,,,,,,,,,,
+settings/show_pings__tooltip_disabled,Unused,,,,,,,,,,,,,,,,,,,,,,,,,,
+
+settings/show_player_list,Show player list,Show Player List,,,,,,,,,,,,,,,,,,,,,,,,,
+settings/show_player_list__tooltip,Show player list,Show the list of players in mouse/ALT mode (non-VR only).,,,,,,,,,,,,,,,,,,,,,,,,,
+settings/show_player_list__tooltip_disabled,Unused,,,,,,,,,,,,,,,,,,,,,,,,,,
+
+settings/player_list_position,player list position,Player List Position,,,,,,,,,,,,,,,,,,,,,,,,,
+settings/player_list_position__tooltip,player list position,Location of the player list when visible.,,,,,,,,,,,,,,,,,,,,,,,,,
+settings/player_list_position__tooltip_disabled,Unused,,,,,,,,,,,,,,,,,,,,,,,,,,
+
+settings/pos_TopLeft,position Top Left,Top Left,,,,,,,,,,,,,,,,,,,,,,,,,
+settings/pos_TopRight,position Top Right,Top Right,,,,,,,,,,,,,,,,,,,,,,,,,
+settings/pos_TopCenter,position Top Centre,Top Centre,,,,,,,,,,,,,,,,,,,,,,,,,
+
+settings/chat_key,key to chat,Chat Key [{0}],,,,,,,,,,,,,,,,,,,,,,,,,
+settings/chat_key__tooltip,key to chat,Key to view/send chat messages (non VR only).,,,,,,,,,,,,,,,,,,,,,,,,,
+settings/chat_key__tooltip_disabled,Unused,,,,,,,,,,,,,,,,,,,,,,,,,,
+
+settings/show_chat,hide chat,Show Chat Messages,,,,,,,,,,,,,,,,,,,,,,,,,
+settings/show_chat__tooltip,key to chat,Show incoming chat messages (non VR only). Chat messages are still visible when pressing the chat key.,,,,,,,,,,,,,,,,,,,,,,,,,
+settings/show_chat__tooltip_disabled,Unused,,,,,,,,,,,,,,,,,,,,,,,,,,
+
+settings/debug_logging,Enable debug logging,Debug Logging,,,,,,,,,,,,,,,,,,,,,,,,,
+settings/debug_logging__tooltip,debug_logging,"Enable debug logging. This is useful for finding and reporting issues, but may cause lag on some systems and under some conditions. Not generally recommended.",,,,,,,,,,,,,,,,,,,,,,,,,
+settings/debug_logging__tooltip_disabled,Unused,,,,,,,,,,,,,,,,,,,,,,,,,,
+
 settings/char_select,character selector,Selecting char,,,,,,,,,,,,,,,,,,,,,,,,,
-settings/char_select__tooltip,Character selector tooltip,Choose a character. Characters are purely cosmetic.,,,,,,,,,,,,,,,,,,,,,,,,,
+settings/char_select__tooltip,Character selector tooltip,Choose a character. Characters are purely cosmetic. Drag character to rotate.,,,,,,,,,,,,,,,,,,,,,,,,,
 settings/char_select__tooltip_disabled,Unused,,,,,,,,,,,,,,,,,,,,,,,,,,
 ,,,,,,,,,,,,,,,,,,,,,,,,,,,
 ,Server Browser,,,,,,,,,,,,,,,,,,,,,,,,,,
