@@ -62,12 +62,15 @@ public static class KeyCodeExtensions
     }
 
     /// <summary>
-    /// Checks if a KeyCode is a keyboard key (not a mouse button or joystick button).
+    /// Checks if a KeyCode is a keyboard key (not a mouse button or joystick button) and not the escape or print screen keys.
     /// </summary>
     /// <param name="key"></param>
     /// <returns>true if the KeyCode is a keyboard key, false otherwise.</returns>
     public static bool IsKeyboardKey(this KeyCode key)
     {
-        return key >= KeyCode.Backspace && key <= KeyCode.Menu;
+        return  key >= KeyCode.Backspace &&
+                key <= KeyCode.Menu &&
+                key != KeyCode.SysReq &&
+                key != KeyCode.Escape;
     }
 }

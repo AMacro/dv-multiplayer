@@ -7,6 +7,7 @@ using DV.UI.PresetEditors;
 using DV.UIFramework;
 using Multiplayer.API;
 using Multiplayer.Components.Networking;
+using Multiplayer.Components.UI.ServerBrowser;
 using Multiplayer.Components.Util;
 using Multiplayer.Networking.Data;
 using Multiplayer.Patches.MainMenu;

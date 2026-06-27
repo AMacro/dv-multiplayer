@@ -2,6 +2,7 @@ using DV.Localization;
 using DV.UI;
 using DV.UIFramework;
 using Multiplayer.Components.Networking.UI;
+using Multiplayer.Components.UI.Settings;
 using Multiplayer.Utils;
 using System;
 using System.Collections.Generic;
@@ -293,20 +294,29 @@ public class MultiplayerSettingsMenu : MonoBehaviour
         }
 
         var chatKeyBindingLabel = chatKeyBinding.GetComponentInChildren<TMP_Text>();
+        var chatKeyMark = chatKeyBindingLabel.GetOrAddComponent<TMProAddMark>();
         chatKeyBindingLabel.text = String.Format(Locale.SETTINGS_CHAT_KEY_BINDING, Multiplayer.Settings.ChatKey.ToDisplayString());
 
         chatKeyBinding.Clicked += (_) =>
         {
-            //TODO open key binding window
+            KeyBindInterface.Instance.GetKeyBind((newKey) =>
+            {
+                if (newKey == KeyCode.None)
+                    return;
 
-            var changed = false; // Determine if the key binding has changed
-            // update the pending changes
-            if (changed)
-                pendingChanges[chatKeyBinding] = () => { /* Apply the new key binding */ };
-            else
-                pendingChanges.Remove(chatKeyBinding);
+                var changed = newKey != Multiplayer.Settings.ChatKey;
 
-            MarkChanged(changed, chatKeyBinding.transform);
+                // update the pending changes
+                if (changed)
+                    pendingChanges[chatKeyBinding] = () => { Multiplayer.Settings.ChatKey = newKey; };
+                else
+                    pendingChanges.Remove(chatKeyBinding);
+
+                chatKeyBindingLabel.SetText(String.Format(Locale.SETTINGS_CHAT_KEY_BINDING, newKey));
+                chatKeyBindingLabel.ForceMeshUpdate();
+
+                MarkChanged(changed, chatKeyBinding.transform);
+            });
         };
     }
 
