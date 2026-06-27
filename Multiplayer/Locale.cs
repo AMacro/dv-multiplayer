@@ -163,8 +163,12 @@ public static class Locale
     public const string SERVER_HOST__TITLE_KEY = $"{PREFIX_SERVER_HOST}/title";
     public static string SERVER_HOST_PASSWORD => Get(SERVER_HOST_PASSWORD_KEY);
     public const string SERVER_HOST_PASSWORD_KEY = $"{PREFIX_SERVER_HOST}/password";
+    public const string SERVER_HOST_PASSWORD_TOOLTIP_KEY = $"{SERVER_HOST_PASSWORD_KEY}__tooltip";
+    public const string SERVER_HOST_PASSWORD_TOOLTIP_DISABLED_KEY = $"{SERVER_HOST_PASSWORD_TOOLTIP_KEY}_disabled";
     public static string SERVER_HOST_NAME => Get(SERVER_HOST_NAME_KEY);
     public const string SERVER_HOST_NAME_KEY = $"{PREFIX_SERVER_HOST}/name";
+    public const string SERVER_HOST_NAME_TOOLTIP_KEY = $"{SERVER_HOST_NAME_KEY}__tooltip";
+    public const string SERVER_HOST_NAME_TOOLTIP_DISABLED_KEY = $"{SERVER_HOST_NAME_TOOLTIP_KEY}_disabled";
     public static string SERVER_HOST_PUBLIC => Get(SERVER_HOST_PUBLIC_KEY);
     public const string SERVER_HOST_PUBLIC_KEY = $"{PREFIX_SERVER_HOST}/public";
     public static string SERVER_HOST_VISIBILITY => Get(SERVER_HOST_PUBLIC_KEY);
@@ -174,8 +178,16 @@ public static class Locale
     public const string SERVER_HOST_VISIBILITY_MODES_KEY = $"{PREFIX_SERVER_HOST}/visibility/modes";
     public static string SERVER_HOST_DETAILS => Get(SERVER_HOST_DETAILS_KEY);
     public const string SERVER_HOST_DETAILS_KEY = $"{PREFIX_SERVER_HOST}/details";
+    public const string SERVER_HOST_DETAILS_TOOLTIP_KEY = $"{SERVER_HOST_DETAILS_KEY}__tooltip";
+    public const string SERVER_HOST_DETAILS_TOOLTIP_DISABLED_KEY = $"{SERVER_HOST_DETAILS_TOOLTIP_KEY}_disabled";
     public static string SERVER_HOST_MAX_PLAYERS => Get(SERVER_HOST_MAX_PLAYERS_KEY);
     public const string SERVER_HOST_MAX_PLAYERS_KEY = $"{PREFIX_SERVER_HOST}/max_players";
+
+
+    public const string SERVER_HOST_PORT_TOOLTIP_KEY = $"{PREFIX_SERVER_HOST}/port__tooltip";
+    public const string SERVER_HOST_PORT_TOOLTIP_DISABLED_KEY = $"{SERVER_HOST_PORT_TOOLTIP_KEY}_disabled";
+
+
     public static string SERVER_HOST_START => Get(SERVER_HOST_START_KEY);
     public const string SERVER_HOST_START_KEY = $"{PREFIX_SERVER_HOST}/start";
 

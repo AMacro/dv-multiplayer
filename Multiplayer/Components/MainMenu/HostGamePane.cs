@@ -112,42 +112,6 @@ public class HostGamePane : MonoBehaviour
         //Create Prefabs
         GameObject goMMC = GameObject.FindObjectOfType<MainMenuController>().gameObject;
 
-        GameObject dividerPrefab = goMMC.FindChildByName("Divider");
-        if (dividerPrefab == null)
-        {
-            Multiplayer.LogError("Divider not found!");
-            return;
-        }
-
-        GameObject cbPrefab = goMMC.FindChildByName("CheckboxFreeCam");
-        if (cbPrefab == null)
-        {
-            Multiplayer.LogError("CheckboxFreeCam not found!");
-            return;
-        }
-
-        GameObject selectorPrefab = goMMC.FindChildByName("Crosshair").gameObject;
-        if (selectorPrefab == null)
-        {
-            Multiplayer.LogError("selectorPrefab not found!");
-            return;
-        }
-
-        GameObject sliderPrefab = goMMC.FindChildByName("Field Of View").gameObject;
-        if (sliderPrefab == null)
-        {
-            Multiplayer.LogError("Field Of View not found!");
-            return;
-        }
-
-        GameObject inputPrefab = MainMenuThingsAndStuff.Instance.references.popupTextInput.gameObject.FindChildByName("TextFieldTextIcon");
-        if (inputPrefab == null)
-        {
-            Multiplayer.LogError("TextFieldTextIcon not found!");
-            return;
-        }
-
-
         lcInstance = goMMC.FindChildByName("PaneRight Launcher").GetComponent<LauncherController>();
         if (lcInstance == null)
         {
@@ -223,118 +187,113 @@ public class HostGamePane : MonoBehaviour
         /*
          *  Server name field 
          */
-        GameObject go = GameObject.Instantiate(inputPrefab, NewContentGroup(controls, scroller.viewport.sizeDelta).transform, false);
-        go.name = "Server Name";
-        serverName = go.GetComponent<TMP_InputField>();
-        serverName.text = Multiplayer.Settings.ServerName?.Trim().Substring(0, Mathf.Min(Multiplayer.Settings.ServerName.Trim().Length, MAX_SERVER_NAME_LEN));
-        serverName.placeholder.GetComponent<TMP_Text>().text = Locale.SERVER_HOST_NAME;
-        serverName.characterLimit = MAX_SERVER_NAME_LEN;
-        go.AddComponent<UIElementTooltip>();
-        go.ResetTooltip();
+
+        string initServerName = Multiplayer.Settings.ServerName?.Trim().Substring(0, Mathf.Min(Multiplayer.Settings.ServerName.Trim().Length, MAX_SERVER_NAME_LEN));
+        serverName = UIHelpers.CreateInputField(NewContentGroup(controls, scroller.viewport.sizeDelta), "Server Name", Locale.SERVER_HOST_NAME, initServerName, true,MAX_SERVER_NAME_LEN);
+
+        var tooltip = serverName.GetComponent<UIElementTooltip>();
+        tooltip.enabledKey = Locale.SERVER_HOST_NAME_TOOLTIP_KEY;
+        tooltip.disabledKey = Locale.SERVER_HOST_NAME_TOOLTIP_DISABLED_KEY;
 
         /*
          *  Server password field 
          */
-        go = GameObject.Instantiate(inputPrefab, NewContentGroup(controls, scroller.viewport.sizeDelta).transform, false);
-        go.name = "Password";
-        password = go.GetComponent<TMP_InputField>();
-        password.text = Multiplayer.Settings.Password;
-        //password.contentType = TMP_InputField.ContentType.Password; //re-introduce later when code for toggling has been implemented
-        password.placeholder.GetComponent<TMP_Text>().text = Locale.SERVER_HOST_PASSWORD;
-        go.AddComponent<UIElementTooltip>();//.enabledKey = Locale.SERVER_HOST_PASSWORD__TOOLTIP_KEY;
-        go.ResetTooltip();
+        password = UIHelpers.CreateInputField
+        (
+            NewContentGroup(controls, scroller.viewport.sizeDelta),
+            "Password",
+            Locale.SERVER_HOST_PASSWORD,
+            Multiplayer.Settings.Password,
+            true
+        );
+
+        tooltip = password.GetComponent<UIElementTooltip>();
+        tooltip.enabledKey = Locale.SERVER_HOST_PASSWORD_TOOLTIP_KEY;
+        tooltip.disabledKey = Locale.SERVER_HOST_PASSWORD_TOOLTIP_DISABLED_KEY;
+
 
         /*
          *  Server visibility field 
          */
-        selectorPrefab.SetActive(false);
-        go = GameObject.Instantiate(selectorPrefab, NewContentGroup(controls, scroller.viewport.sizeDelta).transform, false);
-        selectorPrefab.SetActive(true);
-        gameVisibility = go.GetOrAddComponent<Selector>();
+        gameVisibility = UIHelpers.CreateSelector
+        (
+            NewContentGroup(controls, scroller.viewport.sizeDelta),
+            "Visibility",
+            Locale.SERVER_HOST_VISIBILITY_KEY,
+            true,
+            true,
+            Locale.SERVER_HOST_VISIBILITY_MODES.ToList(),
+            3
+        );
 
-        //clean-up
-
-        if (gameVisibility.labelTMPro?.gameObject.TryGetComponent<I2.Loc.Localize>(out var loc) ?? false)
-            GameObject.DestroyImmediate(loc);
-        if (gameVisibility.labelTMPro?.gameObject.TryGetComponent<DV.Localization.Localize>(out var loc2) ?? false)
-            GameObject.DestroyImmediate(loc2);
-
-        DestroyImmediate(go.GetComponent<SettingChangeSource>());
-
-        go.name = "Visibility";
-        gameVisibility.initialized = false;
-
-        gameVisibility.LocalizedLabel = true;
-        gameVisibility.SetLabel(Locale.SERVER_HOST_VISIBILITY_KEY);
-        gameVisibility.labelTMPro.GetComponent<Localize>().key = Locale.SERVER_HOST_VISIBILITY_KEY;
-
-        gameVisibility.LocalizedValues = true;
-        gameVisibility.SetValues(Locale.SERVER_HOST_VISIBILITY_MODES.ToList());
-        gameVisibility.SetSelectedIndex(3);
-
-        go.SetActive(true);
-        go.ResetTooltip();
-
-        gameVisibility.ToggleInteractable(true);
 
         /*
          *  Server details field 
          */
-        go = GameObject.Instantiate(inputPrefab, NewContentGroup(controls, scroller.viewport.sizeDelta, 106).transform, false);
-        go.name = "Details";
-        go.transform.GetComponent<RectTransform>().sizeDelta = new Vector2(go.transform.GetComponent<RectTransform>().sizeDelta.x, 106);
-        details = go.GetComponent<TMP_InputField>();
-        details.characterLimit = MAX_DETAILS_LEN;
-        details.lineType = TMP_InputField.LineType.MultiLineNewline;
-        details.FindChildByName("text [noloc]").GetComponent<TMP_Text>().alignment = TextAlignmentOptions.TopLeft;
-        details.placeholder.GetComponent<TMP_Text>().text = Locale.SERVER_HOST_DETAILS;
+        details = UIHelpers.CreateInputFieldMultiline
+        (
+            NewContentGroup(controls, scroller.viewport.sizeDelta, 106),
+            "Details",
+            Locale.SERVER_HOST_DETAILS,
+            Multiplayer.Settings.Details,
+            true,
+            MAX_DETAILS_LEN,
+            -1,
+            106
+        );
 
-        //Divider
-        go = GameObject.Instantiate(dividerPrefab, NewContentGroup(controls, scroller.viewport.sizeDelta).transform, false);
-        go.name = "Divider";
+        tooltip = details.GetComponent<UIElementTooltip>();
+        tooltip.enabledKey = Locale.SERVER_HOST_DETAILS_TOOLTIP_KEY;
+        tooltip.disabledKey = Locale.SERVER_HOST_DETAILS_TOOLTIP_DISABLED_KEY;
+
+
+        // Divider
+        UIHelpers.CreateDivider(NewContentGroup(controls, scroller.viewport.sizeDelta));
+
 
         /*
          *  Server max players field 
          */
-        sliderPrefab.SetActive(false);
-        go = GameObject.Instantiate(sliderPrefab, NewContentGroup(controls, scroller.viewport.sizeDelta).transform, false);
-        sliderPrefab.SetActive(true);
-        maxPlayers = go.GetComponent<SliderDV>();
 
-        go.name = "Max Players";
-        var labelGo = go.FindChildByName("[text label]");
+        maxPlayers = UIHelpers.CreateSlider
+        (
+            NewContentGroup(controls, scroller.viewport.sizeDelta),
+            "Max Players",
+            Locale.SERVER_HOST_MAX_PLAYERS_KEY,
+            true,
+            null,
+            Multiplayer.Settings.MaxPlayers,
+            1,
+            MIN_PLAYERS,
+            MAX_PLAYERS
+        );
 
-        if (labelGo?.gameObject.TryGetComponent<I2.Loc.Localize>(out loc) ?? false)
-            GameObject.DestroyImmediate(loc);
-
-        DestroyImmediate(go.GetComponent<SettingChangeSource>());
-
-        labelGo.GetComponent<Localize>().key = Locale.SERVER_HOST_MAX_PLAYERS_KEY;
-        go.ResetTooltip();
-        //labelGo.GetComponent<Localize>().UpdateLocalization();
-
-        maxPlayers.stepIncrement = 1;
-        maxPlayers.minValue = MIN_PLAYERS;
-        maxPlayers.maxValue = MAX_PLAYERS;
-        maxPlayers.value = Mathf.Clamp(Multiplayer.Settings.MaxPlayers, MIN_PLAYERS, MAX_PLAYERS);
-        go.SetActive(true);
-        maxPlayers.interactable = true;
 
         /*
          *  Server port field 
          */
-        go = GameObject.Instantiate(inputPrefab, NewContentGroup(controls, scroller.viewport.sizeDelta).transform, false);
-        go.name = "Port";
-        port = go.GetComponent<TMP_InputField>();
+        var initPort = (Multiplayer.Settings.Port >= MIN_PORT && Multiplayer.Settings.Port <= MAX_PORT) ? Multiplayer.Settings.Port.ToString() : DEFAULT_PORT.ToString();
+        port = UIHelpers.CreateInputField
+        (
+            NewContentGroup(controls, scroller.viewport.sizeDelta),
+            "Port",
+            DEFAULT_PORT.ToString(),
+            initPort,
+            true,
+            MAX_PORT_LEN
+        );
+
         port.characterValidation = TMP_InputField.CharacterValidation.Integer;
-        port.characterLimit = MAX_PORT_LEN;
-        port.placeholder.GetComponent<TMP_Text>().text = DEFAULT_PORT.ToString();
-        port.text = (Multiplayer.Settings.Port >= MIN_PORT && Multiplayer.Settings.Port <= MAX_PORT) ? Multiplayer.Settings.Port.ToString() : DEFAULT_PORT.ToString();
+
+        tooltip = port.GetComponent<UIElementTooltip>();
+        tooltip.enabledKey = Locale.SERVER_HOST_PORT_TOOLTIP_KEY;
+        tooltip.disabledKey = Locale.SERVER_HOST_PORT_TOOLTIP_DISABLED_KEY;
+
 
         /*
          *  Start Game button
          */
-        go = this.gameObject.UpdateButton("ButtonTextIcon Save", "ButtonTextIcon Start", Locale.SERVER_HOST_START_KEY, null, playSprite);
+        var go = this.gameObject.UpdateButton("ButtonTextIcon Save", "ButtonTextIcon Start", Locale.SERVER_HOST_START_KEY, null, playSprite);
         go.FindChildByName("[text]").GetComponent<Localize>().UpdateLocalization();
 
         startButton = go.GetComponent<ButtonDV>();
@@ -342,7 +301,7 @@ public class HostGamePane : MonoBehaviour
         startButton.onClick.AddListener(OnStartClick);
     }
 
-    private GameObject NewContentGroup(GameObject parent, Vector2 sizeDelta, int cellMaxHeight = 53)
+    private RectTransform NewContentGroup(GameObject parent, Vector2 sizeDelta, int cellMaxHeight = 53)
     {
         // Create a content group
         GameObject contentGroup = new("ContentGroup");
@@ -364,7 +323,7 @@ public class HostGamePane : MonoBehaviour
         glayoutGroup.constraintCount = 1;
         glayoutGroup.padding = new RectOffset(10, 0, 0, 10);
 
-        return contentGroup;
+        return groupRect;
     }
 
     private void SetupListeners(bool on)

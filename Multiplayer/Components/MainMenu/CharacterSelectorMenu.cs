@@ -13,9 +13,11 @@ public class CharacterSelectorMenu : MonoBehaviour
 {
     private const int PREVIEW_LAYER = 31;
     private const int PREVIEW_RT_WIDTH = 435;
-    private const int PREVIEW_RT_HEIGHT = 435; 
+    private const int PREVIEW_RT_HEIGHT = 435;
     private const int LAYOUT_PADDING = 15;
 
+    public int CharacterSelectorMenuIndex;
+    public UIMenuController MenuController;
     public GameObject BottomButtons;
     public ButtonDV ApplyButton;
     public ButtonDV DiscardButton;
@@ -30,16 +32,10 @@ public class CharacterSelectorMenu : MonoBehaviour
     private ModelRotator modelRotator;
 
     private GameObject previewModel;
-    private int selectedIndex;
+    private List<string> characterIds = [];
 
     protected void Awake()
     {
-        // Grab crosshair selector
-        var selector = transform.FindChildByName("Crosshair").gameObject;
-        selector.SetActive(false);
-        selectorGO = Instantiate(selector);
-        selector.SetActive(true);
-
         // Clean up child objects
         for (int i = 0; i < transform.childCount; i++)
             Destroy(transform.GetChild(i).gameObject);
@@ -72,8 +68,6 @@ public class CharacterSelectorMenu : MonoBehaviour
         SetupPreviewSpawnArea();
         SetupPreviewCamera();
         BuildLayout();
-
-        ShowModel(0);
     }
 
     protected void OnEnable()
@@ -200,14 +194,15 @@ public class CharacterSelectorMenu : MonoBehaviour
     private void BuildCharacterSelector(GameObject root)
     {
         // Create selector
-        selectorGO.transform.SetParent(root.transform, false);
+        // Get character names
+        var characterMeta = Multiplayer.AssetIndex.AllCharacterMetaData();
+        characterIds = characterMeta.Select(metadata => metadata.Id).ToList();
+        List<string> characterNames = characterMeta.Select(metadata => metadata.DisplayName).ToList();
 
-        characterSelector = selectorGO.GetOrAddComponent<Selector>();
-
-        characterSelector.name = "Character Selector";
-        characterSelector.LocalizedLabel = false;
-        characterSelector.LocalizedValues = false;
-        characterSelector.initialized = false;
+        // Create selector
+        var rt = root.GetComponent<RectTransform>();
+        characterSelector = UIHelpers.CreateSelector(rt, "Character Selector", string.Empty, false, false, characterNames, 0);
+        selectorGO = characterSelector.gameObject;
 
         characterSelector.GetComponent<UIElementTooltip>().enabledKey = Locale.SETTINGS_CHAR_SEL_TOOLTIP_KEY;
 
@@ -243,7 +238,6 @@ public class CharacterSelectorMenu : MonoBehaviour
         characterSelector.SetValues(characterNames);
         characterSelector.SetLabel(string.Empty);
 
-        characterSelector.SetSelectedIndex(0);
         selectorGO.SetActive(true);
     }
 

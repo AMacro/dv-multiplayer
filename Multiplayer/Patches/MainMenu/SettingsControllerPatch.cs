@@ -15,7 +15,7 @@ namespace Multiplayer.Patches.MainMenu;
 public static class SettingsControllerPatch
 {
     [HarmonyPatch(typeof(SettingsController), nameof(SettingsController.Awake))]
-    [HarmonyPostfix]
+    [HarmonyPrefix]
     private static void Awake(SettingsController __instance)
     {
         var goPane = __instance.FindChildByName("Gameplay");
@@ -28,7 +28,15 @@ public static class SettingsControllerPatch
 
         goPane.SetActive(false);
         var mpSettingsPaneGO = GameObject.Instantiate(goPane, goPane.transform.parent);
+
+        for (int i = 0; i < mpSettingsPaneGO.transform.childCount; i++)
+            GameObject.DestroyImmediate(mpSettingsPaneGO.transform.GetChild(i).gameObject);
+
         var mpCharSelectPaneGO = GameObject.Instantiate(goPane, goPane.transform.parent);
+
+        for (int i = 0; i < mpCharSelectPaneGO.transform.childCount; i++)
+            GameObject.DestroyImmediate(mpCharSelectPaneGO.transform.GetChild(i).gameObject);
+
         goPane.SetActive(true);
 
         mpSettingsPaneGO.name = "Multiplayer";
@@ -64,9 +72,9 @@ public static class SettingsControllerPatch
 
         // Wire up the button
         __instance.menuController.controlledMenus.Add(mpSettingsPaneGO.GetComponent<UIMenu>());
-        var index = __instance.menuController.controlledMenus.Count - 1;
+        var mpMenuIndex = __instance.menuController.controlledMenus.Count - 1;
         UIMenuRequester mpButtonReq = mpButton.GetComponent<UIMenuRequester>();
-        mpButtonReq.requestedMenuIndex = index;
+        mpButtonReq.requestedMenuIndex = mpMenuIndex;
 
         GameObject icon = mpButton.FindChildByName("[icon]");
         if (icon != null)
@@ -87,6 +95,8 @@ public static class SettingsControllerPatch
         mpSettingsPane.ApplyButton = buttons.Item2;
         mpSettingsPane.DiscardButton = buttons.Item3;
 
+        mpCharSelectPane.MenuController = __instance.menuController;
+        mpCharSelectPane.CharacterSelectorMenuIndex = mpMenuIndex;
         mpCharSelectPane.BottomButtons = buttons.Item1;
         mpCharSelectPane.ApplyButton = buttons.Item2;
         mpCharSelectPane.DiscardButton = buttons.Item3;

@@ -1,8 +1,9 @@
-using System;
 using DV.UI;
 using DV.UIFramework;
 using DV.Utils;
 using JetBrains.Annotations;
+using Multiplayer.Utils;
+using System;
 using UnityEngine;
 
 namespace Multiplayer.Components.MainMenu
@@ -55,6 +56,7 @@ namespace Multiplayer.Components.MainMenu
             if (!shouldDestroy)
             {
                 base.Awake();
+                UIHelpers.Initialise(); // Grab/create prefabs
                 return;
             }
 

@@ -3,12 +3,9 @@ using DV.UI;
 using DV.UIFramework;
 using Multiplayer.Components.Networking.UI;
 using Multiplayer.Utils;
-using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
-using System.Reflection.Emit;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -17,13 +14,9 @@ namespace Multiplayer.Components.MainMenu;
 
 public class MultiplayerSettingsMenu : MonoBehaviour
 {
-    GameObject selectorPrefab;
-    GameObject togglePrefab;
-    GameObject sliderPrefab;
-    GameObject buttonPrefab;
-    GameObject inputPrefab;
-    GameObject dividerPrefab;
-    GameObject scrollViewPrefab;
+    const float ROW_HEIGHT = 53f;
+
+    private static GameObject scrollViewPrefab;
 
     public int CharacterSelectorMenuIndex;
     public UIMenuController MenuController;
@@ -31,7 +24,7 @@ public class MultiplayerSettingsMenu : MonoBehaviour
     public ButtonDV ApplyButton;
     public ButtonDV DiscardButton;
 
-    int changeCounter = 0;
+    readonly Dictionary<object, Action> pendingChanges = [];
     bool showingCharacterSelector = false;
 
     Color disabledInputColor;
@@ -41,26 +34,11 @@ public class MultiplayerSettingsMenu : MonoBehaviour
     protected void Awake()
     {
         // Grab UI elements to make prefabs
-        selectorPrefab = UIHelpers.MakePrefab<Selector>(transform);
-        togglePrefab = UIHelpers.MakePrefab<ToggleDV>(transform);
-        sliderPrefab = UIHelpers.MakePrefab<SliderDV>(transform);
-
-        var buttonGO = transform.parent.FindChildByName("Open Bindings");
-        buttonPrefab = UIHelpers.MakePrefab<ButtonDV>(buttonGO);
-
         var scrollGO = transform.parent.FindChildByName("Scroll View").gameObject;
         scrollViewPrefab = UIHelpers.MakePrefab(scrollGO);
 
-        GameObject goMMC = GameObject.FindObjectOfType<MainMenuController>().gameObject;
-        var divider = goMMC.FindChildByName("Divider");
-        dividerPrefab = UIHelpers.MakePrefab(divider);
-
-        var inputGo = MainMenuThingsAndStuff.Instance.references.popupTextInput.gameObject.FindChildByName("TextFieldTextIcon");
-        inputPrefab = UIHelpers.MakePrefab(inputGo);
-
         // Clean up child objects on this menu
-        for (int i = 0; i < transform.childCount; i++)
-            Destroy(transform.GetChild(i).gameObject);
+        ClearUI();
 
         // Remove layout components
         var existingGrid = GetComponent<GridLayoutGroup>();
@@ -80,12 +58,17 @@ public class MultiplayerSettingsMenu : MonoBehaviour
             DiscardButton.Clicked += DiscardChanges;
         }
 
+        Settings.OnSettingsUpdated += SettingsChanged;
+
         // Don't rebuild the UI if we're returning from the character selector
         if (showingCharacterSelector)
         {
             showingCharacterSelector = false;
             return;
         }
+
+        ClearUI();
+        BuildUI();
     }
 
     protected void OnDisable()
@@ -97,9 +80,21 @@ public class MultiplayerSettingsMenu : MonoBehaviour
             DiscardButton.Clicked -= DiscardChanges;
         }
 
-        // Don't wipe the UI if we're going to the character selector
+        Settings.OnSettingsUpdated -= SettingsChanged;
+
+        // Don't rebuild the UI if we're returning from the character selector
         if (showingCharacterSelector)
             return;
+
+        ClearUI();
+    }
+
+    private void ClearUI()
+    {
+        pendingChanges.Clear();
+
+        for (int i = 0; i < transform.childCount; i++)
+            Destroy(transform.GetChild(i).gameObject);
     }
 
     private void BuildUI()
@@ -117,25 +112,29 @@ public class MultiplayerSettingsMenu : MonoBehaviour
         gridLayout.childAlignment = TextAnchor.UpperCenter;
         gridLayout.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
         gridLayout.constraintCount = 1;
-        gridLayout.cellSize = new Vector2(gridLayout.cellSize.x * 2, 53f);
+        gridLayout.cellSize = new Vector2(gridLayout.cellSize.x * 2, ROW_HEIGHT);
         gridLayout.padding = new RectOffset(0, 0, 0, 0);
 
         BuildPlayerPrefs(content);
-        CreateDivider(content);
+        UIHelpers.CreateDivider(content);
+        BuildOtherPrefs(content);
+        UIHelpers.CreateDivider(content);
         BuildAdvancedPrefs(content);
 
         scrollView.SetActive(true);
 
         BottomButtons.SetActive(true);
+
+        MarkChanged(false);
     }
 
     private void BuildPlayerPrefs(RectTransform content)
     {
         // Use steam name
-        var useSteamName = CreateToggle(content, "Use Steam Name", Locale.SETTINGS_USE_STEAM_NAME_KEY, Multiplayer.Settings.UseSteamName);
+        var useSteamName = UIHelpers.CreateToggle(content, "Use Steam Name", Locale.SETTINGS_USE_STEAM_NAME_KEY, Multiplayer.Settings.UseSteamName);
 
         // Alternate player name
-        var usernameInput = CreateInputField(content, "Username", "Player", Multiplayer.Settings.Username, Settings.MAX_USERNAME_LENGTH);
+        var usernameInput = UIHelpers.CreateInputField(content, "Username", "Player", Multiplayer.Settings.Username, false, Settings.MAX_USERNAME_LENGTH);
         var hoverImage = useSteamName.FindChildByName("[image hover]");
         Instantiate(hoverImage, usernameInput.transform);
 
@@ -151,51 +150,138 @@ public class MultiplayerSettingsMenu : MonoBehaviour
         disabledInputColor = usernameInput.placeholder.color;
         usernameInput.textComponent.color = Multiplayer.Settings.UseSteamName ? disabledInputColor : enabledInputColor;
 
-        // Button to open character selector
-        var characterSelectorButton = CreateButton(content, "Character Selector Button", Locale.SETTINGS_CHOOSE_CHARACTER_KEY);
-
         // Listen for changes to the "Use Steam Name" toggle
         useSteamName.onValueChanged.AddListener((value) =>
         {
             bool changed = value != Multiplayer.Settings.UseSteamName;
-            MarkChanged(changed);
+            // update the pending changes
+            if (changed)
+                pendingChanges[useSteamName] = () => Multiplayer.Settings.UseSteamName = value;
+            else
+                pendingChanges.Remove(useSteamName);
 
             usernameInput.readOnly = value;
             usernameInput.textComponent.color = value ? disabledInputColor : enabledInputColor;
+
+            MarkChanged(changed, useSteamName.transform);
         });
 
         // Listen for changes to the username input field
         usernameInput.onValueChanged.AddListener((value) =>
         {
-            bool changed = value != Multiplayer.Settings.GetUserName();
+            bool changed = value != Multiplayer.Settings.Username;
+            // update the pending changes
+            if (changed)
+                pendingChanges[usernameInput] = () => Multiplayer.Settings.Username = value;
+            else
+                pendingChanges.Remove(usernameInput);
+
             MarkChanged(changed);
         });
 
-        // Click event for the character selector button
+        // Button to open character selector
+        var characterSelectorButton = UIHelpers.CreateButton(content, "Character Selector Button", Locale.SETTINGS_CHOOSE_CHARACTER_KEY);
+
         characterSelectorButton.Clicked += (clickable) =>
         {
+            // Ensure changes aren't reverted while player is on the character selector submenu
             showingCharacterSelector = true;
-            // request submenu
-
             MenuController.SwitchMenu(CharacterSelectorMenuIndex);
         };
+    }
 
-        CreateDivider(content);
-
+    private void BuildOtherPrefs(RectTransform content)
+    {
         // Show Name Tags
-        var showNameTags = CreateToggle(content, "Show Name Tags", Locale.SETTINGS_SHOW_NAME_TAGS_KEY, Multiplayer.Settings.ShowNameTags);
+        var showNameTags = UIHelpers.CreateToggle(content, "Show Name Tags", Locale.SETTINGS_SHOW_NAME_TAGS_KEY, Multiplayer.Settings.ShowNameTags);
+        showNameTags.onValueChanged.AddListener((value) =>
+        {
+            bool changed = value != Multiplayer.Settings.ShowNameTags;
+            // update the pending changes
+            if (changed)
+                pendingChanges[showNameTags] = () => Multiplayer.Settings.ShowNameTags = value;
+            else
+                pendingChanges.Remove(showNameTags);
 
-        var showPings = CreateToggle(content, "Show Pings", Locale.SETTINGS_SHOW_PINGS_KEY, Multiplayer.Settings.ShowPingInNameTags);
+            MarkChanged(changed, showNameTags.transform);
+        });
 
-        var showPlayerList = CreateToggle(content, "Show Player List", Locale.SETTINGS_SHOW_PLAYER_LIST_KEY, Multiplayer.Settings.ShowPlayerListInAltMouseMode);
 
+        // Show Pings
+        var showPings = UIHelpers.CreateToggle(content, "Show Pings", Locale.SETTINGS_SHOW_PINGS_KEY, Multiplayer.Settings.ShowPingInNameTags);
+        showPings.onValueChanged.AddListener((value) =>
+        {
+            bool changed = value != Multiplayer.Settings.ShowPingInNameTags;
+            // update the pending changes
+            if (changed)
+                pendingChanges[showPings] = () => Multiplayer.Settings.ShowPingInNameTags = value;
+            else
+                pendingChanges.Remove(showPings);
+
+            MarkChanged(changed, showPings.transform);
+        });
+
+
+        // Show Player List
+        var showPlayerList = UIHelpers.CreateToggle(content, "Show Player List", Locale.SETTINGS_SHOW_PLAYER_LIST_KEY, Multiplayer.Settings.ShowPlayerListInAltMouseMode);
+
+        showPlayerList.onValueChanged.AddListener((value) =>
+        {
+            bool changed = value != Multiplayer.Settings.ShowPlayerListInAltMouseMode;
+            // update the pending changes
+            if (changed)
+                pendingChanges[showPlayerList] = () => Multiplayer.Settings.ShowPlayerListInAltMouseMode = value;
+            else
+                pendingChanges.Remove(showPlayerList);
+
+            MarkChanged(changed, showPlayerList.transform);
+        });
+
+
+        // Player List Position
         var positions = new List<string>(Enum.GetNames(typeof(PlayerListGUI.PlayerListPosition)).Select(name => Locale.SETTINGS_POSITION_KEY + name));
-        var playerListPositionSelector = CreateSelector(content, "Player List Position", Locale.SETTINGS_PLAYER_LIST_POSITION_KEY, true, true, positions, (int)Multiplayer.Settings.PlayerListPosition);
+        var playerListPositionSelector = UIHelpers.CreateSelector
+        (
+            content,
+            "Player List Position",
+            Locale.SETTINGS_PLAYER_LIST_POSITION_KEY,
+            true,
+            true,
+            positions,
+            (int)Multiplayer.Settings.PlayerListPosition
+        );
 
-        var showChatMessages = CreateToggle(content, "Show Chat Messages", Locale.SETTINGS_SHOW_CHAT_KEY, !Multiplayer.Settings.HideChatMessages);
+        playerListPositionSelector.SelectionChanged += (_, index) =>
+        {
+            bool changed = index != (int)Multiplayer.Settings.PlayerListPosition;
 
-        // Multiplayer.Settings.ChatKey
-        var chatKeyBinding = CreateButton(content, "Chat Key Binding", Locale.SETTINGS_CHAT_KEY_BINDING_KEY);
+            // update the pending changes
+            if (changed)
+                pendingChanges[playerListPositionSelector] = () => Multiplayer.Settings.PlayerListPosition = (PlayerListGUI.PlayerListPosition)index;
+            else
+                pendingChanges.Remove(playerListPositionSelector);
+
+            MarkChanged(changed, playerListPositionSelector.transform);
+        };
+
+
+        // Show Chat Messages
+        var showChatMessages = UIHelpers.CreateToggle(content, "Show Chat Messages", Locale.SETTINGS_SHOW_CHAT_KEY, !Multiplayer.Settings.HideChatMessages);
+        showChatMessages.onValueChanged.AddListener((value) =>
+        {
+            bool changed = value == Multiplayer.Settings.HideChatMessages;
+            // update the pending changes
+            if (changed)
+                pendingChanges[showChatMessages] = () => Multiplayer.Settings.HideChatMessages = !value;
+            else
+                pendingChanges.Remove(showChatMessages);
+
+            MarkChanged(changed, showChatMessages.transform);
+        });
+
+
+        // Chat Key Binding
+        var chatKeyBinding = UIHelpers.CreateButton(content, "Chat Key Binding", Locale.SETTINGS_CHAT_KEY_BINDING_KEY);
         var loc = chatKeyBinding.GetComponentInChildren<Localize>();
         if (loc != null)
             DestroyImmediate(loc);
@@ -207,151 +293,77 @@ public class MultiplayerSettingsMenu : MonoBehaviour
         }
 
         var chatKeyBindingLabel = chatKeyBinding.GetComponentInChildren<TMP_Text>();
-        chatKeyBindingLabel.text = String.Format(Locale.SETTINGS_CHAT_KEY_BINDING, Multiplayer.Settings.ChatKey.ToString());
+        chatKeyBindingLabel.text = String.Format(Locale.SETTINGS_CHAT_KEY_BINDING, Multiplayer.Settings.ChatKey.ToDisplayString());
+
+        chatKeyBinding.Clicked += (_) =>
+        {
+            //TODO open key binding window
+
+            var changed = false; // Determine if the key binding has changed
+            // update the pending changes
+            if (changed)
+                pendingChanges[chatKeyBinding] = () => { /* Apply the new key binding */ };
+            else
+                pendingChanges.Remove(chatKeyBinding);
+
+            MarkChanged(changed, chatKeyBinding.transform);
+        };
     }
 
     private void BuildAdvancedPrefs(RectTransform content)
     {
         // Enable debug logging
-        var enableDebugLogging = CreateToggle(content, "Enable Debug Logging", Locale.SETTINGS_DEBUG_LOGGING_KEY, Multiplayer.Settings.DebugLogging);
+        var enableDebugLogging = UIHelpers.CreateToggle(content, "Enable Debug Logging", Locale.SETTINGS_DEBUG_LOGGING_KEY, Multiplayer.Settings.DebugLogging);
+        enableDebugLogging.onValueChanged.AddListener((value) =>
+        {
+            bool changed = value != Multiplayer.Settings.DebugLogging;
+            // update the pending changes
+            if (changed)
+                pendingChanges[enableDebugLogging] = () => Multiplayer.Settings.DebugLogging = value;
+            else
+                pendingChanges.Remove(enableDebugLogging);
+
+            MarkChanged(changed, enableDebugLogging.transform);
+        });
     }
 
-    private void MarkChanged(bool changed)
+    private void MarkChanged(bool changed, Transform source = null)
     {
+        TMProAddMark mark = null;
+        if (source != null)
+            mark = source.GetComponentInChildren<TMProAddMark>();
+
         if (changed)
-            changeCounter++;
+            mark?.SetMark("*");
         else
-            changeCounter--;
+            mark?.ClearMark();
 
-        if (changeCounter <= 0)
-        {
-            changeCounter = 0;
+        var active = pendingChanges.Count > 0;
 
-            ApplyButton.ToggleInteractable(false);
-            DiscardButton.ToggleInteractable(false);
-        }
-        else
-        {
-            ApplyButton.ToggleInteractable(true);
-            DiscardButton.ToggleInteractable(true);
-        }
+        ApplyButton.ToggleInteractable(active);
+        DiscardButton.ToggleInteractable(active);
+
     }
 
+    private void SettingsChanged(Settings settings)
+    {
+        ClearUI();
+        BuildUI();
+    }
     private void DiscardChanges(IClickable clickable)
     {
-        // Reset all settings to their current values
+        ClearUI();
+        BuildUI();
     }
 
     private void ApplyChanges(IClickable clickable)
     {
-        // Save all settings to disk and apply them
+        foreach (var change in pendingChanges)
+            change.Value?.Invoke();
+
+        pendingChanges.Clear();
+
+        Multiplayer.Settings.Save(Multiplayer.ModEntry);
     }
-
-    #region Control Factories
-
-    private ToggleDV CreateToggle(RectTransform parent, string name, string label_key, bool initialValue)
-    {
-        var go = Instantiate(togglePrefab, parent);
-        go.name = name;
-
-        var toggle = go.GetComponent<ToggleDV>();
-        toggle.isOn = initialValue;
-
-        var labelGo = go.FindChildByName("text");
-        labelGo.GetComponent<Localize>().key = label_key;
-        go.gameObject.ResetTooltip();
-
-        go.SetActive(true);
-
-        return toggle;
-    }
-
-    private TMP_InputField CreateInputField(RectTransform parent, string name, string placeholder, string initialValue, int characterLimit = 0)
-    {
-        var go = Instantiate(inputPrefab, parent);
-        go.name = name;
-
-        var input = go.GetComponent<TMP_InputField>();
-        input.text = initialValue ?? string.Empty;
-
-        if (characterLimit > 0)
-            input.characterLimit = characterLimit;
-
-        var placeholderText = input.placeholder?.GetComponent<TMP_Text>();
-        if (placeholderText != null)
-            placeholderText.text = placeholder;
-
-        var icon = go.FindChildByName("icon");
-        if (icon != null)
-            icon.transform.localPosition = new Vector3(icon.transform.localPosition.x - 15, icon.transform.localPosition.y, icon.transform.localPosition.z);
-
-        go.SetActive(true);
-
-        return input;
-    }
-
-    private Selector CreateSelector(RectTransform parent, string objectName, string label, bool localisedLabel, bool localisedValues, List<string> values, int selectedIndex)
-    {
-        selectorPrefab.SetActive(false);
-        var go = Instantiate(selectorPrefab, parent);
-        selectorPrefab.SetActive(true);
-        go.name = objectName;
-
-        var selector = go.GetOrAddComponent<Selector>();
-
-        // Strip any existing localization so we can set values directly
-        if (selector.labelTMPro?.gameObject.TryGetComponent<I2.Loc.Localize>(out var i2loc) ?? false)
-            DestroyImmediate(i2loc);
-        if (selector.labelTMPro?.gameObject.TryGetComponent<Localize>(out var dvloc) ?? false)
-            DestroyImmediate(dvloc);
-
-        if (go.TryGetComponent<SettingChangeSource>(out var scs))
-            DestroyImmediate(scs);
-
-        selector.initialized = false;
-        selector.LocalizedLabel = localisedLabel;
-        selector.SetLabel(label);
-        if (localisedLabel)
-            selector.labelTMPro.GetComponent<Localize>().key = label;
-
-        selector.LocalizedValues = localisedValues;
-        selector.SetValues(values);
-        selector.SetSelectedIndex(selectedIndex);
-
-        go.ResetTooltip();
-
-        go.SetActive(true);
-        selector.ToggleInteractable(true);
-
-        return selector;
-    }
-
-    private ButtonDV CreateButton(RectTransform parent, string name, string label_key)
-    {
-        var go = Instantiate(buttonPrefab, parent);
-        go.name = name;
-
-        var button = go.GetComponent<ButtonDV>();
-        var inteff = go.GetComponent<InteractableEffect>();
-        DestroyImmediate(inteff);
-        DestroyImmediate(button);
-        button = go.AddComponent<ButtonDV>();
-
-        button.GetComponentInChildren<Localize>().key = label_key;
-        go.gameObject.ResetTooltip();
-
-        go.SetActive(true);
-
-        return button;
-    }
-
-    private void CreateDivider(RectTransform parent)
-    {
-        var go = Instantiate(dividerPrefab, parent);
-        go.name = "Divider";
-        go.SetActive(true);
-    }
-
-    #endregion
 
 }
