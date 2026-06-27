@@ -1,5 +1,5 @@
 using DV.UIFramework;
-using Multiplayer.Components.MainMenu;
+using Multiplayer.Components.UI.ServerBrowser;
 using System;
 using System.Collections.Generic;
 using System.Linq;

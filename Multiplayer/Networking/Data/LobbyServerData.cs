@@ -1,5 +1,5 @@
 using LiteNetLib.Utils;
-using Multiplayer.Components.MainMenu;
+using Multiplayer.Components.UI.ServerBrowser;
 using Newtonsoft.Json;
 
 namespace Multiplayer.Networking.Data

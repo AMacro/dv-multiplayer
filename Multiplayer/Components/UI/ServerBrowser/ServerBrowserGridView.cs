@@ -3,7 +3,7 @@ using Multiplayer.Components.UI.Controls;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace Multiplayer.Components.MainMenu.ServerBrowser;
+namespace Multiplayer.Components.UI.ServerBrowser;
 
 [RequireComponent(typeof(ContentSizeFitter))]
 [RequireComponent(typeof(VerticalLayoutGroup))]
@@ -20,7 +20,7 @@ public class ServerBrowserGridView : MPGridView<IServerBrowserGameDetails>
 
         //swap controllers
         Destroy(viewElementPrefab.GetComponent<SaveLoadViewElement>());
-        GameObject.Destroy(placeholderElementPrefab.GetComponent<SaveLoadViewElement>());
+        Destroy(placeholderElementPrefab.GetComponent<SaveLoadViewElement>());
 
         viewElementPrefab.AddComponent<ServerBrowserElement>();
         placeholderElementPrefab.AddComponent<ServerBrowserPlaceholderElement>();

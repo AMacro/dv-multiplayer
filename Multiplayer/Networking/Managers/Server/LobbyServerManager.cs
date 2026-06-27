@@ -2,7 +2,6 @@ using DV.Platform.Steam;
 using DV.WeatherSystem;
 using LiteNetLib.Utils;
 using LiteNetLib;
-using Multiplayer.Components.MainMenu;
 using Multiplayer.Components.Networking;
 using Multiplayer.Networking.Data;
 using Multiplayer.Networking.Packets.Unconnected;
@@ -19,6 +18,7 @@ using System.Text.RegularExpressions;
 using System;
 using UnityEngine.Networking;
 using UnityEngine;
+using Multiplayer.Components.UI.ServerBrowser;
 
 namespace Multiplayer.Networking.Managers.Server;
 public class LobbyServerManager : MonoBehaviour

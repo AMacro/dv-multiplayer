@@ -5,7 +5,7 @@ using Multiplayer.Utils;
 using UnityEngine;
 using Multiplayer.Components.UI.Controls;
 
-namespace Multiplayer.Components.MainMenu.ServerBrowser
+namespace Multiplayer.Components.UI.ServerBrowser
 {
     public class ServerBrowserPlaceholderElement : MPViewElement<IServerBrowserGameDetails>
     {
@@ -21,22 +21,22 @@ namespace Multiplayer.Components.MainMenu.ServerBrowser
             this.FindChildByName("autosave icon").SetActive(false);
 
             //Remove doubled up components
-            GameObject.Destroy(this.transform.GetComponent<HoverEffect>());
-            GameObject.Destroy(this.transform.GetComponent<MarkEffect>());
-            GameObject.Destroy(this.transform.GetComponent<ClickEffect>());
-            GameObject.Destroy(this.transform.GetComponent<PressEffect>());
+            Destroy(transform.GetComponent<HoverEffect>());
+            Destroy(transform.GetComponent<MarkEffect>());
+            Destroy(transform.GetComponent<ClickEffect>());
+            Destroy(transform.GetComponent<PressEffect>());
 
             RectTransform networkNameRT = networkNameGO.transform.GetComponent<RectTransform>();
             networkNameRT.sizeDelta = new Vector2(600, networkNameRT.sizeDelta.y);
 
-            this.SetInteractable(false);
+            SetInteractable(false);
 
             Localize loc = networkNameGO.GetOrAddComponent<Localize>();
             loc.key = Locale.SERVER_BROWSER__NO_SERVERS_KEY ;
             loc.UpdateLocalization();
 
             this.GetOrAddComponent<UIElementTooltip>().enabled = true;
-            this.gameObject.ResetTooltip();
+            gameObject.ResetTooltip();
 
         }
 

@@ -1,7 +1,7 @@
 using Multiplayer.Networking.Data;
 using System;
 
-namespace Multiplayer.Components.MainMenu;
+namespace Multiplayer.Components.UI.ServerBrowser;
 
 public enum ServerVisibility : int
 {

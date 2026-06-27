@@ -1,11 +1,10 @@
-
 using Multiplayer.Components.UI.Controls;
 using Multiplayer.Utils;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace Multiplayer.Components.MainMenu.ServerBrowser
+namespace Multiplayer.Components.UI.ServerBrowser
 {
     public class ServerBrowserElement : MPViewElement<IServerBrowserGameDetails>
     {

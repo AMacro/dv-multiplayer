@@ -5,7 +5,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.Events;
 
-namespace Multiplayer.Components.MainMenu
+namespace Multiplayer.Components.UI.ServerBrowser
 {
     public class PopupTextInputFieldControllerNoValidation : MonoBehaviour, IPopupSubmitHandler
     {
@@ -16,7 +16,7 @@ namespace Multiplayer.Components.MainMenu
         private void Awake()
         {
             // Find the components
-            popup = this.GetComponentInParent<Popup>();
+            popup = GetComponentInParent<Popup>();
             field = popup.GetComponentInChildren<TMP_InputField>();
 
             foreach (ButtonDV btn in popup.GetComponentsInChildren<ButtonDV>())
@@ -77,17 +77,17 @@ namespace Multiplayer.Components.MainMenu
 
         private void RequestPositive()
         {
-            this.popup.RequestClose(PopupClosedByAction.Positive, this.field.text);
+            popup.RequestClose(PopupClosedByAction.Positive, field.text);
         }
 
         private void RequestNegative()
         {
-            this.popup.RequestClose(PopupClosedByAction.Negative, null);
+            popup.RequestClose(PopupClosedByAction.Negative, null);
         }
 
         private void RequestAbortion()
         {
-            this.popup.RequestClose(PopupClosedByAction.Abortion, null);
+            popup.RequestClose(PopupClosedByAction.Abortion, null);
         }
     }
 }
