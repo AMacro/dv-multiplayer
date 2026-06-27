@@ -33,6 +33,9 @@ public class CharacterSelectorMenu : MonoBehaviour
 
     private GameObject previewModel;
     private List<string> characterIds = [];
+    private int indexFromSettings = 0;
+
+    bool returningToSettingsMenu = false;
 
     protected void Awake()
     {
@@ -77,18 +80,35 @@ public class CharacterSelectorMenu : MonoBehaviour
             BottomButtons.SetActive(true);
             ApplyButton.Clicked += ApplyChanges;
             DiscardButton.Clicked += DiscardChanges;
+
+            DiscardButton.ToggleInteractable(true);
         }
 
         Settings.OnSettingsUpdated += SettingsChanged;
+
+        // Find current index based on settings
+        indexFromSettings = characterIds.FindIndex(id => id == Multiplayer.Settings.CharacterId);
+
+        if (indexFromSettings < 0)
+            indexFromSettings = 0;
+
+        characterSelector.SetSelectedIndex(indexFromSettings);
     }
 
     protected void OnDisable()
     {
         if (BottomButtons != null)
         {
-            BottomButtons.SetActive(false);
+            if (!returningToSettingsMenu)
+                BottomButtons.SetActive(false);
+
+            returningToSettingsMenu = false;
+
             ApplyButton.Clicked -= ApplyChanges;
             DiscardButton.Clicked -= DiscardChanges;
+
+            ApplyButton.ToggleInteractable(false);
+            DiscardButton.ToggleInteractable(false);
         }
 
         Settings.OnSettingsUpdated -= SettingsChanged;
@@ -126,7 +146,7 @@ public class CharacterSelectorMenu : MonoBehaviour
         previewCamera.backgroundColor = Color.clear;
         previewCamera.nearClipPlane = 0.1f;
         previewCamera.farClipPlane = 10f;
-        previewCamera.fieldOfView = 40f; 
+        previewCamera.fieldOfView = 40f;
         previewCamera.enabled = true;
 
         previewRT = new RenderTexture(PREVIEW_RT_WIDTH, PREVIEW_RT_HEIGHT, 16, RenderTextureFormat.ARGB32);
@@ -166,7 +186,7 @@ public class CharacterSelectorMenu : MonoBehaviour
         var previewLE = previewContainer.AddComponent<LayoutElement>();
         previewLE.preferredWidth = PREVIEW_RT_WIDTH;
         previewLE.preferredHeight = PREVIEW_RT_HEIGHT;
-        previewLE.flexibleWidth = 1f; 
+        previewLE.flexibleWidth = 1f;
 
         var imageGo = new GameObject("CharacterPreviewDisplay");
         imageGo.transform.SetParent(previewContainer.transform, false);
@@ -215,28 +235,8 @@ public class CharacterSelectorMenu : MonoBehaviour
 
         characterSelector.SelectionChanged += CharacterSelector_SelectionChanged;
 
-        // Clean up unnecessary components from the original selector
-        var settingSource = selectorGO.GetComponent<SettingChangeSource>();
-        if (settingSource != null)
-            DestroyImmediate(settingSource);
-
-        I2.Loc.Localize[] i2Locs = selectorGO.GetComponentsInChildren<I2.Loc.Localize>(true);
-        if (i2Locs != null)
-            foreach (var comp in i2Locs)
-                DestroyImmediate(comp);
-
-        DV.Localization.Localize[] dvLocs = selectorGO.GetComponentsInChildren<DV.Localization.Localize>(true);
-        if (dvLocs != null)
-            foreach (var comp in dvLocs)
-                DestroyImmediate(comp);
-
-        // Populate character names
-        var characterMeta = Multiplayer.AssetIndex.AllCharacterMetaData();
-        List<string> characterIds = characterMeta.Select(metadata => metadata.Id).ToList();
-        List<string> characterNames = characterMeta.Select(metadata => metadata.DisplayName).ToList();
-
-        characterSelector.SetValues(characterNames);
-        characterSelector.SetLabel(string.Empty);
+        // If the index from settings is 0 no model will be shown and selectedIndex will not update
+        ShowModel(0);
 
         selectorGO.SetActive(true);
     }
@@ -271,53 +271,61 @@ public class CharacterSelectorMenu : MonoBehaviour
 
         if (modelRotator != null)
             modelRotator.target = previewModel.transform;
-
-#if DEBUG
-        // Diagnostic: log where each prefab's bounds sit so you can fix the prefab root offset
-        var renderers = previewModel.GetComponentsInChildren<Renderer>();
-        if (renderers.Length > 0)
-        {
-            Bounds bounds = renderers[0].bounds;
-            foreach (var r in renderers)
-                bounds.Encapsulate(r.bounds);
-
-            // bounds.min.y relative to previewRoot tells you the Y offset baked into the prefab
-            float localMin = bounds.min.y - previewRoot.transform.position.y;
-            float localMax = bounds.max.y - previewRoot.transform.position.y;
-            Multiplayer.Log($"Prefab '{previewModel.name}': bounds min.y={localMin:F4}, max.y={localMax:F4}, height={localMax - localMin:F4}");
-        }
-
-        LogTransformHierarchy(previewModel.transform);
-#endif
     }
 
     private void CharacterSelector_SelectionChanged(IClickable clickable, int selectedIndex)
     {
+        if (selectedIndex < 0 || selectedIndex >= characterIds.Count)
+        {
+            selectedIndex = 0;
+            characterSelector.SelectedIndex = 0;
+        }
+
         ShowModel(selectedIndex);
+
+        if (selectedIndex != indexFromSettings)
+            ApplyButton.interactable = true;
+        else
+            ApplyButton.interactable = false;
     }
 
     private void SettingsChanged(Settings settings)
     {
-        //todo: mod settings updated outside of this menu
+        int newIndex = characterIds.FindIndex(id => id == settings.CharacterId);
+        if (newIndex < 0 || newIndex >= characterIds.Count)
+            newIndex = 0;
+
+        // Only update the selector if the setting has changed
+        if (newIndex != indexFromSettings)
+        {
+            indexFromSettings = newIndex;
+            characterSelector.SetSelectedIndex(newIndex);
+        }
     }
 
-
-#if DEBUG
-    private static void LogTransformHierarchy(Transform t, string indent = "", bool includePos = true)
-    {
-        Multiplayer.Log($"{indent}{t.name}{(includePos? $": pos={t.localPosition}, scale={t.localScale}" : "")}");
-        foreach (Transform child in t)
-            LogTransformHierarchy(child, indent + "  ", includePos);
-    }
-#endif
     private void DiscardChanges(IClickable clickable)
     {
         // Reset all settings to their current values
+        SettingsChanged(Multiplayer.Settings);
+
+        returningToSettingsMenu = true;
+
+        MenuController.SwitchMenu(CharacterSelectorMenuIndex);
     }
 
     private void ApplyChanges(IClickable clickable)
     {
-        // Save all settings to disk and apply them
+        if (characterSelector.SelectedIndex < 0 || characterSelector.SelectedIndex >= characterIds.Count)
+            return;
+
+        Multiplayer.Settings.CharacterId = characterIds[characterSelector.SelectedIndex];
+
+        indexFromSettings = characterSelector.SelectedIndex;
+        Multiplayer.Settings.Save(Multiplayer.ModEntry);
+
+        returningToSettingsMenu = true;
+
+        MenuController.SwitchMenu(CharacterSelectorMenuIndex);
     }
 
     protected void OnDestroy()
