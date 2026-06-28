@@ -179,6 +179,7 @@ public class NetworkServer : NetworkManager
         // Player
         netPacketProcessor.SubscribeReusable<ServerboundPlayerPositionPacket, ITransportPeer>(OnServerboundPlayerPositionPacket);
         netPacketProcessor.SubscribeReusable<ServerboundLicensePurchaseRequestPacket, ITransportPeer>(OnServerboundLicensePurchaseRequestPacket);
+        netPacketProcessor.SubscribeReusable<ServerboundPlayerPreferenceUpdatePacket, ITransportPeer>(OnServerboundPlayerPreferenceUpdatePacket);
 
 
         // Train
@@ -805,14 +806,15 @@ public class NetworkServer : NetworkManager
         );
     }
 
-    public void SendPlayerPreferencesUpdate(ServerPlayer player)
+    public void SendPlayerPreferencesUpdate(ServerPlayer player, Dictionary<PlayerPreference, string> preferences)
     {
         Log($"Sending player preferences update for '{player.Username}'");
 
         var packet = new ClientboundPlayerPreferencesUpdatePacket
         {
             PlayerId = player.PlayerId,
-            CrewName = player.CrewName
+            PreferenceKeys = Array.ConvertAll(preferences.Keys.ToArray(), item => (byte)item),
+            PreferenceValues = preferences.Values.ToArray()
         };
 
         SendPacketToAll(packet, DeliveryMethod.ReliableUnordered, PlayerLoadingState.Complete);
@@ -1154,7 +1156,8 @@ public class NetworkServer : NetworkManager
             peer,
             overrideUsername,
             packet.Username,
-            guid
+            guid,
+            packet.CharacterId
         );
 
         serverPlayers.Add(serverPlayer.PlayerId, serverPlayer);
@@ -1333,6 +1336,7 @@ public class NetworkServer : NetworkManager
             {
                 PlayerId = player.PlayerId,
                 Username = player.Username,
+                CharacterId = player.CharacterId,
                 CrewName = player.CrewName,
                 CarID = player.CarId,
                 Position = player.RawPosition,
@@ -1354,6 +1358,7 @@ public class NetworkServer : NetworkManager
                 {
                     PlayerId = otherPlayer.PlayerId,
                     Username = otherPlayer.Username,
+                    CharacterId = otherPlayer.CharacterId,
                     CrewName = otherPlayer.CrewName,
                     CarID = otherPlayer.CarId,
                     Position = otherPlayer.RawPosition,
@@ -1389,6 +1394,27 @@ public class NetworkServer : NetworkManager
         };
 
         SendPacketToAll(clientboundPacket, DeliveryMethod.Sequenced, PlayerLoadingState.Complete, peer);
+    }
+
+    private void OnServerboundPlayerPreferenceUpdatePacket(ServerboundPlayerPreferenceUpdatePacket packet, ITransportPeer peer)
+    {
+        Dictionary<PlayerPreference, string> preferences = [];
+
+        if (!TryGetServerPlayer(peer, out ServerPlayer player))
+        {
+            LogWarning($"Received Player Preferences Update from {peer.GetType()}, peerId: {peer.Id}, but could not find matching player.");
+            return;
+        }
+
+        // Store the characterId for other players connecting to the server
+        if (packet.GetPreferencesDictionary().TryGetValue(PlayerPreference.CharacterModel, out string characterId))
+        {
+            player.CharacterId = characterId;
+            preferences.Add(PlayerPreference.CharacterModel, characterId);
+        }
+
+        if (preferences.Count > 0)
+            SendPlayerPreferencesUpdate(player, preferences);
     }
 
     private void OnServerboundTimeAdvancePacket(ServerboundTimeAdvancePacket packet, ITransportPeer peer)

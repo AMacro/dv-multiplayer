@@ -113,7 +113,10 @@ public class NetworkedPlayer : MonoBehaviour
             return;
 
         if (playerModel != null)
+        {
+            animationHandler = null;
             DestroyImmediate(playerModel);
+        }
 
         playerModel = Instantiate(newModel, transform);
         
@@ -125,7 +128,7 @@ public class NetworkedPlayer : MonoBehaviour
         nameTag?.SetPing(ping);
         this.ping = ping;
     }
-
+    
     public int GetPing()
     {
         return ping;

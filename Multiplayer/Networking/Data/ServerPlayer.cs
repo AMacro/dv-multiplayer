@@ -39,6 +39,7 @@ public class ServerPlayer : IDisposable
     public string Username { get; set; }
     public string OriginalUsername { get; set; }
     public Guid Guid { get; set; }
+    public string CharacterId { get; set; }
     public Vector3 RawPosition { get; set; }
     public float RawRotationY { get; set; }
     public ushort CarId { get; set; }
@@ -70,9 +71,15 @@ public class ServerPlayer : IDisposable
                 _crewName = string.Empty;
             }
 
-            NetworkLifecycle.Instance.Server.SendPlayerPreferencesUpdate(this);
+            Dictionary<PlayerPreference, string> preferences = new()
+            {
+                { PlayerPreference.CrewName, _crewName }
+            };
+
+            NetworkLifecycle.Instance.Server.SendPlayerPreferencesUpdate(this, preferences);
         }
     }
+
     public string DisplayName
     {
         get
@@ -91,7 +98,7 @@ public class ServerPlayer : IDisposable
     private Vector3 _lastWorldPos = Vector3.zero;
     private Vector3 _lastAbsoluteWorldPosition = Vector3.zero;
 
-    public ServerPlayer(ITransportPeer peer, string username, string originalUsername, Guid guid)
+    public ServerPlayer(ITransportPeer peer, string username, string originalUsername, Guid guid, string characterId)
     {
         PlayerId = idPool.NextId;
 
@@ -101,6 +108,7 @@ public class ServerPlayer : IDisposable
         Username = username;
         OriginalUsername = originalUsername;
         Guid = guid;
+        CharacterId = characterId;
     }
 
     #region Positioning

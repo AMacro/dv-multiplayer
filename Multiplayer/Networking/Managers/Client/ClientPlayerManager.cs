@@ -1,7 +1,9 @@
 using DV;
 using Multiplayer.Components.Networking.Player;
-using System.Collections.Generic;
+using Multiplayer.Networking.Data;
+using Multiplayer.Networking.Packets.Clientbound;
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using Object = UnityEngine.Object;
 
@@ -17,12 +19,10 @@ public class ClientPlayerManager
     public IReadOnlyCollection<NetworkedPlayer> Players => playerMap.Values;
 
     private readonly GameObject playerTagPrefab;
-    private readonly GameObject[] playerPrefabs;
 
     public ClientPlayerManager()
     {
         playerTagPrefab = Multiplayer.AssetIndex.PlayerTag;
-        playerPrefabs = Multiplayer.AssetIndex.playerPrefabs;
     }
 
     public bool TryGetPlayer(byte playerid, out NetworkedPlayer player)
@@ -30,7 +30,7 @@ public class ClientPlayerManager
         return playerMap.TryGetValue(playerid, out player);
     }
 
-    public void AddPlayer(byte playerId, string username, string crewName, string prefabId)
+    public void AddPlayer(byte playerId, string username, string crewName, string characterId)
     {
         if (playerMap.ContainsKey(playerId))
         {
@@ -51,7 +51,10 @@ public class ClientPlayerManager
         networkedPlayer.Username = username;
         networkedPlayer.CrewName = crewName;
 
-        networkedPlayer.ChangeModel(playerPrefabs[0]);
+        // Get player model from registry and apply it to the player
+        var model = Multiplayer.PlayerModelRegistry.GetModelById(characterId);
+
+        networkedPlayer.ChangeModel(model.Prefab);
 
         playerMap.Add(playerId, networkedPlayer);
         OnPlayerConnected?.Invoke(networkedPlayer);
@@ -82,17 +85,23 @@ public class ClientPlayerManager
         player.UpdatePosition(position, moveDir, rotation, isJumping, isOnCar);
     }
 
-    // Currently only updates crew name, but can be expanded to include other preferences in the future, e.g. player model, marker color, etc.
-    public void UpdatePreferences(byte playerId, string crewName)
+    // Currently only updates crew name, but can be expanded to include other preferences in the future, e.g. marker color, etc.
+    public void UpdatePreferences(byte playerId, Dictionary<PlayerPreference, string> preferences)
     {
-        Multiplayer.LogDebug(()=>$"Updating preferences for playerId: {playerId}, CrewName:{crewName}");
+        Multiplayer.LogDebug(()=>$"Updating preferences for playerId: {playerId}, Preference count : {preferences?.Count}");
 
         if (!TryGetPlayer(playerId, out NetworkedPlayer player))
             return;
 
-        Multiplayer.LogDebug(() => $"Updating preferences for playerId: {playerId}, CrewName: {crewName}, Found: {player.Username}");
+        if (preferences.TryGetValue(PlayerPreference.CrewName, out string crewName))
+            player.CrewName = crewName;
 
-        player.CrewName = crewName;
+        if (preferences.TryGetValue(PlayerPreference.CharacterModel, out string characterId))
+        {
+            var model = Multiplayer.PlayerModelRegistry.GetModelById(characterId);
+            player.ChangeModel(model.Prefab);
+        }
+
         OnPlayerPrefsUpdated?.Invoke(player);
     }
 

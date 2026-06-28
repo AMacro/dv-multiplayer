@@ -62,6 +62,7 @@ public class NetworkClient : NetworkManager
     private ITransportPeer selfPeer;
     public byte PlayerId { get; private set; }
     public string Username { get; private set; }
+    private string characterModelId;
     public string CrewName { get; private set; }
     public string DisplayName => string.IsNullOrEmpty(CrewName) ? Username : $"[{CrewName}] {Username}";
 
@@ -100,6 +101,9 @@ public class NetworkClient : NetworkManager
         };
 
         Username = Multiplayer.Settings.GetUserName();
+        characterModelId = Multiplayer.Settings.CharacterId;
+
+        Settings.OnSettingsUpdated += OnSettingsUpdated;
     }
 
     public void Start(string address, int port, string password, bool isSinglePlayer, Action<DisconnectReason, string> onDisconnect)
@@ -116,7 +120,8 @@ public class NetworkClient : NetworkManager
             Guid = Multiplayer.Settings.GetGuid().ToByteArray(),
             Password = password,
             BuildVersion = MainMenuControllerPatch.MenuProvider.BuildVersionString,
-            Mods = ModCompatibilityManager.Instance.GetLocalMods()
+            Mods = ModCompatibilityManager.Instance.GetLocalMods(),
+            CharacterId = Multiplayer.Settings.CharacterId
         };
 
         Log("Sending Login Packet");
@@ -138,7 +143,23 @@ public class NetworkClient : NetworkManager
             Client_GameSession.SetCurrent(originalSession);
         }
 
+        Settings.OnSettingsUpdated -= OnSettingsUpdated;
+
         base.Stop();
+    }
+
+    private void OnSettingsUpdated(Settings settings)
+    {
+        Dictionary<PlayerPreference, string> preferences = [];
+
+        if (settings.CharacterId != characterModelId)
+        {
+            characterModelId = settings.CharacterId;
+            preferences[PlayerPreference.CharacterModel] = characterModelId;
+        }
+
+        if (preferences.Count > 0)
+            SendPlayerPreferences(preferences);
     }
 
     protected override void Subscribe()
@@ -522,7 +543,7 @@ public class NetworkClient : NetworkManager
     private void OnClientboundPlayerJoinedPacket(ClientboundPlayerJoinedPacket packet)
     {
         Log($"Received player joined packet for player id: {packet.PlayerId}, username: {packet.Username}");
-        ClientPlayerManager.AddPlayer(packet.PlayerId, packet.Username, packet.CrewName, "");
+        ClientPlayerManager.AddPlayer(packet.PlayerId, packet.Username, packet.CrewName, packet.CharacterId);
 
         ClientPlayerManager.UpdatePosition(packet.PlayerId, packet.Position, Vector3.zero, packet.Rotation, false, packet.CarID != 0, packet.CarID);
     }
@@ -560,10 +581,11 @@ public class NetworkClient : NetworkManager
 
         if (packet.PlayerId == PlayerId)
         {
-            CrewName = packet.CrewName;
+            if (packet.GetPreferencesDictionary().TryGetValue(PlayerPreference.CrewName, out string crewName))
+                CrewName = crewName;
         }
 
-        ClientPlayerManager.UpdatePreferences(packet.PlayerId, packet.CrewName);
+        ClientPlayerManager.UpdatePreferences(packet.PlayerId, packet.GetPreferencesDictionary());
     }
 
     private void OnClientboundPingUpdatePacket(ClientboundPingUpdatePacket packet)
@@ -1371,7 +1393,7 @@ public class NetworkClient : NetworkManager
                 break;
 
             case LocoRestorationController.RestorationState.S8_PartInstalled:
-                controller.installPartsModule.SetUnitsToBuy(0f); 
+                controller.installPartsModule.SetUnitsToBuy(0f);
                 controller.OnInstallPartsPaid();
                 break;
 
@@ -1460,6 +1482,20 @@ public class NetworkClient : NetworkManager
         }, reliable ? DeliveryMethod.ReliableOrdered : DeliveryMethod.Sequenced);
     }
 
+    public void SendPlayerPreferences(Dictionary<PlayerPreference, string> preferences)
+    {
+        if (preferences == null || preferences.Count == 0)
+        {
+            LogWarning("SendPlayerPreferences() called with null or empty preferences");
+            return;
+        }
+        SendPacketToServer(new ServerboundPlayerPreferenceUpdatePacket
+        {
+            PreferenceKeys = Array.ConvertAll(preferences.Keys.ToArray(), item => (byte)item),
+            PreferenceValues = preferences.Values.ToArray()
+        }, DeliveryMethod.ReliableOrdered);
+    }
+
     public void SendTimeAdvance(float amountOfTimeToSkipInSeconds)
     {
         SendPacketToServer(new ServerboundTimeAdvancePacket
@@ -1546,7 +1582,7 @@ public class NetworkClient : NetworkManager
     {
         if (coupler == null || otherCoupler == null)
         {
-            LogWarning($"Failed to send HoseConnected, {(coupler ==null ? "Coupler is null" : coupler?.train?.ID)}, {(otherCoupler == null ? "Other Coupler is null" : otherCoupler?.train?.ID)}");
+            LogWarning($"Failed to send HoseConnected, {(coupler == null ? "Coupler is null" : coupler?.train?.ID)}, {(otherCoupler == null ? "Other Coupler is null" : otherCoupler?.train?.ID)}");
             return;
         }
 
