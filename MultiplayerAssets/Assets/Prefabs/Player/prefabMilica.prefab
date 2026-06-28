@@ -100,7 +100,7 @@ GameObject:
   - component: {fileID: 1820087586437652537}
   - component: {fileID: 5874034117860312109}
   m_Layer: 0
-  m_Name: Milica
+  m_Name: prefabMilica
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0

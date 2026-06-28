@@ -12,7 +12,7 @@ GameObject:
   - component: {fileID: 8095789213393990111}
   - component: {fileID: 5474226690895945989}
   m_Layer: 0
-  m_Name: Unity-Chan!
+  m_Name: prefabUnityChan
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0

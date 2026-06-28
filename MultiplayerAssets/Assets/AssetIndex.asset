@@ -14,7 +14,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   PlayerTag: {fileID: 3008355388418880564, guid: 4d29b015d8783db4ab299e2d916d70b1,
     type: 3}
-  playerPrefabs:
+  defaultModel: {fileID: 1707366875631224182, guid: 720cc4622be79f701b73d41dbf0472ea,
+    type: 3}
+  modelPrefabs:
+  - {fileID: 4097905915734581018, guid: 2445170ce7790674a9e0d8bf4d6ebdfd, type: 3}
   - {fileID: 1707366875631224182, guid: 720cc4622be79f701b73d41dbf0472ea, type: 3}
   - {fileID: 4097905915734581018, guid: a092d7c50f0c2474db9e35e38cf02aa1, type: 3}
   - {fileID: 4097905915734581018, guid: 5cb5fed3149de5d4b89999b8a42aa49e, type: 3}

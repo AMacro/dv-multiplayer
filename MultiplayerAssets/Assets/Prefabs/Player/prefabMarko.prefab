@@ -34,7 +34,7 @@ GameObject:
   - component: {fileID: 8261390920840121934}
   - component: {fileID: 210910973276874552}
   m_Layer: 0
-  m_Name: Marko
+  m_Name: prefabMarko
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -48,7 +48,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 4097905915734581018}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0.804, z: 0}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children:
   - {fileID: 1739985692709236489}
