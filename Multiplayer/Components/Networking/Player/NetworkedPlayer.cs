@@ -109,8 +109,11 @@ public class NetworkedPlayer : MonoBehaviour
 
     public void ChangeModel(GameObject newModel)
     {
+        if (newModel == playerModel)
+            return;
+
         if (playerModel != null)
-            Destroy(playerModel);
+            DestroyImmediate(playerModel);
 
         playerModel = Instantiate(newModel, transform);
         
@@ -135,7 +138,7 @@ public class NetworkedPlayer : MonoBehaviour
         Vector3 position = Vector3.Lerp(IsOnCar ? selfTransform.localPosition : selfTransform.position, IsOnCar ? targetPos : targetPos + WorldMover.currentMove, t);
         
         moveDir = Vector2.Lerp(moveDir, targetMoveDir, t);
-        animationHandler.SetMoveDir(moveDir);
+        animationHandler?.SetMoveDir(moveDir);
 
         if (IsOnCar && OccupiedCar != null)
         {
@@ -184,7 +187,7 @@ public class NetworkedPlayer : MonoBehaviour
         targetPos = position;
         targetMoveDir = moveDir;
 
-        animationHandler.SetIsJumping(isJumping);
+        animationHandler?.SetIsJumping(isJumping);
 
         if (IsOnCar != movePacketIsOnCar)
             return;

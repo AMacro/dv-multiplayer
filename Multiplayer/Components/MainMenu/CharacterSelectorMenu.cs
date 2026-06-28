@@ -1,5 +1,6 @@
 using DV.UI;
 using DV.UIFramework;
+using Multiplayer.Models;
 using Multiplayer.Utils;
 using System.Collections.Generic;
 using System.Linq;
@@ -33,6 +34,7 @@ public class CharacterSelectorMenu : MonoBehaviour
 
     private GameObject previewModel;
     private List<string> characterIds = [];
+    private int defaultModelIndex = 0;
     private int indexFromSettings = 0;
 
     bool returningToSettingsMenu = false;
@@ -215,8 +217,8 @@ public class CharacterSelectorMenu : MonoBehaviour
     {
         // Create selector
         // Get character names
-        var characterMeta = Multiplayer.AssetIndex.AllCharacterMetaData();
-        characterIds = characterMeta.Select(metadata => metadata.Id).ToList();
+        var characterMeta = Multiplayer.PlayerModelRegistry.Models;
+        characterIds = characterMeta.Select(metadata => metadata.CharacterId).ToList();
         List<string> characterNames = characterMeta.Select(metadata => metadata.DisplayName).ToList();
 
         // Create selector
@@ -236,17 +238,25 @@ public class CharacterSelectorMenu : MonoBehaviour
         characterSelector.SelectionChanged += CharacterSelector_SelectionChanged;
 
         // If the index from settings is 0 no model will be shown and selectedIndex will not update
-        ShowModel(0);
+        defaultModelIndex = characterIds.FindIndex(id => id == Multiplayer.PlayerModelRegistry.DefaultModel.CharacterId);
+        ShowModel(defaultModelIndex);
 
         selectorGO.SetActive(true);
     }
 
     private void ShowModel(int index)
     {
+        PlayerModelInfo model;
+
         if (previewModel != null)
             Destroy(previewModel);
 
-        previewModel = Instantiate(Multiplayer.AssetIndex.playerPrefabs[index], previewRoot.transform);
+        if (index < 0 || index >= characterIds.Count)
+            model = Multiplayer.PlayerModelRegistry.DefaultModel;
+        else
+            model = Multiplayer.PlayerModelRegistry.GetModelById(characterIds[index]);
+
+        previewModel = Instantiate(model.Prefab, previewRoot.transform);
         previewModel.transform.localPosition = Vector3.zero;
         previewModel.transform.localRotation = Quaternion.identity;
         previewModel.transform.localScale = Vector3.one;
