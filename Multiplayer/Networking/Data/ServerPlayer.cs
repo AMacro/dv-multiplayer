@@ -90,6 +90,7 @@ public class ServerPlayer : IDisposable
 
     private Vector3 _lastWorldPos = Vector3.zero;
     private Vector3 _lastAbsoluteWorldPosition = Vector3.zero;
+    private float _lastWorldRotationY;
 
     public ServerPlayer(ITransportPeer peer, string username, string originalUsername, Guid guid)
     {
@@ -112,20 +113,27 @@ public class ServerPlayer : IDisposable
             Vector3 pos;
             try
             {
-                if (CarId == 0 || !NetworkedTrainCar.TryGet(CarId, out NetworkedTrainCar car))
+                if (CarId == 0)
                 {
-                    if (CarId != 0)
-                        Multiplayer.LogDebug(() => $"AbsoluteWorldPosition() noID {Username}: CarId: {CarId}");
-
+                    // Off-car: RawPosition is already a world-absolute position.
                     pos = RawPosition;
+                    _lastAbsoluteWorldPosition = pos;
+                }
+                else if (NetworkedTrainCar.TryGet(CarId, out NetworkedTrainCar car))
+                {
+                    pos = car.transform.TransformPoint(RawPosition) - WorldMover.currentMove;
+                    _lastAbsoluteWorldPosition = pos;
                 }
                 else
                 {
-                    //Multiplayer.LogDebug(() => $"AbsoluteWorldPosition() hasID {Username}: CarId: {CarId}");
-                    pos = car.transform.TransformPoint(RawPosition) - WorldMover.currentMove; ;
+                    // On a car we can't resolve yet (NetId assignment races with load, or the car just
+                    // despawned). RawPosition is car-LOCAL here, so it can't be turned into a world
+                    // position — return the last known-good value instead of interpreting a local
+                    // offset as a world coordinate (which would place the player kilometres away and
+                    // break distance/authority/reach checks).
+                    Multiplayer.LogDebug(() => $"AbsoluteWorldPosition() noID {Username}: CarId: {CarId}");
+                    pos = _lastAbsoluteWorldPosition;
                 }
-
-                _lastAbsoluteWorldPosition = pos;
             }
             catch (Exception e)
             {
@@ -147,20 +155,25 @@ public class ServerPlayer : IDisposable
             Vector3 pos;
             try
             {
-                if (CarId == 0 || !NetworkedTrainCar.TryGet(CarId, out NetworkedTrainCar car))
+                if (CarId == 0)
                 {
-                    if (CarId != 0)
-                        Multiplayer.LogDebug(() => $"WorldPosition() noID {Username}: CarId: {CarId}");
-
+                    // Off-car: RawPosition is a world-absolute position; shift it into the moved frame.
                     pos = RawPosition + WorldMover.currentMove;
+                    _lastWorldPos = pos;
+                }
+                else if (NetworkedTrainCar.TryGet(CarId, out NetworkedTrainCar car))
+                {
+                    pos = car.transform.TransformPoint(RawPosition);
+                    _lastWorldPos = pos;
                 }
                 else
                 {
-                    //Multiplayer.LogDebug(() => $"WorldPosition() hasID {Username}: CarId: {CarId}");
-                    pos = car.transform.TransformPoint(RawPosition);
+                    // On a car we can't resolve yet (NetId assignment races with load, or the car just
+                    // despawned). RawPosition is car-LOCAL here, so return the last known-good value
+                    // rather than treating a local offset as a world coordinate (see AbsoluteWorldPosition).
+                    Multiplayer.LogDebug(() => $"WorldPosition() noID {Username}: CarId: {CarId}");
+                    pos = _lastWorldPos;
                 }
-
-                _lastWorldPos = pos;
             }
             catch (Exception e)
             {
@@ -175,9 +188,32 @@ public class ServerPlayer : IDisposable
         }
     }
 
-    public float WorldRotationY => CarId == 0 || !NetworkedTrainCar.TryGet(CarId, out NetworkedTrainCar car)
-        ? RawRotationY
-        : (Quaternion.Euler(0, RawRotationY, 0) * car.transform.rotation).eulerAngles.y;
+    public float WorldRotationY
+    {
+        get
+        {
+            float rot;
+            if (CarId == 0)
+            {
+                // Off-car: RawRotationY is already a world-space heading.
+                rot = RawRotationY;
+                _lastWorldRotationY = rot;
+            }
+            else if (NetworkedTrainCar.TryGet(CarId, out NetworkedTrainCar car))
+            {
+                rot = (Quaternion.Euler(0, RawRotationY, 0) * car.transform.rotation).eulerAngles.y;
+                _lastWorldRotationY = rot;
+            }
+            else
+            {
+                // On a car we can't resolve yet (NetId race / just despawned). RawRotationY is car-LOCAL
+                // here, so return the last known-good heading rather than a local rotation as world.
+                rot = _lastWorldRotationY;
+            }
+
+            return rot;
+        }
+    }
     #endregion
 
     #region Item Ownership

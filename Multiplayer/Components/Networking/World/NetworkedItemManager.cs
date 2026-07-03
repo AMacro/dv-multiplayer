@@ -197,16 +197,18 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
                 }
             }
 
-            // Remove items that are no longer nearby
-            for (int i = 0; i < player.NearbyItems.Count; i++)
-            {
-                var kvp = player.NearbyItems.ElementAt(i);
+            // Remove items that are no longer nearby. Collect first, then remove: mutating the
+            // dictionary while walking it by index (ElementAt) both skips entries as the collection
+            // shifts and is O(n^2).
+            var noLongerNearby = player.NearbyItems
+                .Where(kvp => currentTime - kvp.Value > NEARBY_REMOVAL_DELAY)
+                .Select(kvp => kvp.Key)
+                .ToList();
 
-                if (currentTime - kvp.Value > NEARBY_REMOVAL_DELAY)
-                {
-                    //NetworkLifecycle.Instance.Server.LogDebug(() => $"UpdatePlayerItemLists() Removing for player: {player?.Username}, Nearby Item: {kvp.Key?.NetId}, {kvp.Key?.name}");
-                    player.NearbyItems.Remove(kvp.Key);
-                }
+            foreach (var item in noLongerNearby)
+            {
+                //NetworkLifecycle.Instance.Server.LogDebug(() => $"UpdatePlayerItemLists() Removing for player: {player?.Username}, Nearby Item: {item?.NetId}, {item?.name}");
+                player.NearbyItems.Remove(item);
             }
         }
     }

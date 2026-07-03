@@ -62,23 +62,31 @@ public static class CustomFirstPersonControllerPatch
             isOnCar = car != null;
         }
 
-        Vector3 position = isOnCar ? PlayerManager.PlayerTransform.localPosition : PlayerManager.PlayerTransform.GetWorldAbsolutePosition();
+        // Only report the player as "on car" once we have a valid NetId for that car. Right after a
+        // save load the car's NetworkedTrainCar.NetId may not be assigned yet; if we sent the car-LOCAL
+        // position together with CarId 0, the server would interpret that small local offset as a
+        // world-absolute position and place the player kilometres away. That breaks control-authority
+        // proximity checks, so cab controls get grabbed then instantly force-released (~10ms "grip").
+        // Falling back to a world-absolute position + CarId 0 keeps position, CarId and the on-car flag
+        // consistent, and self-corrects on the next tick once the NetId is assigned.
+        ushort carNetID = isOnCar ? car.GetNetId() : (ushort)0;
+        bool onCarNetworked = isOnCar && carNetID != 0;
+
+        Vector3 position = onCarNetworked ? PlayerManager.PlayerTransform.localPosition : PlayerManager.PlayerTransform.GetWorldAbsolutePosition();
         float rotationY = PlayerManager.PlayerCamera.transform.eulerAngles.y;
 
-        ushort carNetID = isOnCar ? car.GetNetId() : (ushort)0;
-
-        bool positionOrRotationChanged = lastOnCar != isOnCar || (isOnCar && (lastCarNetId != carNetID)) || Vector3.Distance(lastPosition, position) > 0 || Math.Abs(lastRotationY - rotationY) > 0.2f;//ROTATION_THRESHOLD;
+        bool positionOrRotationChanged = lastOnCar != onCarNetworked || (onCarNetworked && (lastCarNetId != carNetID)) || Vector3.Distance(lastPosition, position) > 0 || Math.Abs(lastRotationY - rotationY) > 0.2f;//ROTATION_THRESHOLD;
 
         if (!positionOrRotationChanged && sentFinalPosition)
             return;
 
-        lastOnCar = isOnCar;
+        lastOnCar = onCarNetworked;
         lastCarNetId = carNetID;
         lastPosition = position;
         lastRotationY = rotationY;
         sentFinalPosition = !positionOrRotationChanged;
 
-        NetworkLifecycle.Instance.Client.SendPlayerPosition(lastPosition, PlayerManager.PlayerTransform.InverseTransformDirection(fps.m_MoveDir), lastRotationY, carNetID, isJumping, isOnCar, isJumping || sentFinalPosition);
+        NetworkLifecycle.Instance.Client.SendPlayerPosition(lastPosition, PlayerManager.PlayerTransform.InverseTransformDirection(fps.m_MoveDir), lastRotationY, carNetID, isJumping, onCarNetworked, isJumping || sentFinalPosition);
         isJumping = false;
     }
 

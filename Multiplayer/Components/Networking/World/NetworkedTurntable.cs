@@ -69,7 +69,10 @@ public class NetworkedTurntable : IdMonoBehaviour<byte, NetworkedTurntable>
 
     private void OnTick(uint tick)
     {
-        if (UnloadWatcher.isUnloading || !initialised || Mathf.Approximately(lastYRotation, TurntableRailTrack.targetYRotation))
+        // See NetworkedJunction.Junction_Switched: the host never receives the railway-state packet
+        // that sets 'initialised', so check IsHost() live to avoid a lockout when this turntable
+        // awoke before the server started (e.g. when loading a save).
+        if (UnloadWatcher.isUnloading || (!initialised && !NetworkLifecycle.Instance.IsHost()) || Mathf.Approximately(lastYRotation, TurntableRailTrack.targetYRotation))
             return;
 
         lastYRotation = TurntableRailTrack.targetYRotation;

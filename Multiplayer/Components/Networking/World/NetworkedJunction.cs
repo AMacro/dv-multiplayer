@@ -69,7 +69,12 @@ public class NetworkedJunction : IdMonoBehaviour<ushort, NetworkedJunction>
 
     private void Junction_Switched(Junction.SwitchMode switchMode, int branch)
     {
-        if (NetworkLifecycle.Instance.IsProcessingPacket || !initialised)
+        // The host is authoritative and never receives the ClientboundRailwayStatePacket that
+        // sets 'initialised' on clients, so it must not depend on the Awake-time IsHost() snapshot.
+        // If this junction awoke before the server started (e.g. when loading a save), that snapshot
+        // is false and the host would be permanently unable to send switch changes. Re-checking
+        // IsHost() live here avoids that lockout while still suppressing client echo during load.
+        if (NetworkLifecycle.Instance.IsProcessingPacket || (!initialised && !NetworkLifecycle.Instance.IsHost()))
             return;
 
         NetworkLifecycle.Instance.Client.SendJunctionSwitched(NetId, (byte)branch, switchMode);
