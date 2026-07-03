@@ -168,6 +168,10 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
         var clientAPI = new ClientAPIProvider(client);
         MultiplayerAPI.RegisterClient(clientAPI);
 
+        // Start streaming the local player's position. Driven here (not from the player controller)
+        // so it works in VR, where CustomFirstPersonController is never instantiated.
+        Patches.Player.CustomFirstPersonControllerPatch.SubscribePositionSync();
+
         OnSettingsUpdated(Multiplayer.Settings); // Show stats if enabled
     }
 
@@ -240,6 +244,7 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
 
         if (Client != null)
         {
+            Patches.Player.CustomFirstPersonControllerPatch.UnsubscribePositionSync();
             Client?.Stop();
             MultiplayerAPI.ClearClient();
             Client = null;

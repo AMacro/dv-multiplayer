@@ -1007,9 +1007,15 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         {
             if (currentAuth == null)
             {
-                if ((player.WorldPosition - transform.position).sqrMagnitude > CarLengthSq)
+                // The host is the authoritative server and fully trusted. Its own networked position can
+                // lag or be wrong (notably in VR, where PlayerTransform doesn't track the same as desktop),
+                // so distance-denying the host would strip controls out of its hand the moment it grabs
+                // them. Desktop hides this because scroll/click interactions don't need a sustained hold;
+                // VR exposes it as a "grab then instantly release". Never distance-deny the host.
+                float sqrDist = (player.WorldPosition - transform.position).sqrMagnitude;
+                if (sqrDist > CarLengthSq && !NetworkLifecycle.Instance.IsHost(player))
                 {
-                    NetworkLifecycle.Instance.Server.LogWarning($"Player \"{player.Username}\" attempted to gain authority for a control on car {CurrentID}, but they are too far away!");
+                    NetworkLifecycle.Instance.Server.LogWarning($"Player \"{player.Username}\" attempted to gain authority for a control on car {CurrentID}, but they are too far away! (sqrDist {sqrDist} > {CarLengthSq})");
                     NetworkLifecycle.Instance.Server.SendTrainControlAuthorityUpdate(NetId, portNetId, ControlAuthorityState.Denied, player);
                     NetworkLifecycle.Instance.Server.SendTrainControlAuthorityUpdate(NetId, portNetId, ControlAuthorityState.Released, player);
                     return;
