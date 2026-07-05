@@ -116,6 +116,7 @@ public static class Multiplayer
             }
 
             PlayerModelRegistry = new PlayerModelRegistry();
+            PlayerModelRegistry.Reload();
 
 
             Log("Creating NetworkManager...");

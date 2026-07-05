@@ -1,5 +1,6 @@
 using DV.UI;
 using DV.UIFramework;
+using Multiplayer.Components.UI.Settings;
 using Multiplayer.Models;
 using Multiplayer.Utils;
 using System.Collections.Generic;
@@ -16,6 +17,10 @@ public class CharacterSelectorMenu : MonoBehaviour
     private const int PREVIEW_RT_WIDTH = 435;
     private const int PREVIEW_RT_HEIGHT = 435;
     private const int LAYOUT_PADDING = 15;
+
+    const float TARGET_FOV = 40f;
+    const float BASE_DISTANCE = 3f;
+    const float BASE_HEIGHT = 1f;
 
     public int CharacterSelectorMenuIndex;
     public UIMenuController MenuController;
@@ -41,6 +46,8 @@ public class CharacterSelectorMenu : MonoBehaviour
 
     protected void Awake()
     {
+        Multiplayer.PlayerModelRegistry.Reload();
+
         // Clean up child objects
         for (int i = 0; i < transform.childCount; i++)
             Destroy(transform.GetChild(i).gameObject);
@@ -94,6 +101,15 @@ public class CharacterSelectorMenu : MonoBehaviour
         if (indexFromSettings < 0)
             indexFromSettings = 0;
 
+        if (previewCamera != null)
+        {
+            previewCamera.enabled = true;
+
+            // Bypass normal rendering path to disable stereoscopic rendering in VR mode
+            if (VRManager.IsVREnabled())
+                previewCamera.renderingPath = RenderingPath.DeferredShading;
+        }
+
         characterSelector.SetSelectedIndex(indexFromSettings);
     }
 
@@ -111,6 +127,15 @@ public class CharacterSelectorMenu : MonoBehaviour
 
             ApplyButton.ToggleInteractable(false);
             DiscardButton.ToggleInteractable(false);
+        }
+
+        if (previewCamera != null)
+        {
+            previewCamera.enabled = false;
+
+            // Reset the rendering path to avoid crashing when returning to the main menu or quitting the game
+            if (VRManager.IsVREnabled())
+                previewCamera.renderingPath = RenderingPath.UsePlayerSettings;
         }
 
         Settings.OnSettingsUpdated -= SettingsChanged;
@@ -139,7 +164,7 @@ public class CharacterSelectorMenu : MonoBehaviour
         // Set up the preview camera
         var cameraGo = new GameObject("CharacterPreviewCamera");
         cameraGo.transform.SetParent(previewRoot.transform, false);
-        cameraGo.transform.localPosition = new Vector3(0f, 1f, 3f);
+        cameraGo.transform.localPosition = new Vector3(0f, BASE_HEIGHT, BASE_DISTANCE);
         cameraGo.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
 
         previewCamera = cameraGo.AddComponent<Camera>();
@@ -148,13 +173,23 @@ public class CharacterSelectorMenu : MonoBehaviour
         previewCamera.backgroundColor = Color.clear;
         previewCamera.nearClipPlane = 0.1f;
         previewCamera.farClipPlane = 10f;
-        previewCamera.fieldOfView = 40f;
-        previewCamera.enabled = true;
+        previewCamera.stereoTargetEye = StereoTargetEyeMask.None;
+        previewCamera.depth = 1f;
 
-        previewRT = new RenderTexture(PREVIEW_RT_WIDTH, PREVIEW_RT_HEIGHT, 16, RenderTextureFormat.ARGB32);
+        Multiplayer.LogDebug(() => $"CharacterSelectorMenu.SetupPreviewCamera() mainCameraDepth: {Camera.main.depth}");
+
+        RenderTextureDescriptor rtDescriptor = new RenderTextureDescriptor(PREVIEW_RT_WIDTH, PREVIEW_RT_HEIGHT, RenderTextureFormat.ARGB32, 24);
+        rtDescriptor.vrUsage = VRTextureUsage.None;
+        rtDescriptor.dimension = UnityEngine.Rendering.TextureDimension.Tex2D;
+
+        previewRT = new RenderTexture(rtDescriptor);
         previewRT.antiAliasing = 8;
         previewRT.Create();
+
         previewCamera.targetTexture = previewRT;
+        previewCamera.fieldOfView = TARGET_FOV;
+
+        previewCamera.enabled = false;
     }
 
     private void BuildLayout()
@@ -342,13 +377,30 @@ public class CharacterSelectorMenu : MonoBehaviour
 
     protected void OnDestroy()
     {
+        if (previewCamera != null)
+        {
+            previewCamera.enabled = false;
+
+            // Reset the rendering path to avoid crashing when returning to the main menu or quitting the game
+            previewCamera.renderingPath = RenderingPath.UsePlayerSettings;
+            previewCamera.targetTexture = null;
+            DestroyImmediate(previewCamera.gameObject);
+        }
+
+        if (displayImage != null)
+            displayImage.texture = null;
+
         if (previewRT != null)
         {
             previewRT.Release();
-            Destroy(previewRT);
+            DestroyImmediate(previewRT);
+            previewRT = null;
         }
 
         if (previewRoot != null)
-            Destroy(previewRoot);
+        {
+            DestroyImmediate(previewRoot);
+            previewRoot = null;
+        }
     }
 }

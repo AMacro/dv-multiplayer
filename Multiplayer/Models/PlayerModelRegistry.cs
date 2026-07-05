@@ -11,11 +11,14 @@ public class PlayerModelRegistry
     private readonly HashSet<PlayerModelInfo> baseModels = [];
     private readonly Dictionary<string, PlayerModelInfo> playerModels = new(StringComparer.OrdinalIgnoreCase);
 
-    public readonly PlayerModelInfo DefaultModel;
+    public PlayerModelInfo DefaultModel;
     public IReadOnlyList<PlayerModelInfo> Models => playerModels.Values.ToList();
 
-    public PlayerModelRegistry()
+    public void Reload()
     {
+        baseModels.Clear();
+        playerModels.Clear();
+
         // Set up the default model
         Multiplayer.AssetIndex.defaultModel.TryGetComponent<CharacterMetaData>(out var charMetaData);
 
@@ -23,6 +26,7 @@ public class PlayerModelRegistry
             throw new Exception("Default model does not have a CharacterMetaData component!");
 
         DefaultModel = new PlayerModelInfo(charMetaData.Id, charMetaData.DisplayName, Multiplayer.AssetIndex.defaultModel);
+
 
         // Import MP base models
         foreach (var model in Multiplayer.AssetIndex.modelPrefabs)
@@ -49,8 +53,23 @@ public class PlayerModelRegistry
     public PlayerModelInfo GetModelById(string characterId)
     {
         if (playerModels.TryGetValue(characterId, out var model))
+        {
+            if (model.Prefab == null)
+            {
+                Reload();
+                if (playerModels.TryGetValue(characterId, out model))
+                    return model;
+                else
+                    return DefaultModel;
+            }
             return model;
+        }
+
         Multiplayer.LogWarning($"Model with characterId {characterId} not found, returning default model.");
+
+        if (DefaultModel == null || DefaultModel.Prefab == null)
+            Reload();
+
         return DefaultModel;
     }
 
