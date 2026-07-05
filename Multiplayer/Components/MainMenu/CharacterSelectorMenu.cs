@@ -210,7 +210,9 @@ public class CharacterSelectorMenu : MonoBehaviour
 
         modelRotator = imageGo.AddComponent<ModelRotator>();
 
-        previewContainer.AddComponent<UIElementTooltip>().enabledKey = Locale.SETTINGS_CHAR_SEL_TOOLTIP_KEY;
+        var hoverable = previewContainer.GetOrAddComponent<SimpleHoverable>();
+        hoverable.addEffects = true;
+        previewContainer.AddComponent<UIElementTooltip>().enabledKey = Locale.SETTINGS_CHAR_HOVER_TOOLTIP_KEY;
     }
 
     private void BuildCharacterSelector(GameObject root)

@@ -97,6 +97,9 @@ public static class Locale
     public const string SETTINGS_CHAR_SEL_SETTINGS_KEY = $"{PREFIX_SETTINGS}/char_select";
     public const string SETTINGS_CHAR_SEL_TOOLTIP_KEY = $"{PREFIX_SETTINGS}/char_select__tooltip";
 
+    public const string SETTINGS_CHAR_HOVER_SETTINGS_KEY = $"{PREFIX_SETTINGS}/char_hover";
+    public const string SETTINGS_CHAR_HOVER_TOOLTIP_KEY = $"{SETTINGS_CHAR_HOVER_SETTINGS_KEY}__tooltip";
+
     #endregion
 
     #region Server Browser
