@@ -1,8 +1,6 @@
 using DV.Player;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Editor.Components.Player;
-using Multiplayer.Utils;
-using System.Collections.Generic;
 using UnityEngine;
 
 namespace Multiplayer.Components.Networking.Player;
@@ -103,10 +101,6 @@ public class NetworkedPlayer : MonoBehaviour
         targetHeadPitch = 0f;
         moveDir = Vector2.zero;
         targetMoveDir = Vector2.zero;
-
-        headTransform = gameObject.FindChildByName("Character1_Head").transform;
-        headBaseLocalPosition = selfTransform.InverseTransformPoint(headTransform.position);
-        headBaseLocalEuler = (Quaternion.Inverse(selfTransform.rotation) * headTransform.rotation).eulerAngles;
     }
 
     protected void OnDestroy()
@@ -122,18 +116,41 @@ public class NetworkedPlayer : MonoBehaviour
 
     public void ChangeModel(GameObject newModel)
     {
-        if (newModel == playerModel)
+        if (newModel == playerModel || newModel == null)
             return;
 
         if (playerModel != null)
         {
             animationHandler = null;
             DestroyImmediate(playerModel);
+
+            headTransform = null;
+            headBaseLocalPosition = Vector3.zero;
+            headBaseLocalEuler = Vector3.zero;
         }
 
         playerModel = Instantiate(newModel, transform);
         
         animationHandler = playerModel.GetComponent<AnimationHandler>();
+
+        var animator = playerModel.GetComponentInChildren<Animator>(true);
+        if (animator != null)
+        {
+            headTransform = animator.GetBoneTransform(HumanBodyBones.Head);
+            if (headTransform == null)
+            {
+                Multiplayer.LogWarning($"Head bone not found in model {newModel.name}. Tracking will not work");
+            }
+            else
+            {
+                headBaseLocalPosition = selfTransform.InverseTransformPoint(headTransform.position);
+                headBaseLocalEuler = (Quaternion.Inverse(selfTransform.rotation) * headTransform.rotation).eulerAngles;
+            }
+        }
+        else
+        {
+            Multiplayer.LogWarning($"Animator not found in model {newModel.name}. Tracking will not work");
+        }
     }
 
     public void SetPing(int ping)

@@ -67,15 +67,14 @@ public static class CustomFirstPersonControllerPatch
         float rotationY = PlayerManager.PlayerCamera.transform.eulerAngles.y;
 
         float lookPosition = 0;
+        float rawHeadPitch;
+
         if (!VRManager.IsVREnabled())
-        {
-            float rawPitch = fps.m_MouseLook.m_CameraTargetRot.eulerAngles.x;
-            lookPosition = rawPitch > 180f ? rawPitch - 360f : rawPitch;
-        }
+            rawHeadPitch = fps.m_MouseLook.m_CameraTargetRot.eulerAngles.x;
         else
-        {
-            // TODO: get head positon
-        }
+            rawHeadPitch = fps.m_Camera.transform.localEulerAngles.x;
+
+        lookPosition = rawHeadPitch > 180f ? rawHeadPitch - 360f : rawHeadPitch;
         bool lookPositionChanged = Math.Abs(lastLookPosition - lookPosition) > ROTATION_THRESHOLD;
 
         ushort carNetID = isOnCar ? car.GetNetId() : (ushort)0;
