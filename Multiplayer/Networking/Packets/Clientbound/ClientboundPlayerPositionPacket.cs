@@ -1,3 +1,4 @@
+using Multiplayer.Networking.Data;
 using UnityEngine;
 
 namespace Multiplayer.Networking.Packets.Clientbound;
@@ -9,9 +10,7 @@ public class ClientboundPlayerPositionPacket
     public Vector2 MoveDir { get; set; }
     public float RotationY { get; set; }
     public float LookPosition { get; set; }
-    public byte IsJumpingIsOnCar { get; set; }
+    public PlayerPostureFlags Posture { get; set; }
+    public bool IsOnCar { get; set; }
     public ushort CarID { get; set; }
-
-    public bool IsJumping => (IsJumpingIsOnCar & 1) != 0;
-    public bool IsOnCar => (IsJumpingIsOnCar & 2) != 0;
 }

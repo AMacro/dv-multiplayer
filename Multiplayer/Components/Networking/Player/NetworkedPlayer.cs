@@ -1,6 +1,7 @@
 using DV.Player;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Editor.Components.Player;
+using Multiplayer.Networking.Data;
 using UnityEngine;
 
 namespace Multiplayer.Components.Networking.Player;
@@ -24,7 +25,7 @@ public class NetworkedPlayer : MonoBehaviour
         // - the direction/rotation of the camera
         // - player loading status (maybe posistion hasn't settled yet)
         if (!VRManager.IsVREnabled())
-        { 
+        {
             itemAnchorOffset = PlayerManager.PlayerTransform.InverseTransformPoint(ItemPositionController.Instance.itemAnchor.position);
             Multiplayer.LogDebug(() => $"NetworkedPlayer.CaptureItemAnchorOffset() itemAnchorOffset: {itemAnchorOffset}");
         }
@@ -77,7 +78,8 @@ public class NetworkedPlayer : MonoBehaviour
     private float targetHeadPitch;
     private Vector2 moveDir;
     private Vector2 targetMoveDir;
-    
+    private PlayerPostureFlags currentPosture;
+
     private GameObject itemHeld;
     private Vector3? itemHoldPos;
     private Quaternion? itemHoldRot;
@@ -101,6 +103,7 @@ public class NetworkedPlayer : MonoBehaviour
         targetHeadPitch = 0f;
         moveDir = Vector2.zero;
         targetMoveDir = Vector2.zero;
+        currentPosture = PlayerPostureFlags.None;
     }
 
     protected void OnDestroy()
@@ -130,7 +133,7 @@ public class NetworkedPlayer : MonoBehaviour
         }
 
         playerModel = Instantiate(newModel, transform);
-        
+
         animationHandler = playerModel.GetComponent<AnimationHandler>();
 
         var animator = playerModel.GetComponentInChildren<Animator>(true);
@@ -151,6 +154,8 @@ public class NetworkedPlayer : MonoBehaviour
         {
             Multiplayer.LogWarning($"Animator not found in model {newModel.name}. Tracking will not work");
         }
+
+        SetPosture(currentPosture);
     }
 
     public void SetPing(int ping)
@@ -158,7 +163,7 @@ public class NetworkedPlayer : MonoBehaviour
         nameTag?.SetPing(ping);
         this.ping = ping;
     }
-    
+
     public int GetPing()
     {
         return ping;
@@ -227,18 +232,38 @@ public class NetworkedPlayer : MonoBehaviour
         headTransform.rotation = Quaternion.AngleAxis(currentHeadPitch, selfTransform.right) * baseHeadWorldRot;
     }
 
-    public void UpdatePosition(Vector3 position, Vector2 moveDir, float rotationY, float lookPosition, bool isJumping, bool movePacketIsOnCar)
+    public void UpdatePosition(Vector3 position, Vector2 moveDir, float rotationY, float lookPosition, PlayerPostureFlags posture, bool movePacketIsOnCar)
     {
         targetPos = position;
         targetMoveDir = moveDir;
 
-        animationHandler?.SetIsJumping(isJumping);
+        SetPosture(posture);
 
         if (IsOnCar != movePacketIsOnCar)
             return;
 
         targetRotation = Quaternion.Euler(0, rotationY, 0);
         targetHeadPitch = lookPosition;
+    }
+
+    private void SetPosture(PlayerPostureFlags posture)
+    {
+        currentPosture = posture;
+        // Swimming overrides other postures
+        bool isSwimming = posture.HasFlag(PlayerPostureFlags.Swim);
+        animationHandler?.SetIsSwimming(isSwimming);
+        if (isSwimming)
+        {
+            animationHandler?.SetIsCrouching(false);
+            animationHandler?.SetIsSitting(false);
+            animationHandler?.SetIsJumping(false);
+        }
+        else
+        {
+            animationHandler?.SetIsJumping(posture.HasFlag(PlayerPostureFlags.Jump));
+            animationHandler?.SetIsCrouching(posture.HasFlag(PlayerPostureFlags.Crouch));
+            animationHandler?.SetIsSitting(posture.HasFlag(PlayerPostureFlags.Sit));
+        }
     }
 
     public void UpdateCar(ushort netId)

@@ -1392,7 +1392,8 @@ public class NetworkServer : NetworkManager
             MoveDir = packet.MoveDir,
             RotationY = packet.RotationY,
             LookPosition = packet.LookPosition,
-            IsJumpingIsOnCar = packet.IsJumpingIsOnCar,
+            Posture = packet.Posture,
+            IsOnCar = packet.IsOnCar,
             CarID = packet.CarID
         };
 

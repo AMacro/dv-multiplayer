@@ -1,5 +1,6 @@
 using HarmonyLib;
 using Multiplayer.Components.Networking;
+using Multiplayer.Networking.Data;
 using Multiplayer.Utils;
 using System;
 using UnityEngine;
@@ -19,15 +20,10 @@ public static class CustomFirstPersonControllerPatch
     private static float lastRotationY;
     private static float lastLookPosition;
     private static bool sentFinalPosition;
-    private static bool wasCrouching;
-    private static bool wasSitting;
-    private static bool wasSwimming;
-    
+    private static PlayerPostureFlags lastPosture;
 
     private static bool isJumping;
     private static bool isOnCar;
-    private static bool isCrouching;
-    private static bool isSitting;
     private static float sitHeight;
     private static TrainCar car;
 
@@ -61,7 +57,7 @@ public static class CustomFirstPersonControllerPatch
 
     private static void OnTick(uint tick)
     {
-        if(UnloadWatcher.isUnloading)
+        if (UnloadWatcher.isUnloading)
             return;
 
         if (isOnCar && car == null)
@@ -84,42 +80,29 @@ public static class CustomFirstPersonControllerPatch
         lookPosition = rawHeadPitch > 180f ? rawHeadPitch - 360f : rawHeadPitch;
         bool lookPositionChanged = Math.Abs(lastLookPosition - lookPosition) > ROTATION_THRESHOLD;
 
-        if (fps.IsCrouching)
-        {
-            wasCrouching = true;
-            Multiplayer.LogDebug(() =>$"Crouch");
-        }
-        else if(wasCrouching)
-        {
-            wasCrouching = false;
-            Multiplayer.LogDebug(() => $"Stand from crouch");
-        }
+        PlayerPostureFlags posture = PlayerPostureFlags.None;
 
-        if (fps.provider.IsSitting)
+        if (!fps.underwater)
         {
-            wasSitting = true;
-            Multiplayer.LogDebug(() => $"Sit");
+            if (fps.IsCrouching)
+                posture |= PlayerPostureFlags.Crouch;
+            if (isJumping)
+                posture |= PlayerPostureFlags.Jump;
+            if (fps.provider.IsSitting)
+                posture |= PlayerPostureFlags.Sit;
         }
-        else if (wasSitting)
+        else
         {
-            wasSitting = false;
-            Multiplayer.LogDebug(() => $"Stand from sit");
-        }
-
-        if (fps.underwater)
-        {
-            wasSwimming = true;
-            Multiplayer.LogDebug(() => $"Swim");
-        }
-        else if (wasSwimming)
-        {
-            wasSwimming = false;
-            Multiplayer.LogDebug(() => $"Stand from swim");
+            posture = PlayerPostureFlags.Swim;
         }
 
         ushort carNetID = isOnCar ? car.GetNetId() : (ushort)0;
 
-        bool positionOrRotationChanged = lastOnCar != isOnCar || (isOnCar && (lastCarNetId != carNetID)) || Vector3.Distance(lastPosition, position) > 0 || Math.Abs(lastRotationY - rotationY) > ROTATION_THRESHOLD;
+        bool positionOrRotationChanged = lastPosture != posture ||
+                                        lastOnCar != isOnCar ||
+                                        (isOnCar && (lastCarNetId != carNetID)) ||
+                                        Vector3.Distance(lastPosition, position) > 0 ||
+                                        Math.Abs(lastRotationY - rotationY) > ROTATION_THRESHOLD;
 
         if (!positionOrRotationChanged && !lookPositionChanged && sentFinalPosition)
             return;
@@ -129,9 +112,10 @@ public static class CustomFirstPersonControllerPatch
         lastPosition = position;
         lastRotationY = rotationY;
         lastLookPosition = lookPosition;
+        lastPosture = posture;
         sentFinalPosition = !positionOrRotationChanged;
 
-        NetworkLifecycle.Instance.Client.SendPlayerPosition(lastPosition, PlayerManager.PlayerTransform.InverseTransformDirection(fps.m_MoveDir), lastRotationY, lookPosition, carNetID, isJumping, isOnCar, isJumping || sentFinalPosition);
+        NetworkLifecycle.Instance.Client.SendPlayerPosition(lastPosition, PlayerManager.PlayerTransform.InverseTransformDirection(fps.m_MoveDir), lastRotationY, lookPosition, carNetID, posture, isOnCar, isJumping || sentFinalPosition);
         isJumping = false;
     }
 
