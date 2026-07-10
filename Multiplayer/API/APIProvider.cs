@@ -12,7 +12,7 @@ namespace Multiplayer.API;
 
 public class APIProvider : IMultiplayerAPI
 {
-    internal const string BUILT_AGAINST_API_VERSION = "1.1.0.0";
+    internal const string BUILT_AGAINST_API_VERSION = "1.2.0.0";
 
     public string SupportedApiVersion => BUILT_AGAINST_API_VERSION;
 

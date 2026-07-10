@@ -4,8 +4,8 @@
         <TargetFramework>net48</TargetFramework>
         <LangVersion>latest</LangVersion>
         <RootNamespace>MPAPI</RootNamespace>
-        <InformationalVersion>1.1.0.0</InformationalVersion>
-        <Version>1.1.0.0</Version>
+        <InformationalVersion>1.2.0.0</InformationalVersion>
+        <Version>1.2.0.0</Version>
 
         <!-- NuGet Package Configuration -->
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>

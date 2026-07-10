@@ -12,6 +12,7 @@ using DV.ThingTypes;
 using JetBrains.Annotations;
 using LocoSim.Definitions;
 using LocoSim.Implementations;
+using MPAPI.Types;
 using Multiplayer.Components.Networking.Player;
 using Multiplayer.Networking.Data;
 using Multiplayer.Networking.Data.Train;
@@ -1010,6 +1011,15 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
                 if ((player.WorldPosition - transform.position).sqrMagnitude > CarLengthSq)
                 {
                     NetworkLifecycle.Instance.Server.LogWarning($"Player \"{player.Username}\" attempted to gain authority for a control on car {CurrentID}, but they are too far away!");
+                    NetworkLifecycle.Instance.Server.SendTrainControlAuthorityUpdate(NetId, portNetId, ControlAuthorityState.Denied, player);
+                    NetworkLifecycle.Instance.Server.SendTrainControlAuthorityUpdate(NetId, portNetId, ControlAuthorityState.Released, player);
+                    return;
+                }
+
+                // Consult any per-player permission checks registered by external mods before granting.
+                if (!NetworkLifecycle.Instance.Server.CheckPermission(player, PermissionAction.TrainControlAuthority, TrainCar))
+                {
+                    NetworkLifecycle.Instance.Server.LogWarning($"Player \"{player.Username}\" was denied authority for a control on car {CurrentID} by a permission check.");
                     NetworkLifecycle.Instance.Server.SendTrainControlAuthorityUpdate(NetId, portNetId, ControlAuthorityState.Denied, player);
                     NetworkLifecycle.Instance.Server.SendTrainControlAuthorityUpdate(NetId, portNetId, ControlAuthorityState.Released, player);
                     return;

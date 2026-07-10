@@ -12,6 +12,7 @@ using DV.WeatherSystem;
 using Humanizer;
 using LiteNetLib;
 using LiteNetLib.Utils;
+using MPAPI.Interfaces;
 using MPAPI.Interfaces.Packets;
 using MPAPI.Types;
 using Multiplayer.API;
@@ -93,6 +94,9 @@ public class NetworkServer : NetworkManager
 
     private readonly ChatManager _chatManager = new();
     public ChatManager ChatManager => _chatManager;
+
+    // Permission checks registered by external mods, consulted before granting authoritative actions.
+    private readonly List<PermissionCheckDelegate> permissionChecks = [];
 
     private uint lastTick;
 
@@ -302,6 +306,47 @@ public class NetworkServer : NetworkManager
         }
         return wrapper;
     }
+
+    #region Permissions
+    public void RegisterPermissionCheck(PermissionCheckDelegate check)
+    {
+        if (check != null && !permissionChecks.Contains(check))
+            permissionChecks.Add(check);
+    }
+
+    public void UnregisterPermissionCheck(PermissionCheckDelegate check)
+    {
+        permissionChecks.Remove(check);
+    }
+
+    /// <summary>
+    /// Consults every registered permission check for the given action. Returns <c>true</c> if the action
+    /// is permitted (no checks registered, or all checks allow it); <c>false</c> if any check vetoes it.
+    /// A throwing check is treated as a veto (fail-closed) and logged.
+    /// </summary>
+    public bool CheckPermission(ServerPlayer player, PermissionAction action, TrainCar target)
+    {
+        if (permissionChecks.Count == 0)
+            return true;
+
+        var wrapper = GetWrapper(player);
+        foreach (var check in permissionChecks)
+        {
+            try
+            {
+                if (!check(wrapper, action, target))
+                    return false;
+            }
+            catch (Exception e)
+            {
+                LogError($"Permission check threw for player \"{player?.Username}\" action {action}; denying. {e}");
+                return false;
+            }
+        }
+
+        return true;
+    }
+    #endregion
 
     #region Net Events
 

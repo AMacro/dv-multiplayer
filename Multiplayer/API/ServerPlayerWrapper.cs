@@ -20,6 +20,8 @@ public class ServerPlayerWrapper : IPlayer
 
     public byte PlayerId => _serverPlayer.PlayerId;
 
+    public System.Guid UniqueId => _serverPlayer.Guid;
+
     public string Username
     {
         get => _serverPlayer.Username;

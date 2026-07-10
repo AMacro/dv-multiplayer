@@ -103,6 +103,18 @@ public class ServerAPIProvider : IServer
     }
     #endregion
 
+    #region Permissions
+    public void RegisterPermissionCheck(PermissionCheckDelegate check)
+    {
+        server.RegisterPermissionCheck(check);
+    }
+
+    public void UnregisterPermissionCheck(PermissionCheckDelegate check)
+    {
+        server.UnregisterPermissionCheck(check);
+    }
+    #endregion
+
     #region Chat
     public void SendServerChatMessage(string message, IPlayer excludePlayer = null)
     {

@@ -18,6 +18,19 @@ namespace MPAPI.Interfaces
         public byte PlayerId { get; }
 
         /// <summary>
+        /// Gets the stable, persistent unique identifier for this player.
+        /// </summary>
+        /// <remarks>
+        /// Unlike <see cref="PlayerId"/> (which is reassigned as players join and leave), this value is
+        /// stable for a given player across reconnects and sessions, making it a suitable key for
+        /// persisting or looking up per-player state.
+        /// Only the server tracks player identities, so this is populated on <see cref="IServer"/>-side
+        /// player objects. On a pure client, remote players are not identity-tracked and this returns
+        /// <see cref="System.Guid.Empty"/>.
+        /// </remarks>
+        Guid UniqueId { get; }
+
+        /// <summary>
         /// Gets the username of the player.
         /// </summary>
         public string Username { get; }

@@ -22,6 +22,15 @@ public delegate void ChatCommandCallback(string message, IPlayer sender);
 public delegate bool ChatFilterDelegate(ref string message, IPlayer sender);
 
 /// <summary>
+/// Represents a method that decides whether a player is permitted to perform a server-authoritative action.
+/// </summary>
+/// <param name="player">The player attempting the action.</param>
+/// <param name="action">The action being attempted.</param>
+/// <param name="target">The train car the action targets, or <c>null</c> if not applicable.</param>
+/// <returns><c>true</c> to allow the action; <c>false</c> to veto it.</returns>
+public delegate bool PermissionCheckDelegate(IPlayer player, PermissionAction action, TrainCar target);
+
+/// <summary>
 /// Interface for interacting with Multiplayer mod server instances.
 /// </summary>
 public interface IServer
@@ -198,5 +207,26 @@ public interface IServer
     /// This method is experimental and may be replaced in future.
     /// </remarks>
     void SetPlayerCrewName(IPlayer player, string crewName);
+    #endregion
+
+    #region Permissions
+    /// <summary>
+    /// Registers a permission check that the server consults <b>before</b> granting a player a
+    /// server-authoritative action (see <see cref="PermissionAction"/>).
+    /// </summary>
+    /// <param name="check">The check to register.</param>
+    /// <remarks>
+    /// All registered checks are consulted; the action is only permitted if <b>every</b> check returns
+    /// <c>true</c>. A single check returning <c>false</c> vetoes the action, and the base mod denies the
+    /// request exactly as it would for a failed built-in validation. Checks run on the server tick thread
+    /// and should be fast and side-effect free. If no checks are registered, base-mod behaviour is unchanged.
+    /// </remarks>
+    void RegisterPermissionCheck(PermissionCheckDelegate check);
+
+    /// <summary>
+    /// Unregisters a previously registered permission check.
+    /// </summary>
+    /// <param name="check">The check to remove.</param>
+    void UnregisterPermissionCheck(PermissionCheckDelegate check);
     #endregion
 }
