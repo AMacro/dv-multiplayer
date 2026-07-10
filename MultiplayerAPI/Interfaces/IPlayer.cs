@@ -24,11 +24,36 @@ namespace MPAPI.Interfaces
         /// Unlike <see cref="PlayerId"/> (which is reassigned as players join and leave), this value is
         /// stable for a given player across reconnects and sessions, making it a suitable key for
         /// persisting or looking up per-player state.
+        /// <para>
+        /// On a server that requires authentication (the default), this is derived from the player's
+        /// platform account, after the server has verified with that platform that the player owns it.
+        /// A player cannot present an identity that is not theirs, so this value is safe to key
+        /// security-sensitive state on.
+        /// </para>
+        /// <para>
+        /// A host may switch authentication off, for LAN or non-Steam play. On such a server this value
+        /// is whatever the client asserted about itself and proves nothing: any client can claim any
+        /// identity. Consumers that key sensitive state on it should decide whether to trust an
+        /// unauthenticated server rather than assume this value is meaningful.
+        /// </para>
         /// Only the server tracks player identities, so this is populated on <see cref="IServer"/>-side
         /// player objects. On a pure client, remote players are not identity-tracked and this returns
         /// <see cref="System.Guid.Empty"/>.
         /// </remarks>
         Guid UniqueId { get; }
+
+        /// <summary>
+        /// Gets a value indicating whether this player proved ownership of their <see cref="UniqueId"/>.
+        /// </summary>
+        /// <remarks>
+        /// <c>true</c> when the server verified the player's platform account with that platform at
+        /// login. <c>false</c> when the host has authentication switched off, in which case
+        /// <see cref="UniqueId"/> is self-asserted and interchangeable between clients.
+        /// Consumers that persist per-player state, grant privileges, or otherwise treat identity as a
+        /// security boundary should refuse to act when this is <c>false</c>.
+        /// Always <c>false</c> on <see cref="IClient"/>-side player objects, which do not track identity.
+        /// </remarks>
+        bool IsAuthenticated { get; }
 
         /// <summary>
         /// Gets the username of the player.

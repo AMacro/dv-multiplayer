@@ -22,6 +22,9 @@ public class ServerPlayerWrapper : IPlayer
 
     public System.Guid UniqueId => _serverPlayer.Guid;
 
+    // A verified platform account is the only thing that makes UniqueId a proof rather than a claim.
+    public bool IsAuthenticated => _serverPlayer.SteamId != 0;
+
     public string Username
     {
         get => _serverPlayer.Username;

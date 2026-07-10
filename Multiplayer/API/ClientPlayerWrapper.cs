@@ -18,6 +18,7 @@ public class ClientPlayerWrapper : IPlayer
     public byte PlayerId => _networkedPlayer.PlayerId;
     // Clients don't track remote players' stable identity; only the server does (see IPlayer.UniqueId).
     public System.Guid UniqueId => System.Guid.Empty;
+    public bool IsAuthenticated => false;
     public string Username
     {
         get => _networkedPlayer.Username;

@@ -24,6 +24,7 @@ using Multiplayer.Components.Networking.Train;
 using Multiplayer.Components.Networking.UI;
 using Multiplayer.Components.Networking.World;
 using Multiplayer.Components.SaveGame;
+using Multiplayer.Networking.Auth;
 using Multiplayer.Networking.Data;
 using Multiplayer.Networking.Data.Items;
 using Multiplayer.Networking.Data.Train;
@@ -110,10 +111,21 @@ public class NetworkClient : NetworkManager
         //netManager.Start();
         base.Start();
 
+        // The server verifies this ticket with Steam before granting us an identity. If we cannot mint
+        // one we still attempt the login: the server decides whether it will accept an unverified player.
+        if (!ClientAuthTicket.TryAcquire(out byte[] authTicket, out ulong steamId))
+        {
+            authTicket = [];
+            steamId = 0;
+            Log("No Steam authentication ticket available; the server may reject this login");
+        }
+
         ServerboundClientLoginPacket serverboundClientLoginPacket = new()
         {
             Username = this.Username,
             Guid = Multiplayer.Settings.GetGuid().ToByteArray(),
+            SteamId = steamId,
+            AuthTicket = authTicket,
             Password = password,
             BuildVersion = MainMenuControllerPatch.MenuProvider.BuildVersionString,
             Mods = ModCompatibilityManager.Instance.GetLocalMods()
@@ -132,6 +144,8 @@ public class NetworkClient : NetworkManager
     public override void Stop()
     {
         Log("Stopping client");
+        ClientAuthTicket.Release();
+
         if (!isAlsoHost && originalSession != null)
         {
             LogDebug(() => $"NetworkClient.Stop() destroying session... Original session is Null: {originalSession == null}");

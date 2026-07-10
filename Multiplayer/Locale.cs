@@ -173,6 +173,15 @@ public static class Locale
     public static string DISCONN_REASON__FULL_SERVER => Get(DISCONN_REASON__FULL_SERVER_KEY);
     public const string DISCONN_REASON__FULL_SERVER_KEY = $"{PREFIX_DISCONN_REASON}/full_server";
 
+    public static string DISCONN_REASON__NOT_AUTHENTICATED => Get(DISCONN_REASON__NOT_AUTHENTICATED_KEY);
+    public const string DISCONN_REASON__NOT_AUTHENTICATED_KEY = $"{PREFIX_DISCONN_REASON}/not_authenticated";
+
+    public static string DISCONN_REASON__ALREADY_CONNECTED => Get(DISCONN_REASON__ALREADY_CONNECTED_KEY);
+    public const string DISCONN_REASON__ALREADY_CONNECTED_KEY = $"{PREFIX_DISCONN_REASON}/already_connected";
+
+    public static string DISCONN_REASON__AUTH_UNAVAILABLE => Get(DISCONN_REASON__AUTH_UNAVAILABLE_KEY);
+    public const string DISCONN_REASON__AUTH_UNAVAILABLE_KEY = $"{PREFIX_DISCONN_REASON}/auth_unavailable";
+
     public static string DISCONN_REASON__MODS => Get(DISCONN_REASON__MODS_KEY);
     public const string DISCONN_REASON__MODS_KEY = $"{PREFIX_DISCONN_REASON}/mods";
 

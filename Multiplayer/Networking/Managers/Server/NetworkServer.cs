@@ -1,5 +1,6 @@
 using DV;
 using DV.Customization;
+using DV.Platform.Steam;
 using DV.Customization.Paint;
 using DV.Garages;
 using DV.InventorySystem;
@@ -20,6 +21,7 @@ using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.Jobs;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Components.Networking.World;
+using Multiplayer.Networking.Auth;
 using Multiplayer.Networking.Data;
 using Multiplayer.Networking.Data.Items;
 using Multiplayer.Networking.Data.Jobs;
@@ -40,6 +42,7 @@ using Multiplayer.Networking.Packets.Unconnected;
 using Multiplayer.Networking.TransportLayers;
 using Multiplayer.Patches.MainMenu;
 using Multiplayer.Utils;
+using Steamworks;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -98,6 +101,9 @@ public class NetworkServer : NetworkManager
     // Permission checks registered by external mods, consulted before granting authoritative actions.
     private readonly List<PermissionCheckDelegate> permissionChecks = [];
 
+    // Verifies platform authentication tickets presented at login.
+    private readonly SteamSessionValidator authValidator = new();
+
     private uint lastTick;
 
     public NetworkServer(IDifficulty difficulty, Settings settings, bool singlePlayer, LobbyServerData serverData) : base(settings)
@@ -153,6 +159,8 @@ public class NetworkServer : NetworkManager
             player.Dispose();
 
         NetworkLifecycle.Instance.OnTick -= OnTick;
+
+        authValidator.Dispose();
 
         base.Stop();
     }
@@ -277,6 +285,10 @@ public class NetworkServer : NetworkManager
 
     private void OnTick(uint tick)
     {
+        // Before the IsLoaded gate: players are verified while the world is still streaming in, and a
+        // pending session that Steam never answers for must still time out.
+        authValidator.Tick();
+
         if (!IsLoaded)
             return;
 
@@ -359,9 +371,16 @@ public class NetworkServer : NetworkManager
     {
         LogDebug(() => $"OnPeerDisconnected({peer.Id})");
         if (!peerToPlayer.TryGetValue(peer, out ServerPlayer player))
+        {
+            // A peer that never finished logging in, e.g. one that dropped while being verified. It owns
+            // no player state, so there is nothing to tear down beyond its pending Steam session.
             LogWarning($"Peer {peer.GetType()}, peerId: {peer.Id} disconnected but no player found");
-        else
-            Log($"Player {player?.Username} disconnected: {disconnectReason}");
+            authValidator.EndByPeer(peer);
+            return;
+        }
+
+        Log($"Player {player.Username} disconnected: {disconnectReason}");
+        authValidator.End(player.SteamId);
 
         if (WorldStreamingInit.isLoaded)
             SaveGameManager.Instance.UpdateInternalData();
@@ -1140,7 +1159,9 @@ public class NetworkServer : NetworkManager
             return;
         }
 
-        if (PlayerCount >= Multiplayer.Settings.MaxPlayers || IsSinglePlayer && PlayerCount >= 1)
+        // Players still being verified hold a slot; they are not in PlayerCount yet.
+        int occupiedSlots = PlayerCount + authValidator.PendingCount;
+        if (occupiedSlots >= Multiplayer.Settings.MaxPlayers || IsSinglePlayer && occupiedSlots >= 1)
         {
             LogWarning("Denied login due to server being full!");
             ClientboundLoginResponsePacket denyPacket = new()
@@ -1188,22 +1209,91 @@ public class NetworkServer : NetworkManager
             return;
         }
 
+        if (IsSinglePlayer || !Multiplayer.Settings.RequireSteamAuth)
+        {
+            // Nothing to verify against, so the client's self-asserted guid is all we have.
+            CompleteLogin(request.Accept(), overrideUsername, packet.Username, guid, 0);
+            return;
+        }
+
+        if (!DVSteamworks.Success || !SteamClient.IsValid)
+        {
+            LogError("Steam is unavailable, so logins cannot be verified. Turn off \"Require Steam authentication\" to host without it.");
+            request.Reject(WritePacket(new ClientboundLoginResponsePacket { ReasonKey = Locale.DISCONN_REASON__AUTH_UNAVAILABLE_KEY }));
+            return;
+        }
+
+        if (packet.SteamId == 0 || packet.AuthTicket == null || packet.AuthTicket.Length == 0)
+        {
+            LogWarning($"Denied login for {packet.Username}: no authentication ticket was supplied");
+            request.Reject(WritePacket(new ClientboundLoginResponsePacket { ReasonKey = Locale.DISCONN_REASON__NOT_AUTHENTICATED_KEY }));
+            return;
+        }
+
+        // The identity is derived from the account, never from anything the client chose for itself.
+        Guid authenticatedGuid = PlayerIdentity.FromSteamId(packet.SteamId);
+
+        // Steam will not verify a ticket an account issued to itself, so the host cannot authenticate its
+        // own local client. Only a process on the host's machine can present the host's SteamID over
+        // loopback, and that machine is already fully trusted.
+        if (packet.SteamId == SteamClient.SteamId.Value && IPAddress.IsLoopback(request.RemoteEndPoint.Address))
+        {
+            CompleteLogin(request.Accept(), overrideUsername, packet.Username, authenticatedGuid, packet.SteamId);
+            return;
+        }
+
+        if (ServerPlayers.Any(existing => existing.SteamId == packet.SteamId))
+        {
+            LogWarning($"Denied login for {packet.Username}: SteamID {packet.SteamId} is already connected");
+            request.Reject(WritePacket(new ClientboundLoginResponsePacket { ReasonKey = Locale.DISCONN_REASON__ALREADY_CONNECTED_KEY }));
+            return;
+        }
+
+        // Verification is a round trip to Steam. Accept the peer but grant it nothing: no ServerPlayer
+        // exists until the ticket checks out, so every packet handler will refuse to serve it.
+        ITransportPeer pendingPeer = request.Accept();
+        string pendingUsername = packet.Username;
+        string pendingOverrideUsername = overrideUsername;
+        ulong pendingSteamId = packet.SteamId;
+
+        bool started = authValidator.TryBegin(
+            pendingPeer,
+            pendingSteamId,
+            packet.AuthTicket,
+            () => CompleteLogin(pendingPeer, pendingOverrideUsername, pendingUsername, authenticatedGuid, pendingSteamId),
+            reason => RejectUnauthenticated(pendingPeer, pendingUsername, reason));
+
+        if (!started)
+            RejectUnauthenticated(pendingPeer, pendingUsername, "Steam rejected the ticket");
+    }
+
+    private void RejectUnauthenticated(ITransportPeer peer, string username, string reason)
+    {
+        LogWarning($"Denied login for {username}: {reason}");
+        peer.Disconnect(WritePacket(new ClientboundLoginResponsePacket { ReasonKey = Locale.DISCONN_REASON__NOT_AUTHENTICATED_KEY }));
+    }
+
+    private void CompleteLogin(ITransportPeer peer, string overrideUsername, string originalUsername, Guid guid, ulong steamId)
+    {
         // Unpause physics
         if (AppUtil.Instance.IsTimePaused)
             AppUtil.Instance.RequestSystemOnValueChanged(0.0f);
-
-        ITransportPeer peer = request.Accept();
 
         ServerPlayer serverPlayer = new
         (
             peer,
             overrideUsername,
-            packet.Username,
+            originalUsername,
             guid
-        );
+        )
+        {
+            SteamId = steamId
+        };
 
         serverPlayers.Add(serverPlayer.PlayerId, serverPlayer);
         peerToPlayer.Add(peer, serverPlayer);
+
+        Log($"{serverPlayer.Username} logged in as {guid}{(steamId != 0 ? $" (SteamID {steamId})" : " (unauthenticated)")}");
 
         ClientboundLoginResponsePacket acceptPacket = new()
         {

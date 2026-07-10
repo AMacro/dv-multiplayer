@@ -39,6 +39,13 @@ public class ServerPlayer : IDisposable
     public string Username { get; set; }
     public string OriginalUsername { get; set; }
     public Guid Guid { get; set; }
+
+    /// <summary>
+    ///     The platform account this player proved ownership of at login, or 0 when the server does not
+    ///     require authentication. <see cref="Guid" /> is derived from it.
+    /// </summary>
+    public ulong SteamId { get; set; }
+
     public Vector3 RawPosition { get; set; }
     public float RawRotationY { get; set; }
     public ushort CarId { get; set; }

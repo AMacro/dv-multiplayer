@@ -48,6 +48,8 @@ public class Settings : UnityModManager.ModSettings, IDrawable
     public int MaxPlayers = 4;
     [Draw("Port", Tooltip = "The port that your server will listen on. You generally don't need to change this.")]
     public int Port = 7777;
+    [Draw("Require Steam authentication", Tooltip = "Verify each player's Steam account as they join, so nobody can join as somebody else. Turn this off only for trusted or non-Steam players: when it is off, players choose their own identity and can impersonate each other.")]
+    public bool RequireSteamAuth = true;
     [Draw("Details", Tooltip = "Details shown in the server browser.")]
     public string Details = "";
 
