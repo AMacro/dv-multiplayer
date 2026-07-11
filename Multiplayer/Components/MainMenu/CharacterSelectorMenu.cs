@@ -111,6 +111,7 @@ public class CharacterSelectorMenu : MonoBehaviour
         }
 
         characterSelector.SetSelectedIndex(indexFromSettings);
+        ShowModel(indexFromSettings);
     }
 
     protected void OnDisable()

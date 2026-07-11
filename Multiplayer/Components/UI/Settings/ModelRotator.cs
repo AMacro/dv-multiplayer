@@ -32,14 +32,11 @@ public class ModelRotator : MonoBehaviour, IPointerDownHandler, IBeginDragHandle
         isDragging = true;
         rotationVelocity = 0f; // kill any existing spin when a new drag starts
         lastWorldPosition = GetPointerWorldPosition(eventData);
-
-        Multiplayer.LogDebug(() => $"ModelRotator.OnPointerDown() lastWorldPosition: {lastWorldPosition}");
     }
 
     // Mouse and VR mode
     public void OnDrag(PointerEventData eventData)
     {
-        Multiplayer.LogDebug(() => $"ModelRotator.OnDrag() eventData.position: {eventData.position}, isDragging: {isDragging}, target: {target?.name}");
         if (!isDragging || target == null)
             return;
 
@@ -67,7 +64,6 @@ public class ModelRotator : MonoBehaviour, IPointerDownHandler, IBeginDragHandle
     // VR Mode
     public void OnBeginDrag(PointerEventData eventData)
     {
-        Multiplayer.LogDebug(() => $"ModelRotator.OnBeginDrag() eventData.position: {eventData.position}, isDragging: {isDragging}, target: {target?.name}");
         isDragging = true;
         rotationVelocity = 0f; // kill any existing spin when a new drag starts
         lastWorldPosition = GetPointerWorldPosition(eventData);
@@ -76,24 +72,19 @@ public class ModelRotator : MonoBehaviour, IPointerDownHandler, IBeginDragHandle
     // Mouse mode, also triggered in VR prior to OnBeginDrag
     public void OnPointerUp(PointerEventData eventData)
     {
-        Multiplayer.LogDebug(() => $"ModelRotator.OnPointerUp() eventData.position: {eventData.position}, isDragging: {isDragging}, target: {target?.name}");
         isDragging = false;
     }
 
     // VR handling
     public void OnEndDrag(PointerEventData eventData)
     {
-        Multiplayer.LogDebug(() => $"ModelRotator.OnEndDrag() eventData.position: {eventData.position}, isDragging: {isDragging}, target: {target?.name}");
         isDragging = false;
     }
 
     protected void Update()
     {
-        Multiplayer.LogDebug(() => $"ModelRotator.Update() isDragging: {isDragging}, rotationVelocity: {rotationVelocity}, target: {target?.name}");
-
         if (isDragging || target == null || Mathf.Approximately(rotationVelocity, 0f))
             return;
-
 
         // Apply inertia spin and decay it over time
         target.Rotate(Vector3.up, rotationVelocity * Time.unscaledDeltaTime, Space.World);
