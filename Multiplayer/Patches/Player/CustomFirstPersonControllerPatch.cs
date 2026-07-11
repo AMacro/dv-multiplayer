@@ -20,6 +20,7 @@ public static class CustomFirstPersonControllerPatch
     private static float lastRotationY;
     private static float lastLookPosition;
     private static bool sentFinalPosition;
+    private static LocomotionInputWrapper.LeanDirection lean;
     private static PlayerPostureFlags lastPosture;
 
     private static bool isJumping;
@@ -36,6 +37,11 @@ public static class CustomFirstPersonControllerPatch
         car = PlayerManager.Car;
         NetworkLifecycle.Instance.OnTick += OnTick;
         PlayerManager.CarChanged += OnCarChanged;
+
+        if (fps.Locomotion != null)
+        {
+            fps.Locomotion.LeanDirectionChanged += LeanDirectionChanged;
+        }
     }
 
     [HarmonyPostfix]
@@ -47,6 +53,16 @@ public static class CustomFirstPersonControllerPatch
 
         NetworkLifecycle.Instance.OnTick -= OnTick;
         PlayerManager.CarChanged -= OnCarChanged;
+
+        if (fps.Locomotion != null)
+        {
+            fps.Locomotion.LeanDirectionChanged -= LeanDirectionChanged;
+        }
+    }
+
+    private static void LeanDirectionChanged(LocomotionInputWrapper.LeanDirection leanDirection)
+    {
+        lean = leanDirection;
     }
 
     private static void OnCarChanged(TrainCar trainCar)
@@ -90,6 +106,11 @@ public static class CustomFirstPersonControllerPatch
                 posture |= PlayerPostureFlags.Jump;
             if (fps.provider.IsSitting)
                 posture |= PlayerPostureFlags.Sit;
+            
+            if (lean == LocomotionInputWrapper.LeanDirection.LeaningLeft)
+                posture |= PlayerPostureFlags.LeanLeft;
+            else if (lean == LocomotionInputWrapper.LeanDirection.LeaningRight)
+                posture |= PlayerPostureFlags.LeanRight;
         }
         else
         {

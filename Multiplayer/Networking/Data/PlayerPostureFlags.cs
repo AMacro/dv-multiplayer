@@ -10,5 +10,7 @@ namespace Multiplayer.Networking.Data
         Sit = 2,
         Swim = 4,
         Jump = 8,
+        LeanLeft = 16,
+        LeanRight = 32,
     }
 }

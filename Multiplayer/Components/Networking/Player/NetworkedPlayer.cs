@@ -34,6 +34,9 @@ public class NetworkedPlayer : MonoBehaviour
     #endregion
 
     private const float LERP_SPEED = 5.0f;
+    private const float MAX_LEAN_ANGLE = 50f;
+    private const float LEAN_SMOOTHING_DURATION = 0.1f;
+    private const float HEAD_LEAN_MULTIPLIER = 1.5f;
 
     public byte PlayerId { get; set; }
     public string CrewName { get; set; }
@@ -68,17 +71,29 @@ public class NetworkedPlayer : MonoBehaviour
     internal bool IsOnCar { get; private set; }
     internal TrainCar OccupiedCar { get; private set; }
 
+
     private Transform selfTransform;
+    private PlayerPostureFlags currentPosture;
+
+    // Head tracking
     private Transform headTransform;
-    private Vector3 headBaseLocalPosition;
-    private Vector3 headBaseLocalEuler;
-    private Vector3 targetPos;
-    private Quaternion targetRotation;
+    private Quaternion headBaseWorldRotation = Quaternion.identity;
     private float currentHeadPitch;
     private float targetHeadPitch;
+
+    // Spine tracking
+    private Transform spineTransform;
+    private Quaternion spineBaseWorldRotation = Quaternion.identity;
+
+    // Player movement and rotation
+    private Vector3 targetPos;
+    private Quaternion targetRotation;
     private Vector2 moveDir;
     private Vector2 targetMoveDir;
-    private PlayerPostureFlags currentPosture;
+
+    private float currentLeanAngle;
+    private float angleSmoothRefVel;
+
 
     private GameObject itemHeld;
     private Vector3? itemHoldPos;
@@ -143,17 +158,30 @@ public class NetworkedPlayer : MonoBehaviour
             if (headTransform == null)
             {
                 Multiplayer.LogWarning($"Head bone not found in model {newModel.name}. Tracking will not work");
-            }
+
+            spineTransform = animator.GetBoneTransform(HumanBodyBones.Spine);
             else
             {
                 headBaseLocalPosition = selfTransform.InverseTransformPoint(headTransform.position);
                 headBaseLocalEuler = (Quaternion.Inverse(selfTransform.rotation) * headTransform.rotation).eulerAngles;
             }
+                hipsBaseLocalPosition = hipsTransform.localPosition;
         }
         else
         {
             Multiplayer.LogWarning($"Animator not found in model {newModel.name}. Tracking will not work");
         }
+
+        if (spineTransform == null)
+        {
+            // Fall back to using the model's transform if the spine bone is not found
+            spineTransform = playerModel.transform;
+        }
+
+        spineBaseWorldRotation = Quaternion.Inverse(selfTransform.rotation) * spineTransform.rotation;
+
+        if (headTransform != null)
+            headBaseWorldRotation = Quaternion.Inverse(selfTransform.rotation) * headTransform.rotation;
 
         SetPosture(currentPosture);
     }
@@ -221,15 +249,36 @@ public class NetworkedPlayer : MonoBehaviour
     {
         // Runs after Animator has applied updates
 
+        float targetLeanAngle = 0f;
+
+        if (currentPosture.HasFlag(PlayerPostureFlags.LeanLeft))
+            targetLeanAngle = MAX_LEAN_ANGLE;
+        else if (currentPosture.HasFlag(PlayerPostureFlags.LeanRight))
+            targetLeanAngle = -MAX_LEAN_ANGLE;
+
+        currentLeanAngle = Mathf.SmoothDamp(currentLeanAngle, targetLeanAngle, ref angleSmoothRefVel, LEAN_SMOOTHING_DURATION);
+
+        if (spineTransform != null)
+        {
+            // 1. Reconstruct the base animated posture for this model in world space
+            Quaternion currentModelSpineBase = selfTransform.rotation * spineBaseWorldRotation;
+
+            // 2. Define standard look/lean vectors using the main uniform player root
+            // Side lean is always spinning around the root's global FORWARD axis
+            Quaternion leanOffset = Quaternion.AngleAxis(currentLeanAngle, selfTransform.forward);
+
+            // 3. Directly assign the uniform world rotation 
+            spineTransform.rotation = leanOffset * currentModelSpineBase;
+        }
+
         if (headTransform == null)
             return;
 
-        // Base orientation: T-pose head rotation expressed in world space from the player root
-        Quaternion baseHeadWorldRot = selfTransform.rotation * Quaternion.Euler(headBaseLocalEuler);
+        Quaternion currentModelHeadBase = selfTransform.rotation * headBaseWorldRotation;
+        Quaternion pitchRotation = Quaternion.AngleAxis(currentHeadPitch, selfTransform.right);
+        Quaternion leanTiltRotation = Quaternion.AngleAxis(currentLeanAngle * HEAD_LEAN_MULTIPLIER, selfTransform.forward);
 
-        // AngleAxis around selfTransform.right unambiguously rotates the head up/down
-        // regardless of how euler angles decompose for this particular bone
-        headTransform.rotation = Quaternion.AngleAxis(currentHeadPitch, selfTransform.right) * baseHeadWorldRot;
+        headTransform.rotation = pitchRotation * leanTiltRotation * currentModelHeadBase;
     }
 
     public void UpdatePosition(Vector3 position, Vector2 moveDir, float rotationY, float lookPosition, PlayerPostureFlags posture, bool movePacketIsOnCar)
