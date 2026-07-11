@@ -93,6 +93,7 @@ public class NetworkedPlayer : MonoBehaviour
 
     private float currentLeanAngle;
     private float angleSmoothRefVel;
+    private float currentSitHeight;
 
 
     private GameObject itemHeld;
@@ -119,6 +120,8 @@ public class NetworkedPlayer : MonoBehaviour
         moveDir = Vector2.zero;
         targetMoveDir = Vector2.zero;
         currentPosture = PlayerPostureFlags.None;
+        currentSitHeight = Mathf.Clamp(CustomFirstPersonController.PLAYER_SITTING_HEIGHT, CustomFirstPersonController.MIN_PLAYER_SITTING_HEIGHT, CustomFirstPersonController.MAX_PLAYER_SITTING_HEIGHT);
+        currentSitHeight = Mathf.InverseLerp(CustomFirstPersonController.MIN_PLAYER_SITTING_HEIGHT, CustomFirstPersonController.MAX_PLAYER_SITTING_HEIGHT, currentSitHeight); ;
     }
 
     protected void OnDestroy()
@@ -143,8 +146,6 @@ public class NetworkedPlayer : MonoBehaviour
             DestroyImmediate(playerModel);
 
             headTransform = null;
-            headBaseLocalPosition = Vector3.zero;
-            headBaseLocalEuler = Vector3.zero;
         }
 
         playerModel = Instantiate(newModel, transform);
@@ -156,16 +157,9 @@ public class NetworkedPlayer : MonoBehaviour
         {
             headTransform = animator.GetBoneTransform(HumanBodyBones.Head);
             if (headTransform == null)
-            {
                 Multiplayer.LogWarning($"Head bone not found in model {newModel.name}. Tracking will not work");
 
             spineTransform = animator.GetBoneTransform(HumanBodyBones.Spine);
-            else
-            {
-                headBaseLocalPosition = selfTransform.InverseTransformPoint(headTransform.position);
-                headBaseLocalEuler = (Quaternion.Inverse(selfTransform.rotation) * headTransform.rotation).eulerAngles;
-            }
-                hipsBaseLocalPosition = hipsTransform.localPosition;
         }
         else
         {
@@ -208,6 +202,7 @@ public class NetworkedPlayer : MonoBehaviour
 
         moveDir = Vector2.Lerp(moveDir, targetMoveDir, t);
         animationHandler?.SetMoveDir(moveDir);
+        animationHandler?.SetSitHeight(currentSitHeight);
 
         if (IsOnCar && OccupiedCar != null)
         {
@@ -281,10 +276,12 @@ public class NetworkedPlayer : MonoBehaviour
         headTransform.rotation = pitchRotation * leanTiltRotation * currentModelHeadBase;
     }
 
-    public void UpdatePosition(Vector3 position, Vector2 moveDir, float rotationY, float lookPosition, PlayerPostureFlags posture, bool movePacketIsOnCar)
+    public void UpdatePosition(Vector3 position, Vector2 moveDir, float rotationY, float lookPosition, float sitHeight, PlayerPostureFlags posture, bool movePacketIsOnCar)
     {
         targetPos = position;
         targetMoveDir = moveDir;
+
+        currentSitHeight = Mathf.Clamp01(sitHeight);
 
         SetPosture(posture);
 

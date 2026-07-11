@@ -12,4 +12,5 @@ public class ClientboundPlayerJoinedPacket
     public Vector3 Position { get; set; }
     public float Rotation { get; set; }
     public float LookPosition { get; set; }
+    public float SitHeight { get; set; }
 }

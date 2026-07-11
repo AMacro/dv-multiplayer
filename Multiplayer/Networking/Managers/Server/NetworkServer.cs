@@ -1340,7 +1340,9 @@ public class NetworkServer : NetworkManager
                 CrewName = player.CrewName,
                 CarID = player.CarId,
                 Position = player.RawPosition,
-                Rotation = player.RawRotationY
+                Rotation = player.RawRotationY,
+                LookPosition = player.LookPosition,
+                SitHeight = player.SitHeight,
             };
 
             SendPacketToAll(clientboundPlayerJoinedPacket, DeliveryMethod.ReliableOrdered, PlayerLoadingState.Complete, peer);
@@ -1363,7 +1365,8 @@ public class NetworkServer : NetworkManager
                     CarID = otherPlayer.CarId,
                     Position = otherPlayer.RawPosition,
                     Rotation = otherPlayer.RawRotationY,
-                    LookPosition = otherPlayer.LookPosition
+                    LookPosition = otherPlayer.LookPosition,
+                    SitHeight = otherPlayer.SitHeight,
                 }, DeliveryMethod.ReliableOrdered);
             }
 
@@ -1385,6 +1388,10 @@ public class NetworkServer : NetworkManager
         player.RawRotationY = packet.RotationY;
         player.LookPosition = packet.LookPosition;
 
+        player.SitHeight = packet.SitHeight;
+
+        player.Posture = packet.Posture;
+
         ClientboundPlayerPositionPacket clientboundPacket = new()
         {
             PlayerId = player.PlayerId,
@@ -1392,6 +1399,7 @@ public class NetworkServer : NetworkManager
             MoveDir = packet.MoveDir,
             RotationY = packet.RotationY,
             LookPosition = packet.LookPosition,
+            SitHeight = packet.SitHeight,
             Posture = packet.Posture,
             IsOnCar = packet.IsOnCar,
             CarID = packet.CarID

@@ -99,6 +99,7 @@ GameObject:
   - component: {fileID: 1203067813303746097}
   - component: {fileID: 1820087586437652537}
   - component: {fileID: 5874034117860312109}
+  - component: {fileID: 311162827072017214}
   m_Layer: 0
   m_Name: prefabMilica
   m_TagString: Untagged
@@ -148,6 +149,46 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   Id: MP_Milica
   DisplayName: Milica
+--- !u!205 &311162827072017214
+LODGroup:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4097905915734581018}
+  serializedVersion: 2
+  m_LocalReferencePoint: {x: 0, y: 0, z: 0}
+  m_Size: 1
+  m_FadeMode: 0
+  m_AnimateCrossFading: 0
+  m_LastLODIsBillboard: 0
+  m_LODs:
+  - screenRelativeHeight: 0.25
+    fadeTransitionWidth: 0
+    renderers: []
+  - screenRelativeHeight: 0.05
+    fadeTransitionWidth: 0
+    renderers:
+    - renderer: {fileID: 0}
+    - renderer: {fileID: 0}
+    - renderer: {fileID: 0}
+    - renderer: {fileID: 0}
+    - renderer: {fileID: 0}
+    - renderer: {fileID: 0}
+    - renderer: {fileID: 0}
+    - renderer: {fileID: 0}
+    - renderer: {fileID: 0}
+    - renderer: {fileID: 0}
+    - renderer: {fileID: 0}
+    - renderer: {fileID: 0}
+    - renderer: {fileID: 0}
+    - renderer: {fileID: 0}
+    - renderer: {fileID: 0}
+    - renderer: {fileID: 0}
+  - screenRelativeHeight: 0.001
+    fadeTransitionWidth: 0
+    renderers: []
+  m_Enabled: 1
 --- !u!205 &1963599576816637772
 LODGroup:
   m_ObjectHideFlags: 0
@@ -379,6 +420,36 @@ PrefabInstance:
         type: 3}
       propertyPath: m_Name
       value: MP_Milica_Hair
+      objectReference: {fileID: 0}
+    - target: {fileID: 3778152518820593552, guid: 960aab9bb0e12104fbbe7c97eed0cf93,
+        type: 3}
+      propertyPath: m_AABB.m_Center.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3778152518820593552, guid: 960aab9bb0e12104fbbe7c97eed0cf93,
+        type: 3}
+      propertyPath: m_AABB.m_Center.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3778152518820593552, guid: 960aab9bb0e12104fbbe7c97eed0cf93,
+        type: 3}
+      propertyPath: m_AABB.m_Center.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3778152518820593552, guid: 960aab9bb0e12104fbbe7c97eed0cf93,
+        type: 3}
+      propertyPath: m_AABB.m_Extent.x
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 3778152518820593552, guid: 960aab9bb0e12104fbbe7c97eed0cf93,
+        type: 3}
+      propertyPath: m_AABB.m_Extent.y
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 3778152518820593552, guid: 960aab9bb0e12104fbbe7c97eed0cf93,
+        type: 3}
+      propertyPath: m_AABB.m_Extent.z
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4120032363042718491, guid: 960aab9bb0e12104fbbe7c97eed0cf93,
         type: 3}

@@ -14,6 +14,7 @@ namespace Multiplayer.Editor.Components.Player
         private static readonly int hash_Crouch = Animator.StringToHash("Crouch");
         private static readonly int hash_Sit = Animator.StringToHash("Sit");
         private static readonly int hash_Swim = Animator.StringToHash("Swim");
+        private static readonly int hash_SitHeight = Animator.StringToHash("SitHeight");
 
         [UsedImplicitly]
         public void SetIsJumping(bool isJumping)
@@ -44,6 +45,12 @@ namespace Multiplayer.Editor.Components.Player
         {
             animator.SetFloat(hash_Horizontal, moveDir.x);
             animator.SetFloat(hash_Vertical, moveDir.y);
+        }
+
+        [UsedImplicitly]
+        public void SetSitHeight(float sitHeight)
+        {
+            animator.SetFloat(hash_SitHeight, sitHeight);
         }
 
 #if UNITY_EDITOR

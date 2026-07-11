@@ -19,6 +19,7 @@ public static class CustomFirstPersonControllerPatch
     private static Vector3 lastPosition;
     private static float lastRotationY;
     private static float lastLookPosition;
+    private static float lastSitHeight;
     private static bool sentFinalPosition;
     private static LocomotionInputWrapper.LeanDirection lean;
     private static PlayerPostureFlags lastPosture;
@@ -117,6 +118,14 @@ public static class CustomFirstPersonControllerPatch
             posture = PlayerPostureFlags.Swim;
         }
 
+        sitHeight = fps.provider.IsSitting && !VRManager.IsVREnabled()
+            ? fps.provider.PlayerSittingHeight
+            : 0f;
+
+        // clamp and normalise the sit height
+        sitHeight = Mathf.Clamp(sitHeight, CustomFirstPersonController.MIN_PLAYER_SITTING_HEIGHT, CustomFirstPersonController.MAX_PLAYER_SITTING_HEIGHT);
+        sitHeight = Mathf.InverseLerp(CustomFirstPersonController.MIN_PLAYER_SITTING_HEIGHT, CustomFirstPersonController.MAX_PLAYER_SITTING_HEIGHT, sitHeight);
+
         ushort carNetID = isOnCar ? car.GetNetId() : (ushort)0;
 
         bool positionOrRotationChanged = lastPosture != posture ||
@@ -125,9 +134,12 @@ public static class CustomFirstPersonControllerPatch
                                         Vector3.Distance(lastPosition, position) > 0 ||
                                         Math.Abs(lastRotationY - rotationY) > ROTATION_THRESHOLD;
 
-        if (!positionOrRotationChanged && !lookPositionChanged && sentFinalPosition)
+        bool heightChanged = lastSitHeight != sitHeight;
+
+        if (!positionOrRotationChanged && !lookPositionChanged && !heightChanged && sentFinalPosition)
             return;
 
+        lastSitHeight = sitHeight;
         lastOnCar = isOnCar;
         lastCarNetId = carNetID;
         lastPosition = position;
@@ -136,7 +148,7 @@ public static class CustomFirstPersonControllerPatch
         lastPosture = posture;
         sentFinalPosition = !positionOrRotationChanged;
 
-        NetworkLifecycle.Instance.Client.SendPlayerPosition(lastPosition, PlayerManager.PlayerTransform.InverseTransformDirection(fps.m_MoveDir), lastRotationY, lookPosition, carNetID, posture, isOnCar, isJumping || sentFinalPosition);
+        NetworkLifecycle.Instance.Client.SendPlayerPosition(lastPosition, PlayerManager.PlayerTransform.InverseTransformDirection(fps.m_MoveDir), lastRotationY, lookPosition, sitHeight, carNetID, posture, isOnCar, isJumping || sentFinalPosition);
         isJumping = false;
     }
 

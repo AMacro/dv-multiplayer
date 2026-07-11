@@ -43,6 +43,8 @@ public class ServerPlayer : IDisposable
     public Vector3 RawPosition { get; set; }
     public float RawRotationY { get; set; }
     public float LookPosition { get; set; }
+    public float SitHeight { get; set; } = CustomFirstPersonController.PLAYER_SITTING_HEIGHT;
+    public PlayerPostureFlags Posture { get; set; }
     public ushort CarId { get; set; }
     private string _crewName;
     public string CrewName
