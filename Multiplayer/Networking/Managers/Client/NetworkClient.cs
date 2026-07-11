@@ -492,6 +492,19 @@ public class NetworkClient : NetworkManager
             {
                 LogDebug(() => "Loading finished, beginning sync");
                 CoroutineManager.Instance.StartCoroutine(SyncWorldState());
+
+                if (WorldMover.Instance.playerTracker != null)
+                {
+                    var tracker = WorldMover.Instance.playerTracker.GetComponent<LocalPlayerTrackerBase>();
+                    if (tracker == null)
+                    {
+                        LogWarning($"LocalPlayerTracker not found, adding {(VRManager.IsVREnabled() ? "" : "non")}VR tracker.");
+                        if (VRManager.IsVREnabled())
+                            tracker = WorldMover.Instance.playerTracker.gameObject.AddComponent<LocalPlayerTrackerVR>();
+                        else
+                            tracker = WorldMover.Instance.playerTracker.gameObject.AddComponent<LocalPlayerTrackerNonVR>();
+                    }
+                }
             };
 
             return;
