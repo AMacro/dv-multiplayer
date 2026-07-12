@@ -1,6 +1,6 @@
 using System;
 
-namespace Multiplayer.Networking.Data;
+namespace Multiplayer.Networking.Data.Player;
 
 public enum PlayerPreference : byte
 {

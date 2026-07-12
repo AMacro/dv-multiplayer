@@ -3,6 +3,7 @@ using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Components.Networking.World;
 using Multiplayer.Components.SaveGame;
+using Multiplayer.Networking.Data.Player;
 using Multiplayer.Networking.TransportLayers;
 using Multiplayer.Utils;
 using Newtonsoft.Json.Linq;

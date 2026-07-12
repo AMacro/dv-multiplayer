@@ -1,7 +1,6 @@
 using DV;
 using Multiplayer.Components.Networking.Player;
-using Multiplayer.Networking.Data;
-using Multiplayer.Networking.Packets.Clientbound;
+using Multiplayer.Networking.Data.Player;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -88,7 +87,7 @@ public class ClientPlayerManager
     // Currently only updates crew name, but can be expanded to include other preferences in the future, e.g. marker color, etc.
     public void UpdatePreferences(byte playerId, Dictionary<PlayerPreference, string> preferences)
     {
-        Multiplayer.LogDebug(()=>$"Updating preferences for playerId: {playerId}, Preference count : {preferences?.Count}");
+        Multiplayer.LogDebug(() => $"Updating preferences for playerId: {playerId}, Preference count : {preferences?.Count}");
 
         if (!TryGetPlayer(playerId, out NetworkedPlayer player))
             return;

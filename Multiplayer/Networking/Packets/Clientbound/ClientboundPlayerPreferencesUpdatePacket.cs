@@ -1,4 +1,4 @@
-using Multiplayer.Networking.Data;
+using Multiplayer.Networking.Data.Player;
 using System;
 using System.Collections.Generic;
 
