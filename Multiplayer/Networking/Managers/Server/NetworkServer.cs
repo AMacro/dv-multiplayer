@@ -22,6 +22,7 @@ using Multiplayer.Components.Networking.World;
 using Multiplayer.Networking.Data;
 using Multiplayer.Networking.Data.Items;
 using Multiplayer.Networking.Data.Jobs;
+using Multiplayer.Networking.Data.Player;
 using Multiplayer.Networking.Data.RPCs;
 using Multiplayer.Networking.Data.Train;
 using Multiplayer.Networking.Data.World;
@@ -1157,7 +1158,8 @@ public class NetworkServer : NetworkManager
             overrideUsername,
             packet.Username,
             guid,
-            packet.CharacterId
+            packet.CharacterId,
+            packet.IsVR
         );
 
         serverPlayers.Add(serverPlayer.PlayerId, serverPlayer);
@@ -1336,6 +1338,7 @@ public class NetworkServer : NetworkManager
             {
                 PlayerId = player.PlayerId,
                 Username = player.Username,
+                IsVR = player.IsVR,
                 CharacterId = player.CharacterId,
                 CrewName = player.CrewName,
                 CarID = player.CarId,
@@ -1361,6 +1364,7 @@ public class NetworkServer : NetworkManager
                     PlayerId = otherPlayer.PlayerId,
                     Username = otherPlayer.Username,
                     CharacterId = otherPlayer.CharacterId,
+                    IsVR = otherPlayer.IsVR,
                     CrewName = otherPlayer.CrewName,
                     CarID = otherPlayer.CarId,
                     Position = otherPlayer.RawPosition,

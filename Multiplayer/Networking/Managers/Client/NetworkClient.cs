@@ -122,7 +122,8 @@ public class NetworkClient : NetworkManager
             Password = password,
             BuildVersion = MainMenuControllerPatch.MenuProvider.BuildVersionString,
             Mods = ModCompatibilityManager.Instance.GetLocalMods(),
-            CharacterId = Multiplayer.Settings.CharacterId
+            CharacterId = Multiplayer.Settings.CharacterId,
+            IsVR = VRManager.IsVREnabled()
         };
 
         Log("Sending Login Packet");

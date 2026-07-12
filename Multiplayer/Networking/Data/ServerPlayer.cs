@@ -46,6 +46,7 @@ public class ServerPlayer : IDisposable
     public float LookPosition { get; set; }
     public float SitHeight { get; set; } = CustomFirstPersonController.PLAYER_SITTING_HEIGHT;
     public PlayerPostureFlags Posture { get; set; }
+    public bool IsVR { get; }
     public ushort CarId { get; set; }
     private string _crewName;
     public string CrewName
@@ -102,7 +103,7 @@ public class ServerPlayer : IDisposable
     private Vector3 _lastWorldPos = Vector3.zero;
     private Vector3 _lastAbsoluteWorldPosition = Vector3.zero;
 
-    public ServerPlayer(ITransportPeer peer, string username, string originalUsername, Guid guid, string characterId)
+    public ServerPlayer(ITransportPeer peer, string username, string originalUsername, Guid guid, string characterId, bool isVr)
     {
         PlayerId = idPool.NextId;
 
@@ -113,6 +114,8 @@ public class ServerPlayer : IDisposable
         OriginalUsername = originalUsername;
         Guid = guid;
         CharacterId = characterId;
+
+        IsVR = isVr;
     }
 
     #region Positioning

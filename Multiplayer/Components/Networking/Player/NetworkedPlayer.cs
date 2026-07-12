@@ -1,7 +1,7 @@
 using DV.Player;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Editor.Components.Player;
-using Multiplayer.Networking.Data;
+using Multiplayer.Networking.Data.Player;
 using UnityEngine;
 
 namespace Multiplayer.Components.Networking.Player;
@@ -40,6 +40,7 @@ public class NetworkedPlayer : MonoBehaviour
 
     public byte PlayerId { get; set; }
     public string CrewName { get; set; }
+    public bool IsVR { get; set; }
 
     private GameObject playerModel;
     private AnimationHandler animationHandler;

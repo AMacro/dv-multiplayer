@@ -29,7 +29,7 @@ public class ClientPlayerManager
         return playerMap.TryGetValue(playerid, out player);
     }
 
-    public void AddPlayer(byte playerId, string username, string crewName, string characterId)
+    public void AddPlayer(byte playerId, string username, string crewName, string characterId, bool isVr)
     {
         if (playerMap.ContainsKey(playerId))
         {
@@ -49,6 +49,7 @@ public class ClientPlayerManager
         networkedPlayer.PlayerId = playerId;
         networkedPlayer.Username = username;
         networkedPlayer.CrewName = crewName;
+        networkedPlayer.IsVR = isVr;
 
         // Get player model from registry and apply it to the player
         var model = Multiplayer.PlayerModelRegistry.GetModelById(characterId);
