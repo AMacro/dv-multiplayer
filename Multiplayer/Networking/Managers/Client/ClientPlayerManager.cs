@@ -77,15 +77,14 @@ public class ClientPlayerManager
         player.SetPing(ping);
     }
 
-    public void UpdatePosition(byte playerid, Vector3 position, Vector3 moveDir, float rotation, float lookPosition, float sitHeight, PlayerPostureFlags posture, bool isOnCar, ushort carId)
+    public void UpdatePosition(byte playerId, PlayerTrackingData trackingData, PlayerPostureFlags posture, bool isOnCar, ushort carId)
     {
-        if (!TryGetPlayer(playerid, out NetworkedPlayer player))
+        if (!TryGetPlayer(playerId, out NetworkedPlayer player))
             return;
         player.UpdateCar(carId);
-        player.UpdatePosition(position, moveDir, rotation, lookPosition, sitHeight, posture, isOnCar);
+        player.UpdatePosition(trackingData, posture, isOnCar);
     }
 
-    // Currently only updates crew name, but can be expanded to include other preferences in the future, e.g. marker color, etc.
     public void UpdatePreferences(byte playerId, Dictionary<PlayerPreference, string> preferences)
     {
         Multiplayer.LogDebug(() => $"Updating preferences for playerId: {playerId}, Preference count : {preferences?.Count}");
@@ -104,11 +103,4 @@ public class ClientPlayerManager
 
         OnPlayerPrefsUpdated?.Invoke(player);
     }
-
-    //public void UpdateCar(byte playerId, ushort carId)
-    //{
-    //    if (!playerMap.TryGetValue(playerId, out NetworkedPlayer player))
-    //        return;
-    //    player.UpdateCar(carId);
-    //}
 }

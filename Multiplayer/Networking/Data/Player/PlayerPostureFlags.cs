@@ -1,6 +1,6 @@
 using System;
 
-namespace Multiplayer.Networking.Data
+namespace Multiplayer.Networking.Data.Player
 {
     [Flags]
     public enum PlayerPostureFlags : byte

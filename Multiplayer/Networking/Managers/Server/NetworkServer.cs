@@ -1341,11 +1341,10 @@ public class NetworkServer : NetworkManager
                 IsVR = player.IsVR,
                 CharacterId = player.CharacterId,
                 CrewName = player.CrewName,
+                TrackingData = player.TrackingData,
+                Posture = player.Posture,
+                IsOnCar = player.CarId != 0,
                 CarID = player.CarId,
-                Position = player.RawPosition,
-                Rotation = player.RawRotationY,
-                LookPosition = player.LookPosition,
-                SitHeight = player.SitHeight,
             };
 
             SendPacketToAll(clientboundPlayerJoinedPacket, DeliveryMethod.ReliableOrdered, PlayerLoadingState.Complete, peer);
@@ -1367,10 +1366,9 @@ public class NetworkServer : NetworkManager
                     IsVR = otherPlayer.IsVR,
                     CrewName = otherPlayer.CrewName,
                     CarID = otherPlayer.CarId,
-                    Position = otherPlayer.RawPosition,
-                    Rotation = otherPlayer.RawRotationY,
-                    LookPosition = otherPlayer.LookPosition,
-                    SitHeight = otherPlayer.SitHeight,
+                    TrackingData = otherPlayer.TrackingData,  // full merged state
+                    Posture = otherPlayer.Posture,
+                    IsOnCar = otherPlayer.CarId != 0,
                 }, DeliveryMethod.ReliableOrdered);
             }
 
@@ -1387,29 +1385,19 @@ public class NetworkServer : NetworkManager
             return;
         }
 
+        // Merge incoming delta into stored state
+        player.TrackingData = player.TrackingData.MergeFrom(packet.TrackingData);
         player.CarId = packet.CarID;
-        player.RawPosition = packet.Position;
-        player.RawRotationY = packet.RotationY;
-        player.LookPosition = packet.LookPosition;
-
-        player.SitHeight = packet.SitHeight;
-
         player.Posture = packet.Posture;
 
-        ClientboundPlayerPositionPacket clientboundPacket = new()
+        SendPacketToAll(new ClientboundPlayerPositionPacket
         {
             PlayerId = player.PlayerId,
-            Position = packet.Position,
-            MoveDir = packet.MoveDir,
-            RotationY = packet.RotationY,
-            LookPosition = packet.LookPosition,
-            SitHeight = packet.SitHeight,
+            TrackingData = packet.TrackingData,
             Posture = packet.Posture,
             IsOnCar = packet.IsOnCar,
             CarID = packet.CarID
-        };
-
-        SendPacketToAll(clientboundPacket, DeliveryMethod.Sequenced, PlayerLoadingState.Complete, peer);
+        }, DeliveryMethod.Sequenced, PlayerLoadingState.Complete, peer);
     }
 
     private void OnServerboundPlayerPreferenceUpdatePacket(ServerboundPlayerPreferenceUpdatePacket packet, ITransportPeer peer)

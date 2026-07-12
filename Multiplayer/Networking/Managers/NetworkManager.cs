@@ -4,6 +4,7 @@ using Multiplayer.API;
 using Multiplayer.Networking.Data;
 using Multiplayer.Networking.Data.Items;
 using Multiplayer.Networking.Data.Jobs;
+using Multiplayer.Networking.Data.Player;
 using Multiplayer.Networking.Data.Train;
 using Multiplayer.Networking.Data.World;
 using Multiplayer.Networking.Serialization;
@@ -67,6 +68,7 @@ public abstract class NetworkManager
         netPacketProcessor.RegisterNestedType(LocoResourceModuleData.Serialize, LocoResourceModuleData.Deserialize);
         netPacketProcessor.RegisterNestedType(PitStopPlugData.Serialize, PitStopPlugData.Deserialize);
         netPacketProcessor.RegisterNestedType(PlayerItemSaveData.Serialize, PlayerItemSaveData.Deserialize);
+        netPacketProcessor.RegisterNestedType(PlayerTrackingData.Serialize, PlayerTrackingData.Deserialize);
         netPacketProcessor.RegisterNestedType(Vector2Serializer.Serialize, Vector2Serializer.Deserialize);
         netPacketProcessor.RegisterNestedType(Vector3Serializer.Serialize, Vector3Serializer.Deserialize);
         netPacketProcessor.RegisterNestedType(ColorSerializer.Serialize, ColorSerializer.Deserialize);

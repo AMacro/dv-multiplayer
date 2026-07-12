@@ -10,9 +10,8 @@ public class ClientboundPlayerJoinedPacket
     public bool IsVR { get; set; }
     public string CharacterId { get; set; }
     public string CrewName { get; set; } = string.Empty;
+    public PlayerTrackingData TrackingData { get; set; }
+    public PlayerPostureFlags Posture { get; set; }
+    public bool IsOnCar { get; set; }
     public ushort CarID { get; set; }
-    public Vector3 Position { get; set; }
-    public float Rotation { get; set; }
-    public float LookPosition { get; set; }
-    public float SitHeight { get; set; }
 }

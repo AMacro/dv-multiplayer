@@ -558,9 +558,9 @@ public class NetworkClient : NetworkManager
     private void OnClientboundPlayerJoinedPacket(ClientboundPlayerJoinedPacket packet)
     {
         Log($"Received player joined packet for player id: {packet.PlayerId}, username: {packet.Username}");
-        ClientPlayerManager.AddPlayer(packet.PlayerId, packet.Username, packet.CrewName, packet.CharacterId);
+        ClientPlayerManager.AddPlayer(packet.PlayerId, packet.Username, packet.CrewName, packet.CharacterId, packet.IsVR);
 
-        ClientPlayerManager.UpdatePosition(packet.PlayerId, packet.Position, Vector3.zero, packet.Rotation, packet.LookPosition, packet.SitHeight, PlayerPostureFlags.None, packet.CarID != 0, packet.CarID);
+        ClientPlayerManager.UpdatePosition(packet.PlayerId, packet.TrackingData, packet.Posture, packet.IsOnCar, packet.CarID);
     }
 
     //For other player left the game
@@ -587,7 +587,7 @@ public class NetworkClient : NetworkManager
 
     private void OnClientboundPlayerPositionPacket(ClientboundPlayerPositionPacket packet)
     {
-        ClientPlayerManager.UpdatePosition(packet.PlayerId, packet.Position, packet.MoveDir, packet.RotationY, packet.LookPosition, packet.SitHeight, packet.Posture, packet.IsOnCar, packet.CarID);
+        ClientPlayerManager.UpdatePosition(packet.PlayerId, packet.TrackingData, packet.Posture, packet.IsOnCar, packet.CarID);
     }
 
     private void OnClientboundPlayerPreferencesUpdatePacket(ClientboundPlayerPreferencesUpdatePacket packet)
@@ -1483,17 +1483,13 @@ public class NetworkClient : NetworkManager
         LoadingState = newState;
     }
 
-    public void SendPlayerPosition(Vector3 position, Vector3 moveDir, float rotationY, float lookPosition, float sitHeight, ushort carId, PlayerPostureFlags posture, bool isOnCar, bool reliable)
+    public void SendPlayerPosition(PlayerTrackingData trackingData, PlayerPostureFlags posture, bool isOnCar, ushort carId, bool reliable)
     {
         //LogDebug(() => $"SendPlayerPosition({position}, {moveDir}, {rotationY}, {carId}, {isJumping}, {IsOnCar})");
 
         SendPacketToServer(new ServerboundPlayerPositionPacket
         {
-            Position = position,
-            MoveDir = new Vector2(moveDir.x, moveDir.z),
-            RotationY = rotationY,
-            LookPosition = lookPosition,
-            SitHeight = sitHeight,
+            TrackingData = trackingData,
             Posture = posture,
             IsOnCar = isOnCar,
             CarID = carId

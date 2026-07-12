@@ -41,12 +41,10 @@ public class ServerPlayer : IDisposable
     public string OriginalUsername { get; set; }
     public Guid Guid { get; set; }
     public string CharacterId { get; set; }
-    public Vector3 RawPosition { get; set; }
-    public float RawRotationY { get; set; }
-    public float LookPosition { get; set; }
-    public float SitHeight { get; set; } = CustomFirstPersonController.PLAYER_SITTING_HEIGHT;
-    public PlayerPostureFlags Posture { get; set; }
     public bool IsVR { get; }
+
+    public PlayerTrackingData TrackingData { get; set; }
+    public PlayerPostureFlags Posture { get; set; }        // already exists — keep
     public ushort CarId { get; set; }
     private string _crewName;
     public string CrewName
@@ -119,6 +117,9 @@ public class ServerPlayer : IDisposable
     }
 
     #region Positioning
+    public Vector3 RawPosition => TrackingData.Position ?? Vector3.zero;
+    public float RawRotationY => TrackingData.RotationY ?? 0f;
+
     public Vector3 AbsoluteWorldPosition
     {
         get
