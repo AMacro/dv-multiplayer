@@ -38,6 +38,7 @@ using Multiplayer.Networking.Packets.Common.Train;
 using Multiplayer.Networking.Packets.Serverbound;
 using Multiplayer.Networking.Packets.Serverbound.Jobs;
 using Multiplayer.Networking.Packets.Serverbound.Train;
+using Multiplayer.Networking.Packets.Serverbound.World;
 using Multiplayer.Networking.TransportLayers;
 using Multiplayer.Patches.MainMenu;
 using Multiplayer.Patches.SaveGame;
@@ -163,6 +164,7 @@ public class NetworkClient : NetworkManager
         netPacketProcessor.SubscribeReusable<ClientboundTimeAdvancePacket>(OnClientboundTimeAdvancePacket);
         netPacketProcessor.SubscribeReusable<CommonChangeJunctionPacket>(OnCommonChangeJunctionPacket);
         netPacketProcessor.SubscribeReusable<CommonRotateTurntablePacket>(OnCommonRotateTurntablePacket);
+        netPacketProcessor.SubscribeReusable<ClientboundHazmatTilesPacket>(OnClientboundHazmatTilesPacket);
 
 
         // Player Management
@@ -282,6 +284,8 @@ public class NetworkClient : NetworkManager
 
         Log($"Starting Item Manager...");
         NetworkedItemManager.Instance.CheckInstance();
+        Log($"Starting Hazmat Manager...");
+        NetworkedHazmatManager.Instance.CheckInstance();
         Log($"Caching World Items...");
         NetworkedItemManager.Instance.CacheWorldItems();
         Log($"Initialising Cash Registers...");
@@ -691,6 +695,16 @@ public class NetworkClient : NetworkManager
         if (!NetworkedJunction.Get(packet.NetId, out NetworkedJunction junction))
             return;
         junction.Switch(packet.Mode, packet.SelectedBranch);
+    }
+
+    private void OnClientboundHazmatTilesPacket(ClientboundHazmatTilesPacket packet)
+    {
+        // The server excludes the host's loopback client from this packet, but guard anyway: the host's
+        // grid is the authority, and deserialising into it would clobber the live simulation.
+        if (NetworkLifecycle.Instance.IsHost())
+            return;
+
+        NetworkedHazmatManager.Instance.Client_ReceiveTiles(packet);
     }
 
     private void OnCommonRotateTurntablePacket(CommonRotateTurntablePacket packet)
@@ -1475,6 +1489,20 @@ public class NetworkClient : NetworkManager
             NetId = netId,
             SelectedBranch = selectedBranch,
             Mode = (byte)mode
+        }, DeliveryMethod.ReliableOrdered);
+    }
+
+    /// <summary>
+    /// Ask the host to ignite a terrain tile. Clients don't simulate the hazmat grid, so their local
+    /// ignition attempts (a lighter dropped into a spill) are blocked and forwarded here instead — see
+    /// HazmatSimulationPatch.
+    /// </summary>
+    public void SendHazmatIgnite(int gridPosition, float ignitionStrength)
+    {
+        SendPacketToServer(new ServerboundHazmatIgnitePacket
+        {
+            GridPosition = gridPosition,
+            IgnitionStrength = ignitionStrength
         }, DeliveryMethod.ReliableOrdered);
     }
 

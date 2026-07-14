@@ -35,6 +35,7 @@ using Multiplayer.Networking.Packets.Common.Train;
 using Multiplayer.Networking.Packets.Serverbound;
 using Multiplayer.Networking.Packets.Serverbound.Jobs;
 using Multiplayer.Networking.Packets.Serverbound.Train;
+using Multiplayer.Networking.Packets.Serverbound.World;
 using Multiplayer.Networking.Packets.Unconnected;
 using Multiplayer.Networking.TransportLayers;
 using Multiplayer.Patches.MainMenu;
@@ -167,6 +168,7 @@ public class NetworkServer : NetworkManager
 
         netPacketProcessor.SubscribeReusable<CommonChangeJunctionPacket, ITransportPeer>(OnCommonChangeJunctionPacket);
         netPacketProcessor.SubscribeReusable<CommonRotateTurntablePacket, ITransportPeer>(OnCommonRotateTurntablePacket);
+        netPacketProcessor.SubscribeReusable<ServerboundHazmatIgnitePacket, ITransportPeer>(OnServerboundHazmatIgnitePacket);
 
         netPacketProcessor.SubscribeReusable<CommonPitStopInteractionPacket, ITransportPeer>(OnCommonPitStopInteractionPacket);
         netPacketProcessor.SubscribeNetSerializable<CommonPitStopPlugInteractionPacket, ITransportPeer>(OnCommonPitStopPlugInteractionPacket);
@@ -643,6 +645,29 @@ public class NetworkServer : NetworkManager
             SendPacket(sendToPlayer.Peer, packet, DeliveryMethod.ReliableUnordered);
         else
             SendPacketToAll(packet, DeliveryMethod.ReliableUnordered, PlayerLoadingState.ReadyForTrainSets, true);
+    }
+
+    /// <summary>
+    /// Send hazmat terrain state. <paramref name="sendToPlayer"/> targets a single player (the join
+    /// backfill); null broadcasts the periodic delta to everyone past ReadyForTiles.
+    /// </summary>
+    public void SendHazmatTiles(byte[] tileData, int[] removedTiles, ServerPlayer sendToPlayer)
+    {
+        var packet = new ClientboundHazmatTilesPacket
+        {
+            TileData = tileData ?? Array.Empty<byte>(),
+            RemovedTiles = removedTiles ?? Array.Empty<int>()
+        };
+
+        if (sendToPlayer != null)
+        {
+            SendPacket(sendToPlayer.Peer, packet, DeliveryMethod.ReliableOrdered);
+            return;
+        }
+
+        // excludeSelf: the host's loopback client must not receive this. It shares the grid with the
+        // server that just produced it, and applying it would clobber the live simulation.
+        SendPacketToAll(packet, DeliveryMethod.ReliableOrdered, PlayerLoadingState.ReadyForTiles, null, true);
     }
 
     public void SendRestorationStateChange(ushort netId, LocoRestorationController.RestorationState newState, ushort[] transportCars)
@@ -1308,7 +1333,10 @@ public class NetworkServer : NetworkManager
                 break;
 
             case PlayerLoadingState.ReadyForTiles:
-                // Send Hazmat data
+                // Send Hazmat data: the whole terrain grid (spills, fires, corrosion). Clients don't
+                // simulate it, so without this backfill a joiner sees clean ground where the host has a
+                // fire burning.
+                NetworkedHazmatManager.Instance.Server_SendFullSnapshot(player);
                 break;
 
             case PlayerLoadingState.Complete:
@@ -1403,6 +1431,19 @@ public class NetworkServer : NetworkManager
             PlayerLoadingState.ReadyForWorldState,
             peer
         );
+    }
+
+    private void OnServerboundHazmatIgnitePacket(ServerboundHazmatIgnitePacket packet, ITransportPeer peer)
+    {
+        if (!peerToPlayer.TryGetValue(peer, out _))
+        {
+            LogWarning($"Received hazmat ignite from peerId {peer.Id}, but could not find matching player.");
+            return;
+        }
+
+        // Ignite the host's real tile. The result reaches every client (including the requester) through
+        // NetworkedHazmatManager's normal dirty-tile stream, so there's nothing to rebroadcast here.
+        NetworkedHazmatManager.Instance.Server_ReceiveIgnite(packet.GridPosition, packet.IgnitionStrength);
     }
 
     private void OnCommonChangeJunctionPacket(CommonChangeJunctionPacket packet, ITransportPeer peer)
