@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using DV.ThingTypes;
 using DV.Utils;
+using JetBrains.Annotations;
 using Multiplayer.Networking.Data;
 using Multiplayer.Networking.Packets.Clientbound.World;
 using UnityEngine;
@@ -405,5 +406,11 @@ public class NetworkedHazmatManager : SingletonBehaviour<NetworkedHazmatManager>
 
         // Wash the liquid texture back off the terrain.
         manager.PrepareTerrainPaintData(HazmatTileManager.LIQUID_TEXTURE_INDEX, 0f, coords);
+    }
+
+    [UsedImplicitly]
+    public new static string AllowAutoCreate()
+    {
+        return $"[{nameof(NetworkedHazmatManager)}]";
     }
 }
