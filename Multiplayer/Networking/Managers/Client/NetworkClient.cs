@@ -1330,7 +1330,7 @@ public class NetworkClient : NetworkManager
         //    return debug;
         //});
 
-        //NetworkedItemManager.Instance.ReceiveSnapshots(packet.Items, null);
+        NetworkedItemManager.Instance.ReceiveSnapshots(packet.Items, null);
     }
 
     private void OnCommonPaintThemePacket(CommonPaintThemePacket packet)

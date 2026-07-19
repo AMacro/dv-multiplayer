@@ -2,11 +2,9 @@ using HarmonyLib;
 using Multiplayer.Components.Networking.World;
 using Multiplayer.Utils;
 using System;
-using System.Diagnostics;
 
 namespace Multiplayer.Patches.World.Items;
 
-/*
 [HarmonyPatch(typeof(Lantern))]
 public static class LanternPatch
 {
@@ -69,4 +67,3 @@ public static class LanternPatch
         }
     }
 }
-*/

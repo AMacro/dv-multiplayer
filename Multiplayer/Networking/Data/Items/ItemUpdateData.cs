@@ -31,6 +31,8 @@ public class ItemUpdateData
     public byte Player { get; set; }
     public ushort CarNetId { get; set; }
     public bool AttachedFront  { get; set; }
+    public ushort ContainerNetId { get; set; }
+    public int ContainerSlot { get; set; } = -1;
     public Dictionary<string, object> States { get; set; }
 
     public void Serialize(NetDataWriter writer)
@@ -64,6 +66,11 @@ public class ItemUpdateData
             {
                 writer.Put(CarNetId);
                 writer.Put(AttachedFront);
+            }
+            else if (ItemState == ItemState.InContainer)
+            {
+                writer.Put(ContainerNetId);
+                writer.Put(ContainerSlot);
             }
         }
 
@@ -118,6 +125,11 @@ public class ItemUpdateData
             {
                 CarNetId = reader.GetUShort();
                 AttachedFront = reader.GetBool();
+            }
+            else if (ItemState == ItemState.InContainer)
+            {
+                ContainerNetId = reader.GetUShort();
+                ContainerSlot = reader.GetInt();
             }
         }
 

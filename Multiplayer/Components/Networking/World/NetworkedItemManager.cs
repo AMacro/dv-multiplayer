@@ -187,7 +187,7 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
                     continue;
                 }
 
-                float sqrDistance = (player.WorldPosition - item.transform.position).sqrMagnitude;
+                float sqrDistance = (player.WorldPosition - item.GetRelevancePosition()).sqrMagnitude;
 
                 if (sqrDistance <= MAX_DISTANCE_TO_ITEM_SQR)
                 {
@@ -342,6 +342,8 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
             case ItemState.Dropped:
             case ItemState.Thrown:
             case ItemState.Attached: //needs additional checks for distance to coupler
+            case ItemState.InContainer: //container ownership is represented by the contained item's owner
+            case ItemState.InstalledGadget: //keep ownership while the source item represents an installed gadget
                 // Only owner can drop/throw
                 if (!player.OwnsItem(snapshot.ItemNetId))
                     return false;
@@ -432,7 +434,7 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
             }
 
             //create a new item
-            GameObject gameObject = Instantiate(spec.gameObject, snapshot.ItemPosition + WorldMover.currentMove, snapshot.ItemRotation);
+            GameObject gameObject = Instantiate(spec.gameObject, NetworkedItem.ToWorldPosition(snapshot.ItemPosition), snapshot.ItemRotation);
 
             //Make sure we have a NetworkedItem
             newItem = gameObject.GetOrAddComponent<NetworkedItem>();

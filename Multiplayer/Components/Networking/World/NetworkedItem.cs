@@ -1,4 +1,5 @@
 using DV.CabControls;
+using DV.Customization.Gadgets;
 using DV.Interaction;
 using DV.InventorySystem;
 using DV.Items;
@@ -21,11 +22,17 @@ public enum ItemState : byte
     Thrown,         //was thrown by player
     InHand,         //held by player
     InInventory,    //in player's inventory
-    Attached        //attached to another object (e.g. EOT Lanterns)
+    Attached,       //attached to another object (e.g. EOT Lanterns)
+    InContainer,    //stored inside another networked item
+    InstalledGadget //the source item is represented by its linked GadgetBase
 }
 
 public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 {
+    public static Vector3 ToNetworkPosition(Vector3 worldPosition) => worldPosition - WorldMover.currentMove;
+
+    public static Vector3 ToWorldPosition(Vector3 networkPosition) => networkPosition + WorldMover.currentMove;
+
     #region Lookup Cache
     private static readonly Dictionary<ItemBase, NetworkedItem> itemBaseToNetworkedItem = new(4096);
 
@@ -76,8 +83,10 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
     public ItemBase Item { get; private set; }
     private GrabHandlerItem grabHandler;
     private SnappableItem snappableItem;
+    private GadgetItem gadgetItem;
     private Component trackedItem;
     private List<object> trackedValues = new List<object>();
+    private readonly Dictionary<string, object> unappliedTrackedValues = new();
     public bool UsefulItem { get; private set; } = false;
     public Type TrackedItemType { get; private set; }
     public uint LastDirtyTick { get; private set; }
@@ -177,10 +186,12 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
             Item.Grabbed += OnGrabbed;
             Item.Ungrabbed += OnUngrabbed;
+            Item.ItemInContainerStateChanged += OnContainerChanged;
 
             //Find special interaction components
             TryGetComponent<GrabHandlerItem>(out grabHandler);
             TryGetComponent<SnappableItem>(out snappableItem);
+            TryGetComponent<GadgetItem>(out gadgetItem);
 
             lastState = GetItemState();
             stateDirty = false;
@@ -207,6 +218,11 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         stateDirty = true;
     }
 
+    private void OnContainerChanged(ItemBase item, AItemContainer newContainer, AItemContainer oldContainer, bool added)
+    {
+        stateDirty = true;
+    }
+
     public void OnThrow(Vector3 direction)
     {
         //block a received throw from 
@@ -217,7 +233,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         }
 
         throwDirection = direction;
-        thrownPosition = Item.transform.position - WorldMover.currentMove;
+        thrownPosition = ToNetworkPosition(Item.transform.position);
         thrownRotation = Item.transform.rotation;
 
         //Multiplayer.LogDebug(() => $"NetworkedItem.OnThrow() netId: {NetId}, Name: {name}, Raw Position: {Item.transform.position}, Position: {thrownPosition}, Rotation: {thrownRotation}, Direction: {throwDirection}");
@@ -231,7 +247,20 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
     public void RegisterTrackedValue<T>(string key, Func<T> valueGetter, Action<T> valueSetter, Func<T, T, bool> thresholdComparer = null, bool serverAuthoritative = false)
     {
         //Multiplayer.LogDebug(() => $"NetworkedItem.RegisterTrackedValue(\"{key}\", {valueGetter != null}, {valueSetter != null}, {thresholdComparer != null}, {serverAuthoritative}) itemNetId {NetId}, item name: {name}");
-        trackedValues.Add(new TrackedValue<T>(key, valueGetter, valueSetter, thresholdComparer, serverAuthoritative));
+        if (trackedValues.Any(value => ((dynamic)value).Key == key))
+        {
+            Multiplayer.LogWarning($"Duplicate tracked item key '{key}' ignored for {name} ({NetId}).");
+            return;
+        }
+
+        var trackedValue = new TrackedValue<T>(key, valueGetter, valueSetter, thresholdComparer, serverAuthoritative);
+        trackedValues.Add(trackedValue);
+
+        if (unappliedTrackedValues.TryGetValue(key, out object pendingValue))
+        {
+            trackedValue.SetValueFromObject(pendingValue);
+            unappliedTrackedValues.Remove(key);
+        }
     }
 
     public void FinaliseTrackedValues()
@@ -262,7 +291,8 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         var dirtyData = new Dictionary<string, object>();
         foreach (var trackedValue in trackedValues)
         {
-            if (((dynamic)trackedValue).IsDirty)
+            bool canSend = NetworkLifecycle.Instance.IsHost() || !((dynamic)trackedValue).ServerAuthoritative;
+            if (canSend && ((dynamic)trackedValue).IsDirty)
             {
                 dirtyData[((dynamic)trackedValue).Key] = ((dynamic)trackedValue).GetValueAsObject();
             }
@@ -294,19 +324,21 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         ItemUpdateData snapshot;
         ItemUpdateData.ItemUpdateType updateType = ItemUpdateData.ItemUpdateType.None;
 
-        bool hasDirtyVals = HasDirtyValues();
-
         if (Item == null && Register() == false)
             return null;
 
-        if (!stateDirty && !hasDirtyVals)
-            return null;
-
+        bool hasDirtyVals = HasDirtyValues();
         ItemState currentState = GetItemState();
+        bool stateChanged = lastState != currentState;
+
+        if (!stateDirty && !stateChanged && !hasDirtyVals)
+            return null;
 
         if (!createdDirty)
         {
-            if (lastState != currentState)
+            // stateDirty also covers changes within a state, such as moving between
+            // container slots, which cannot be detected from the enum alone.
+            if (stateDirty || stateChanged)
                 updateType |= ItemUpdateData.ItemUpdateType.ItemState;
 
             if (hasDirtyVals)
@@ -374,6 +406,15 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
                     HandleAttachedState(snapshot);
                     break;
 
+                case ItemState.InContainer:
+                    if (!HandleContainerState(snapshot))
+                        StartCoroutine(RetryContainerState(snapshot));
+                    break;
+
+                case ItemState.InstalledGadget:
+                    // Placement and gadget data are applied atomically by GadgetItemPatch.
+                    break;
+
                 default:
                     throw new Exception($"NetworkedItem.ApplySnapshot() Item state not implemented: {snapshot?.ItemState}");
 
@@ -386,7 +427,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         {
             Multiplayer.Log($"NetworkedItem.ApplySnapshot() netID: {snapshot?.ItemNetId}, States: {snapshot?.States?.Count}");
 
-            if (trackedItem != null && snapshot.States != null)
+            if (snapshot.States != null)
             {
                 ApplyTrackedValues(snapshot.States);
             }
@@ -415,6 +456,16 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         Dictionary<string, object> states;
         ushort carId = 0;
         bool frontCoupler = true;
+        ushort containerNetId = 0;
+        int containerSlot = -1;
+
+        // Creates/full syncs are generated directly for newly relevant clients and
+        // must not depend on the state cached by a previous dirty-update pass.
+        if (updateType.HasFlag(ItemUpdateData.ItemUpdateType.Create) ||
+            updateType.HasFlag(ItemUpdateData.ItemUpdateType.FullSync))
+        {
+            lastState = GetItemState();
+        }
 
         if (wasThrown)
         {
@@ -423,7 +474,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         }
         else
         {
-            position = transform.position - WorldMover.currentMove;
+            position = ToNetworkPosition(transform.position);
             rotation = transform.rotation;
         }
 
@@ -446,6 +497,13 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
                 frontCoupler = itemSnapPointCoupler.IsFront;
             }
         }
+        else if (lastState == ItemState.InContainer && Item.InContainer is ItemContainer container)
+        {
+            if (container.ItemBase != null)
+                TryGetNetId(container.ItemBase, out containerNetId);
+
+            containerSlot = Array.IndexOf(container.GetItemsArray(false), Item.gameObject);
+        }
 
         var updateData = new ItemUpdateData
         {
@@ -458,6 +516,8 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
             ThrowDirection = throwDirection,
             CarNetId = carId,
             AttachedFront = frontCoupler,
+            ContainerNetId = containerNetId,
+            ContainerSlot = containerSlot,
             States = states,
         };
 
@@ -467,13 +527,6 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
     private ItemState GetItemState()
     {
         //Multiplayer.LogDebug(() => $"GetItemState() NetId: {NetId}, {name}, Parent: {Item.transform.parent} WorldMover: {WorldMover.OriginShiftParent}, wasThrown: {wasThrown}, isGrabbed: {Item.IsGrabbed()} Inventory.Contains(): {Inventory.Instance.Contains(this.gameObject, false)} Storage.Contains: {StorageController.Instance.StorageInventory.ContainsItem(Item)}");
-
-
-        if (Item.transform.parent == WorldMover.OriginShiftParent && !wasThrown)
-        {
-            Multiplayer.LogDebug(() => $"GetItemState() NetId: {NetId}, {name}, Parent: {Item.transform.parent} WorldMover: {WorldMover.OriginShiftParent}, wasThrown: {wasThrown}");
-            return ItemState.Dropped;
-        }
 
         if (wasThrown)
         {
@@ -487,10 +540,22 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         if (Inventory.Instance.Contains(this.gameObject, false))
             return ItemState.InInventory;
 
+        if (Item.InContainer != null)
+            return ItemState.InContainer;
+
+        if (gadgetItem != null && gadgetItem.Gadget != null && gadgetItem.Gadget.IsLinked)
+            return ItemState.InstalledGadget;
+
         if (snappableItem != null && snappableItem.IsSnapped)
         {
             Multiplayer.LogDebug(() => $"GetItemState() NetId: {NetId}, {name}, snapped! {this.transform.parent}");
             return ItemState.Attached;
+        }
+
+        if (Item.transform.parent == WorldMover.OriginShiftParent)
+        {
+            Multiplayer.LogDebug(() => $"GetItemState() NetId: {NetId}, {name}, Parent: {Item.transform.parent} WorldMover: {WorldMover.OriginShiftParent}, wasThrown: {wasThrown}");
+            return ItemState.Dropped;
         }
 
         //do we need a condition to check if it's attached to something else (last attach vs current attach)?
@@ -532,7 +597,8 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
             }
             else
             {
-                Multiplayer.LogWarning($"Tracked value not found: {newValue.Key}\r\n {String.Join(", ", trackedValues.Select(val => ((dynamic)val).Key))}");
+                unappliedTrackedValues[newValue.Key] = newValue.Value;
+                Multiplayer.LogDebug(() => $"Tracked value '{newValue.Key}' queued until its item adapter registers on {name} ({NetId}).");
             }
         }
     }
@@ -552,10 +618,13 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
             if (NetworkLifecycle.Instance.Server.TryGetServerPlayer(snapshot.Player, out ServerPlayer player) && player.OwnsItem(NetId))
                 player.RemoveOwnedItem(NetId);
 
-        //activate and relocate item
-        gameObject.SetActive(true);
-        transform.position = snapshot.ItemPosition + WorldMover.currentMove;
-        transform.rotation = snapshot.ItemRotation;
+        // Use the game's world-placement transition so a remote item is removed
+        // from any local inventory/container state and parented to the origin-shift
+        // transform before it is made visible.
+        StorageController.RemoveItemFromCurrentStorageAndAddToWorld(
+            Item,
+            ToWorldPosition(snapshot.ItemPosition),
+            snapshot.ItemRotation);
         OwnerId = 0;
 
         //handle throwing of the item
@@ -621,6 +690,50 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         //todo add to player model's hand
         this.gameObject.SetActive(false);
     }
+
+    public Vector3 GetRelevancePosition()
+    {
+        if (gadgetItem != null && gadgetItem.Gadget != null && gadgetItem.Gadget.IsLinked)
+            return gadgetItem.Gadget.transform.position;
+
+        return transform.position;
+    }
+
+    private bool HandleContainerState(ItemUpdateData snapshot)
+    {
+        if (!TryGet(snapshot.ContainerNetId, out NetworkedItem containerItem) ||
+            containerItem == null ||
+            !containerItem.TryGetComponent(out ItemContainer container) ||
+            snapshot.ContainerSlot < 0 || snapshot.ContainerSlot >= container.Capacity)
+        {
+            return false;
+        }
+
+        if (Item.InContainer == container && Array.IndexOf(container.GetItemsArray(false), Item.gameObject) == snapshot.ContainerSlot)
+            return true;
+
+        if (Item.InContainer != null)
+            Item.InContainer.RemoveItem(Item.gameObject, false, false);
+
+        GameObject occupyingItem = container[snapshot.ContainerSlot];
+        if (occupyingItem != null && occupyingItem != Item.gameObject)
+            container.RemoveItem(snapshot.ContainerSlot, false, true);
+
+        return container.AddItem(Item.gameObject, snapshot.ContainerSlot);
+    }
+
+    private IEnumerator RetryContainerState(ItemUpdateData snapshot)
+    {
+        const int maxFrames = 120;
+        for (int frame = 0; frame < maxFrames; frame++)
+        {
+            yield return null;
+            if (HandleContainerState(snapshot))
+                yield break;
+        }
+
+        Multiplayer.LogWarning($"Timed out attaching item {NetId} to container {snapshot.ContainerNetId} slot {snapshot.ContainerSlot}.");
+    }
     #endregion
 
     protected override void OnDestroy()
@@ -639,6 +752,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         {
             Item.Grabbed -= OnGrabbed;
             Item.Ungrabbed -= OnUngrabbed;
+            Item.ItemInContainerStateChanged -= OnContainerChanged;
             itemBaseToNetworkedItem.Remove(Item);
         }
         else
