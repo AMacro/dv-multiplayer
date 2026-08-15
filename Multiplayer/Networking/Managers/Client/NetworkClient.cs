@@ -64,6 +64,7 @@ public class NetworkClient : NetworkManager
 
     private ITransportPeer selfPeer;
     public byte PlayerId { get; private set; }
+    public int MaxPlayers { get; private set; } = 1;
     public string Username { get; private set; }
     private string characterModelId;
     public string CrewName { get; private set; }
@@ -504,6 +505,7 @@ public class NetworkClient : NetworkManager
         {
             Log($"Player accepted");
             PlayerId = packet.PlayerId;
+            MaxPlayers = Math.Max(packet.MaxPlayers, 1);
 
             if (!string.IsNullOrEmpty(packet.OverrideUsername))
             {
@@ -1488,7 +1490,7 @@ public class NetworkClient : NetworkManager
 
         Log($"Cash Register With Modules Action received for {netCashRegister.GetObjectPath()}, Action: {packet.Action}, Amount: {packet.Amount}");
 
-        netCashRegister.Client_ProcessCashRegisterAction(packet.Action, packet.Amount);
+        netCashRegister.Client_ProcessCashRegisterAction(packet);
     }
 
     private void OnCommonGenericSwitchStatePacket(CommonGenericSwitchStatePacket packet)
@@ -1955,14 +1957,17 @@ public class NetworkClient : NetworkManager
         SendPacketToServer(new CommonPaintThemePacket { NetId = netTraincar.NetId, TargetArea = targetArea, PaintThemeId = themeId }, DeliveryMethod.ReliableUnordered);
     }
 
-    public void SendCashRegisterAction(ushort netId, CashRegisterAction action, double amount = 0.0f)
+    public void SendCashRegisterAction(ushort netId, CashRegisterAction action, double amount = 0.0f,
+        string[] itemPrefabNames = null, int[] itemAmounts = null)
     {
         SendPacketToServer(
             new CommonCashRegisterWithModulesActionPacket
             {
                 NetId = netId,
                 Action = action,
-                Amount = amount
+                Amount = amount,
+                ItemPrefabNames = itemPrefabNames ?? [],
+                ItemAmounts = itemAmounts ?? []
             },
             DeliveryMethod.ReliableOrdered
         );

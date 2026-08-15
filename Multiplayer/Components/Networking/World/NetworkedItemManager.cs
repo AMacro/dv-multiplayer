@@ -10,6 +10,7 @@ using Multiplayer.Utils;
 using DV;
 using DV.Interaction;
 using DV.InventorySystem;
+using DV.Shops;
 using Multiplayer.Networking.Data.Items;
 using Multiplayer.Networking.Packets.Clientbound;
 using Multiplayer.Networking.Packets.Serverbound;
@@ -48,6 +49,7 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
     private Dictionary<string, InventoryItemSpec> ItemPrefabs = new(1024);   //Item prefabs
     private bool ClientInitialised = false;
     private readonly Dictionary<int, NetworkedItem> pendingItemReconciliation = [];
+    private bool initialHostOwnershipAssigned;
 
 
     /* 
@@ -61,7 +63,7 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
         if (!NetworkLifecycle.Instance.IsHost())
             return;
 
-        //B99 temporary patch NetworkLifecycle.Instance.Server.PlayerDisconnected += PlayerDisconnected;
+        NetworkLifecycle.Instance.Server.PlayerDisconnected += PlayerDisconnected;
 
         try
         {
@@ -73,9 +75,28 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
         }
     }
 
-    private void PlayerDisconnected(uint netID)
+    private void PlayerDisconnected(ServerPlayer disconnectedPlayer)
     {
-        throw new NotImplementedException();
+        if (disconnectedPlayer == null || !NetworkLifecycle.Instance.IsHost())
+            return;
+
+        byte hostPlayerId = NetworkLifecycle.Instance.Server?.SelfId ?? 0;
+        if (hostPlayerId == 0 || disconnectedPlayer.PlayerId == hostPlayerId)
+            return;
+
+        int transferredItems = 0;
+        foreach (var item in NetworkedItem.GetAll())
+        {
+            if (item == null || item.OwnerId != disconnectedPlayer.PlayerId)
+                continue;
+
+            item.SetOwner(hostPlayerId, true);
+            transferredItems++;
+        }
+
+        Multiplayer.LogDebug(() =>
+            $"Transferred {transferredItems} items from disconnected player " +
+            $"{disconnectedPlayer.PlayerId} to host player {hostPlayerId}");
     }
 
     protected void Start()
@@ -92,6 +113,8 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
             return;
 
         NetworkLifecycle.Instance.OnTick -= Common_OnTick;
+        if (NetworkLifecycle.Instance.Server != null)
+            NetworkLifecycle.Instance.Server.PlayerDisconnected -= PlayerDisconnected;
     }
 
     public void AddDirtyItemSnapshot(NetworkedItem netItem, ItemUpdateData snapshot)
@@ -194,10 +217,10 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
             foreach (var item in allItems)
             {
                 if (item == null)
-                {
-                    NetworkLifecycle.Instance.Server.LogDebug(() => $"UpdatePlayerItemLists() Null item found in allItems!");
                     continue;
-                }
+
+                if (IsLocalShopItem(item))
+                    continue;
 
                 float sqrDistance = (player.WorldPosition - item.WorldPosition).sqrMagnitude;
 
@@ -229,7 +252,7 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
 
         foreach (var item in NetworkedItem.GetAll())
         {
-            if (item == null || item.NetId == 0)
+            if (item == null || item.NetId == 0 || IsLocalShopItem(item))
                 continue;
 
             ItemUpdateData snapshot = item.GetSnapshot();
@@ -336,6 +359,9 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
                 // ItemUpdateData only serializes Player for hand/inventory states. Stamp
                 // the authenticated sender here instead of trusting the client's value.
                 snapshot.Player = player.PlayerId;
+                snapshot.OwnerPlayerId = snapshot.ItemState is ItemState.InHand or ItemState.InInventory
+                    ? player.PlayerId
+                    : netItem.OwnerId > 0 ? (byte)netItem.OwnerId : (byte)0;
                 NetworkLifecycle.Instance.Server.LogWarning($"NetworkedItemManager.ProcessReceivedAsHost() ItemNetId: {snapshot.ItemNetId}, snapshot type: {snapshot.UpdateType}");
                 netItem.ReceiveSnapshot(snapshot);
                 AcceptedClientUpdates[snapshot.ItemNetId] = snapshot;
@@ -410,7 +436,7 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
 
         foreach (var item in NetworkedItem.GetAll())
         {
-            if (item == null || item.NetId == 0)
+            if (item == null || item.NetId == 0 || IsLocalShopItem(item))
                 continue;
 
             ItemUpdateData snapshot = item.GetSnapshot();
@@ -529,7 +555,7 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
         {
             try
             {
-                if (item.Item != null && !item.Item.IsEssential() && !item.Item.IsGrabbed() && !StorageController.Instance.StorageInventory.ContainsItem(item.Item))
+                if (item.Item != null && !IsLocalShopItem(item) && !item.Item.IsEssential() && !item.Item.IsGrabbed() && !StorageController.Instance.StorageInventory.ContainsItem(item.Item))
                 {
                     SendToCache(item);
                 }
@@ -612,6 +638,28 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
             Multiplayer.LogWarning($"Host did not return reconciliation data for local item {unresolved.Key} ({unresolved.Value?.name})");
 
         pendingItemReconciliation.Clear();
+
+        if (NetworkLifecycle.Instance.IsHost() && !initialHostOwnershipAssigned)
+        {
+            byte hostPlayerId = NetworkLifecycle.Instance.Server?.SelfId ?? 0;
+            if (hostPlayerId != 0)
+            {
+                int assignedItems = 0;
+                foreach (var item in NetworkedItem.GetAll())
+                {
+                    if (item == null)
+                        continue;
+
+                    item.SetOwner(hostPlayerId);
+                    assignedItems++;
+                }
+
+                initialHostOwnershipAssigned = true;
+                Multiplayer.LogDebug(() =>
+                    $"Assigned {assignedItems} initial session items to host player {hostPlayerId}");
+            }
+        }
+
         ClientInitialised = true;
     }
 
@@ -648,6 +696,7 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
                         networkedItem.Item.InventorySpecs.BelongsToPlayer = request.BelongsToPlayer;
                         snapshot.ItemNetId = netId;
                         snapshot.Player = player.PlayerId;
+                        snapshot.OwnerPlayerId = player.PlayerId;
                         networkedItem.ReceiveSnapshot(snapshot);
 
                         if (snapshot.ItemState is ItemState.InHand or ItemState.InInventory)
@@ -689,7 +738,7 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
 
     private static bool IsReconciliationCandidate(NetworkedItem item)
     {
-        if (item?.Item == null || item.NetId != 0)
+        if (item?.Item == null || item.NetId != 0 || IsLocalShopItem(item))
             return false;
 
         var inventory = Inventory.Instance;
@@ -761,6 +810,9 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
 
             return false;
     }
+
+    private static bool IsLocalShopItem(NetworkedItem item) =>
+        item != null && item.TryGetComponent<ShopScanner>(out _);
 
     [UsedImplicitly]
     public new static string AllowAutoCreate()

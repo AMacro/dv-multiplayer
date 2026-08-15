@@ -99,6 +99,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
     private ItemState observedState;
     private bool hasObservedState;
     private bool stateDirty;
+    private bool ownerDirty;
     private bool wasThrown;
     private bool suppressDestroySync;
 
@@ -108,6 +109,16 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
     //Handle ownership
     public sbyte OwnerId { get; private set; } = -1; // 0 means no owner
+
+    public void SetOwner(byte playerId, bool markDirty = false)
+    {
+        if (OwnerId == (sbyte)playerId)
+            return;
+
+        OwnerId = (sbyte)playerId;
+        if (markDirty)
+            ownerDirty = true;
+    }
 
     //public void SetOwner(ushort playerId)
     //{
@@ -185,6 +196,16 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
             Item = itemBase;
             itemBaseToNetworkedItem[Item] = this;
+
+            // The host is the default persistent owner for items that make up the
+            // session world. Explicit ownership (purchase, pickup, reconciliation)
+            // can transfer it afterward.
+            if (NetworkLifecycle.Instance.IsHost())
+            {
+                byte hostPlayerId = NetworkLifecycle.Instance.Server?.SelfId ?? 0;
+                if (hostPlayerId != 0)
+                    SetOwner(hostPlayerId);
+            }
 
             Item.Grabbed += OnGrabbed;
             Item.Ungrabbed += OnUngrabbed;
@@ -312,10 +333,30 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         if (Item == null && Register() == false)
             return null;
 
-        if (!stateDirty && !hasDirtyVals)
+        if (!stateDirty && !ownerDirty && !hasDirtyVals)
             return null;
 
         ItemState currentState = GetItemState();
+
+        // A local pickup is observed rather than applied through ReceiveSnapshot.
+        // It establishes ownership, while a later drop only ends possession: the
+        // persistent owner must remain so lost and found can return the item.
+        if (stateDirty && NetworkLifecycle.Instance.IsClientRunning)
+        {
+            byte localPlayerId = NetworkLifecycle.Instance.Client?.PlayerId ?? 0;
+            bool isHeldByLocalPlayer = currentState is ItemState.InHand or ItemState.InInventory;
+            if (isHeldByLocalPlayer)
+                SetOwner(localPlayerId);
+
+            if (NetworkLifecycle.Instance.IsHost() &&
+                NetworkLifecycle.Instance.Server.TryGetServerPlayer(localPlayerId, out ServerPlayer localPlayer))
+            {
+                if (isHeldByLocalPlayer && !localPlayer.OwnsItem(NetId))
+                    localPlayer.AddOwnedItem(NetId);
+                else if (!isHeldByLocalPlayer && localPlayer.OwnsItem(NetId))
+                    localPlayer.RemoveOwnedItem(NetId);
+            }
+        }
 
         if (!createdDirty)
         {
@@ -327,6 +368,9 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
                 Multiplayer.LogDebug(GetDirtyValuesDebugString);
                 updateType |= ItemUpdateData.ItemUpdateType.ObjectState;
             }
+
+            if (ownerDirty)
+                updateType |= ItemUpdateData.ItemUpdateType.Ownership;
         }
         else
         {
@@ -343,6 +387,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
         createdDirty = false;
         stateDirty = false;
+        ownerDirty = false;
         wasThrown = false;
 
         MarkValuesClean();
@@ -367,6 +412,12 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
     private void ApplySnapshot(ItemUpdateData snapshot)
     {
+        // Shop clients instantiate the raw prefab, whose local flag can differ from
+        // the host's purchased instance. Apply this before dropped-state handling so
+        // the item is restored to the client's world storage list.
+        if (Item?.InventorySpecs != null)
+            Item.InventorySpecs.BelongsToPlayer = snapshot.BelongsToPlayer;
+
         if (snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.ItemState) || snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.FullSync) || snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.Create))
         {
             Multiplayer.Log($"NetworkedItem.ApplySnapshot() netId: {snapshot?.ItemNetId}, ItemUpdateType: {snapshot?.UpdateType}, ItemState: {snapshot?.ItemState}, Active state: {gameObject.activeInHierarchy}");
@@ -396,6 +447,16 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
                     throw new Exception($"NetworkedItem.ApplySnapshot() Item state not implemented: {snapshot?.ItemState}");
 
             }
+
+        }
+
+        if (snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.Ownership) ||
+            snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.ItemState) ||
+            snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.FullSync) ||
+            snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.Create))
+        {
+            // Ownership-only updates must not activate or relocate the item.
+            SetOwner(snapshot.OwnerPlayerId);
         }
 
         Multiplayer.Log($"NetworkedItem.ApplySnapshot() netID: {snapshot?.ItemNetId}, ItemUpdateType {snapshot?.UpdateType} About to process states");
@@ -415,6 +476,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         //mark values as clean
         createdDirty = false;
         stateDirty = false;
+        ownerDirty = false;
 
         MarkValuesClean();
         return;
@@ -469,6 +531,8 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         {
             UpdateType = updateType,
             ItemNetId = NetId,
+            OwnerPlayerId = OwnerId > 0 ? (byte)OwnerId : (byte)0,
+            BelongsToPlayer = Item.InventorySpecs.BelongsToPlayer,
             PrefabName = Item.InventorySpecs.ItemPrefabName,
             ItemState = lastState,
             ItemPosition = position,
@@ -494,6 +558,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
     {
         createdDirty = false;
         stateDirty = false;
+        ownerDirty = false;
         lastState = GetItemState();
         MarkValuesClean();
     }
@@ -711,9 +776,24 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         if (UnloadWatcher.isQuitting)
             return;
 
+        // Scene unloading used to return before clearing this static lookup. Unity
+        // then left destroyed-object entries in GetAll(), which were scanned and
+        // logged as null items on every network tick in the next session.
+        if (Item != null)
+        {
+            Item.Grabbed -= OnGrabbed;
+            Item.Ungrabbed -= OnUngrabbed;
+            itemBaseToNetworkedItem.Remove(Item);
+        }
+        else if (!UnloadWatcher.isUnloading)
+        {
+            Multiplayer.LogWarning($"NetworkedItem.OnDestroy({name}, {NetId}) Item is null!");
+        }
+
         if (UnloadWatcher.isUnloading)
         {
             itemBaseToNetworkedItem.Clear();
+            // The base class resets its own static ID lookup during unload.
             base.OnDestroy();
             return;
         }
@@ -730,17 +810,6 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
                 if (updateData != null)
                     NetworkedItemManager.Instance.AddDirtyItemSnapshot(this, updateData);
             }
-        }
-
-        if (Item != null)
-        {
-            Item.Grabbed -= OnGrabbed;
-            Item.Ungrabbed -= OnUngrabbed;
-            itemBaseToNetworkedItem.Remove(Item);
-        }
-        else
-        {
-            Multiplayer.LogWarning($"NetworkedItem.OnDestroy({name}, {NetId}) Item is null!");
         }
 
         base.OnDestroy();

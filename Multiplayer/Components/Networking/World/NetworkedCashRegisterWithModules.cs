@@ -84,7 +84,7 @@ public class NetworkedCashRegisterWithModules : IdMonoBehaviour<ushort, Networke
     #endregion
 
     #region Common Variables
-    CashRegisterWithModules CashRegister;
+    internal CashRegisterWithModules CashRegister;
     #endregion
 
     #region Unity
@@ -140,6 +140,12 @@ public class NetworkedCashRegisterWithModules : IdMonoBehaviour<ushort, Networke
 
     public void Server_ProcessCashRegisterAction(ServerPlayer player, CommonCashRegisterWithModulesActionPacket packet)
     {
+        if (IsShopRegister)
+        {
+            Server_ProcessShopPurchase(player, packet);
+            return;
+        }
+
         bool success = false;
         CashRegisterAction response = CashRegisterAction.RejectGeneric;
 
@@ -235,6 +241,98 @@ public class NetworkedCashRegisterWithModules : IdMonoBehaviour<ushort, Networke
         processingAction = false;
     }
 
+    private void Server_ProcessShopPurchase(ServerPlayer player, CommonCashRegisterWithModulesActionPacket packet)
+    {
+        CashRegisterAction rejection = CashRegisterAction.RejectGeneric;
+        if (packet.Action != CashRegisterAction.Buy || !transform.PlayerCanReach(player, 1))
+        {
+            SendShopRejection(player, rejection);
+            return;
+        }
+
+        string[] prefabNames = packet.ItemPrefabNames ?? [];
+        int[] amounts = packet.ItemAmounts ?? [];
+        if (prefabNames.Length == 0 || prefabNames.Length > 64 || prefabNames.Length != amounts.Length)
+        {
+            SendShopRejection(player, CashRegisterAction.RejectedNoItems);
+            return;
+        }
+
+        Shop shop = GlobalShopController.Instance.globalShopList.FirstOrDefault(entry => entry.cashRegister == CashRegister);
+        var modules = shop?.scanItemResourceModules
+            .Where(module => module?.sellingItemSpec != null)
+            .GroupBy(module => module.sellingItemSpec.ItemPrefabName)
+            .ToDictionary(group => group.Key, group => group.First());
+        if (shop == null || modules == null)
+        {
+            SendShopRejection(player, rejection);
+            return;
+        }
+
+        var purchases = new List<ShopPurchase>(prefabNames.Length);
+        double totalCost = 0.0;
+        var requestedByPrefab = new Dictionary<string, int>();
+        for (int i = 0; i < prefabNames.Length; i++)
+        {
+            if (string.IsNullOrEmpty(prefabNames[i]) || amounts[i] <= 0 ||
+                !modules.TryGetValue(prefabNames[i], out ScanItemCashRegisterModule module))
+            {
+                SendShopRejection(player, CashRegisterAction.RejectedNoItems);
+                return;
+            }
+
+            int requested = amounts[i];
+            if (requestedByPrefab.TryGetValue(prefabNames[i], out int previous))
+                requested = checked(requested + previous);
+            requestedByPrefab[prefabNames[i]] = requested;
+
+            ShopItemData data = GlobalShopController.Instance.GetShopItemData(module.sellingItemSpec);
+            if (data == null || requested > data.ItemsInStock)
+            {
+                SendShopRejection(player, CashRegisterAction.RejectedNoItems);
+                return;
+            }
+
+            totalCost += data.basePrice * amounts[i];
+        }
+
+        if (double.IsNaN(packet.Amount) || double.IsInfinity(packet.Amount) || packet.Amount + 0.001 < totalCost)
+        {
+            SendShopRejection(player, CashRegisterAction.RejectFunds);
+            return;
+        }
+
+        foreach (var request in requestedByPrefab)
+        {
+            ScanItemCashRegisterModule module = modules[request.Key];
+            GlobalShopController.Instance.AddItemToInstantiationQueue(module.sellingItemSpec, shop, request.Value);
+            purchases.Add(new ShopPurchase(request.Key, request.Value,
+                GlobalShopController.Instance.GetShopItemData(module.sellingItemSpec).basePrice));
+        }
+
+        ShopPurchaseCoordinator.QueueOwnership(purchases, player);
+        NetworkLifecycle.Instance.Server.SendCashRegisterAction(new CommonCashRegisterWithModulesActionPacket
+        {
+            NetId = NetId,
+            Action = CashRegisterAction.Approve,
+            Amount = totalCost,
+            BuyerPlayerId = player.PlayerId,
+            ItemPrefabNames = purchases.Select(item => item.PrefabName).ToArray(),
+            ItemAmounts = purchases.Select(item => item.Amount).ToArray(),
+            ItemUnitPrices = purchases.Select(item => item.UnitPrice).ToArray()
+        });
+    }
+
+    private void SendShopRejection(ServerPlayer player, CashRegisterAction action)
+    {
+        NetworkLifecycle.Instance.Server.SendCashRegisterAction(new CommonCashRegisterWithModulesActionPacket
+        {
+            NetId = NetId,
+            Action = action,
+            BuyerPlayerId = player.PlayerId
+        }, [player]);
+    }
+
     #endregion
 
     #region Client
@@ -242,6 +340,16 @@ public class NetworkedCashRegisterWithModules : IdMonoBehaviour<ushort, Networke
     public void Client_ProcessCashRegisterAction(CashRegisterAction action, double amount)
     {
         NetworkLifecycle.Instance.Client?.LogDebug(() => $"NetworkedCashRegisterWithModules.Client_ProcessCashRegisterAction({action}, {amount}) isBuying: {isBuying}, isCancelling: {isCancelling}");
+        if (IsShopRegister && action is CashRegisterAction.RejectGeneric or CashRegisterAction.RejectFunds or CashRegisterAction.RejectedNoItems)
+        {
+            isBuying = false;
+            isCancelling = false;
+            isAddingCash = false;
+            CashRegister.IsProcessingTransaction = false;
+            CashRegister.Cancel();
+            return;
+        }
+
         switch (action)
         {
             case CashRegisterAction.Cancel:
@@ -348,6 +456,32 @@ public class NetworkedCashRegisterWithModules : IdMonoBehaviour<ushort, Networke
         }
     }
 
+    public void Client_ProcessCashRegisterAction(CommonCashRegisterWithModulesActionPacket packet)
+    {
+        if (IsShopRegister && packet.Action == CashRegisterAction.Approve)
+        {
+            ShopPurchaseCoordinator.ApplyApproval(this, packet);
+            return;
+        }
+
+        if (IsShopRegister && packet.Action == CashRegisterAction.ShopStockChanged)
+        {
+            ShopPurchaseCoordinator.ApplyStockDelta(packet.ItemPrefabNames, packet.ItemAmounts);
+            return;
+        }
+
+        Client_ProcessCashRegisterAction(packet.Action, packet.Amount);
+    }
+
+    public void CompleteApprovedShopPurchase()
+    {
+        isBuying = false;
+        if (!ShopPurchaseCoordinator.RunApprovedLocalPurchase(CashRegister))
+            Multiplayer.LogWarning($"Approved shop purchase could not be completed locally for {CashRegister.GetObjectPath()}");
+        else
+            GlobalShopController.Instance.Fire_GlobalShopDataChanged();
+    }
+
     public IEnumerator Buy()
     {
         if (isBuying || isCancelling || NetworkLifecycle.Instance.IsProcessingPacket)
@@ -365,6 +499,36 @@ public class NetworkedCashRegisterWithModules : IdMonoBehaviour<ushort, Networke
 
         isBuying = false;
 
+        CashRegister.IsProcessingTransaction = false;
+        EnableInteraction();
+    }
+
+    public IEnumerator BuyShop()
+    {
+        if (isBuying || isCancelling || NetworkLifecycle.Instance.IsProcessingPacket)
+            yield break;
+
+        ShopPurchase[] purchases = ShopPurchaseCoordinator.Capture(CashRegister);
+        if (purchases.Length == 0)
+        {
+            CashRegister.notEnoughMoneyAudio?.Play(CashRegister.transform.position, 1f, 1f, 0f, 1f, 500f,
+                default, null, CashRegister.transform, false, 0f, null);
+            yield break;
+        }
+
+        DisableInteraction();
+        CashRegister.IsProcessingTransaction = true;
+        isBuying = true;
+
+        NetworkLifecycle.Instance.Client.SendCashRegisterAction(NetId, CashRegisterAction.Buy,
+            CashRegister.DepositedCash,
+            purchases.Select(item => item.PrefabName).ToArray(),
+            purchases.Select(item => item.Amount).ToArray());
+
+        float timeOut = Time.time + NetworkLifecycle.Instance.Client.RPC_Timeout;
+        yield return new WaitUntil(() => Time.time >= timeOut || isBuying == false);
+
+        isBuying = false;
         CashRegister.IsProcessingTransaction = false;
         EnableInteraction();
     }

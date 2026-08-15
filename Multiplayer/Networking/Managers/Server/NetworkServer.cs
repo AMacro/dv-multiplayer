@@ -1194,6 +1194,7 @@ public class NetworkServer : NetworkManager
         {
             Accepted = true,
             PlayerId = serverPlayer.PlayerId,
+            MaxPlayers = IsSinglePlayer ? 1 : Multiplayer.Settings.MaxPlayers,
             OverrideUsername = serverPlayer.OriginalUsername == serverPlayer.Username ? string.Empty : overrideUsername,
         };
 

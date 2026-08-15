@@ -18,11 +18,14 @@ public class ItemUpdateData
         ItemState = 4,
         ItemPosition = 8,
         ObjectState = 16,
+        Ownership = 32,
         FullSync = ItemState | ItemPosition | ObjectState,
     }
 
     public ItemUpdateType UpdateType { get; set; }
     public ushort ItemNetId { get; set; }
+    public byte OwnerPlayerId { get; set; }
+    public bool BelongsToPlayer { get; set; }
     public string PrefabName { get; set; }
     public ItemState ItemState { get; set; }
     public Vector3 ItemPosition { get; set; }
@@ -41,6 +44,8 @@ public class ItemUpdateData
         if (UpdateType == ItemUpdateType.Destroy)
             return;
 
+        writer.Put(OwnerPlayerId);
+        writer.Put(BelongsToPlayer);
         writer.Put((byte)ItemState);
 
         if (UpdateType.HasFlag(ItemUpdateType.Create))
@@ -91,6 +96,8 @@ public class ItemUpdateData
         if (UpdateType == ItemUpdateType.Destroy)
             return;
 
+        OwnerPlayerId = reader.GetByte();
+        BelongsToPlayer = reader.GetBool();
         ItemState = (ItemState)reader.GetByte();
 
         if (UpdateType.HasFlag(ItemUpdateType.Create))
