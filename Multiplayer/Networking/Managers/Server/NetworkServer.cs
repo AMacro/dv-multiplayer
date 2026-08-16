@@ -233,6 +233,8 @@ public class NetworkServer : NetworkManager
 
         // Items
         netPacketProcessor.SubscribeNetSerializable<CommonItemChangePacket, ITransportPeer>(OnCommonItemChangePacket);
+        netPacketProcessor.SubscribeNetSerializable<ServerboundItemReconciliationPacket, ITransportPeer>(OnServerboundItemReconciliationPacket);
+        netPacketProcessor.SubscribeNetSerializable<CommonCustomizationPacket, ITransportPeer>(OnCommonCustomizationPacket);
     }
 
     //allow mods to register their own packets
@@ -1309,6 +1311,20 @@ public class NetworkServer : NetworkManager
 
                 break;
 
+            case PlayerLoadingState.ReadyForCustomizers:
+                var customizationState = CustomizationStateManager.CaptureCurrentState();
+                foreach (ushort itemNetId in customizationState.Gadgets.Select(gadget => gadget.ItemNetId)
+                    .Concat(customizationState.RelatedItems.Select(item => item.ItemNetId)).Distinct())
+                    if (NetworkedItem.TryGet(itemNetId, out var knownItem))
+                        player.KnownItems[knownItem] = NetworkLifecycle.Instance.Tick;
+
+                SendNetSerializablePacket(peer, new ClientboundCustomizationStatePacket
+                {
+                    State = customizationState,
+                }, DeliveryMethod.ReliableOrdered);
+
+                break;
+
             case PlayerLoadingState.ReadyForItems:
                 // Send Inventory and world items
 
@@ -2095,8 +2111,8 @@ public class NetworkServer : NetworkManager
 
     private void OnCommonItemChangePacket(CommonItemChangePacket packet, ITransportPeer peer)
     {
-        //if(!TryGetServerPlayer(peer, out var player))
-        //    return;
+        if (!TryGetServerPlayer(peer, out var player))
+            return;
 
         //LogDebug(()=>$"OnCommonItemChangePacket({packet?.Items?.Count}, {peer.Id} (\"{player.Username}\"))");
 
@@ -2129,7 +2145,38 @@ public class NetworkServer : NetworkManager
 
         //);
 
-        //NetworkedItemManager.Instance.ReceiveSnapshots(packet.Items, player);
+        if (packet?.Items == null)
+            return;
+
+        NetworkedItemManager.Instance.ReceiveSnapshots(packet.Items, player);
+    }
+
+    private void OnServerboundItemReconciliationPacket(ServerboundItemReconciliationPacket packet, ITransportPeer peer)
+    {
+        if (!TryGetServerPlayer(peer, out var player))
+            return;
+
+        if (player.LoadingState != PlayerLoadingState.ReadyForItems)
+        {
+            LogWarning($"Ignoring item reconciliation from {player.Username} in loading state {player.LoadingState}");
+            return;
+        }
+
+        var response = NetworkedItemManager.Instance.ReconcileClientItems(packet, player);
+        SendNetSerializablePacket(peer, response, DeliveryMethod.ReliableOrdered);
+    }
+
+    public void SendCustomizationAction(CommonCustomizationPacket packet) =>
+        SendNetSerializablePacketToAll(packet, DeliveryMethod.ReliableOrdered, excludeSelf: true);
+
+    private void OnCommonCustomizationPacket(CommonCustomizationPacket packet, ITransportPeer peer)
+    {
+        if (!TryGetServerPlayer(peer, out _)) return;
+        CustomizationStateManager.ApplyAction(packet);
+        if (packet.Action == CustomizationAction.ReplaceSpool || packet.Action == CustomizationAction.ReplaceDuctTape)
+            SendNetSerializablePacketToAll(packet, DeliveryMethod.ReliableOrdered, excludeSelf: true);
+        else
+            SendNetSerializablePacketToAll(packet, DeliveryMethod.ReliableOrdered, peer, excludeSelf: true);
     }
 
     private void OnCommonCashRegisterWithModulesActionPacket(CommonCashRegisterWithModulesActionPacket packet, ITransportPeer peer)

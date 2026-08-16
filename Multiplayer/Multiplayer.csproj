@@ -14,6 +14,7 @@
         <Publicize Include="Assembly-CSharp" IncludeCompilerGeneratedMembers="false" />
         <Publicize Include="DV.CharacterController" IncludeCompilerGeneratedMembers="false" />
         <Publicize Include="DV.Interaction" IncludeCompilerGeneratedMembers="false" />
+        <Publicize Include="DV.Inventory" IncludeCompilerGeneratedMembers="false" />
         <Publicize Include="DV.RailTrack" IncludeCompilerGeneratedMembers="false" />
         <Publicize Include="DV.Simulation" IncludeCompilerGeneratedMembers="false" />
         <Publicize Include="DV.Platform.Steam" IncludeCompilerGeneratedMembers="false" />

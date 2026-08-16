@@ -60,7 +60,7 @@ public class TrackedValue<T>
 
     private bool DefaultComparer(T current, T last)
     {
-        return !current.Equals(last);
+        return !EqualityComparer<T>.Default.Equals(current, last);
     }
 
     public string GetDebugString()

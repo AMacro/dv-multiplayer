@@ -25,6 +25,7 @@ using Multiplayer.Components.Networking.UI;
 using Multiplayer.Components.Networking.World;
 using Multiplayer.Components.SaveGame;
 using Multiplayer.Networking.Data;
+using Multiplayer.Networking.Data.Customization;
 using Multiplayer.Networking.Data.Items;
 using Multiplayer.Networking.Data.Player;
 using Multiplayer.Networking.Data.Train;
@@ -76,6 +77,9 @@ public class NetworkClient : NetworkManager
     internal uint trainSetsToSpawn = uint.MaxValue;
     internal uint trainSetsSpawned = 0;
     internal bool railwayStateLoaded = false;
+    private bool customizerStateLoaded;
+    private CustomizationStateData pendingCustomizationState;
+    private bool itemReconciliationComplete;
 
     // One way ping in milliseconds
     public int Ping { get; private set; }
@@ -244,6 +248,9 @@ public class NetworkClient : NetworkManager
 
         // World Sync
         netPacketProcessor.SubscribeNetSerializable<CommonItemChangePacket>(OnCommonItemChangePacket);
+        netPacketProcessor.SubscribeNetSerializable<ClientboundItemReconciliationPacket>(OnClientboundItemReconciliationPacket);
+        netPacketProcessor.SubscribeNetSerializable<ClientboundCustomizationStatePacket>(OnClientboundCustomizationStatePacket);
+        netPacketProcessor.SubscribeNetSerializable<CommonCustomizationPacket>(OnCommonCustomizationPacket);
         netPacketProcessor.SubscribeReusable<CommonPitStopInteractionPacket>(OnCommonPitStopInteractionPacket);
         netPacketProcessor.SubscribeNetSerializable<CommonPitStopPlugInteractionPacket>(OnCommonPitStopPlugInteractionPacket);
         netPacketProcessor.SubscribeReusable<ClientboundPitStopBulkUpdatePacket>(OnClientboundPitStopBulkUpdatePacket);
@@ -371,17 +378,40 @@ public class NetworkClient : NetworkManager
          * ReadyForCustomizers
          */
 
-        //TODO: implement
-        yield return new WaitForSeconds(0.25f);
+        customizerStateLoaded = false;
+        pendingCustomizationState = null;
+        Log("Requesting customization state");
+        SendLoadStateUpdate(PlayerLoadingState.ReadyForCustomizers);
+        displayLoadingInfo.OnLoadingStatusChanged("Syncing customizations", false, ((float)LoadingState / (float)PlayerLoadingState.Complete) * 100);
+
+        while (!customizerStateLoaded)
+        {
+            if (pendingCustomizationState == null)
+            {
+                yield return null;
+                continue;
+            }
+
+            yield return CustomizationStateManager.ApplyCurrentStateWhenReady(pendingCustomizationState);
+            Log($"Customization state loaded ({pendingCustomizationState.Gadgets.Count} gadgets, {pendingCustomizationState.Holes.Count} holes)");
+            pendingCustomizationState = null;
+            customizerStateLoaded = true;
+        }
 
         /* 
          * ReadyForItems
          */
 
-        Log($"Train sets spawned, requesting items");
+        itemReconciliationComplete = false;
+        Log("Reconciling local items");
         SendLoadStateUpdate(PlayerLoadingState.ReadyForItems);
+        SendNetSerializablePacketToServer(
+            NetworkedItemManager.Instance.CreateItemReconciliationRequest(),
+            DeliveryMethod.ReliableOrdered);
+        displayLoadingInfo.OnLoadingStatusChanged("Syncing items", false, ((float)LoadingState / (float)PlayerLoadingState.Complete) * 100);
 
-        yield return new WaitForSeconds(0.25f);
+        while (!itemReconciliationComplete)
+            yield return null;
 
         /* 
          * ReadyForJobs
@@ -1330,8 +1360,31 @@ public class NetworkClient : NetworkManager
         //    return debug;
         //});
 
-        //NetworkedItemManager.Instance.ReceiveSnapshots(packet.Items, null);
+        if (packet?.Items == null)
+            return;
+
+        NetworkedItemManager.Instance.ReceiveSnapshots(packet.Items, null);
     }
+
+    private void OnClientboundItemReconciliationPacket(ClientboundItemReconciliationPacket packet)
+    {
+        NetworkedItemManager.Instance.ApplyItemReconciliation(packet);
+        itemReconciliationComplete = true;
+        Log($"Item reconciliation complete ({packet?.Items?.Count ?? 0} local items)");
+    }
+
+    private void OnClientboundCustomizationStatePacket(ClientboundCustomizationStatePacket packet)
+    {
+        if (packet?.State == null)
+        {
+            LogWarning("Received an invalid customization state packet");
+            return;
+        }
+
+        pendingCustomizationState = packet.State;
+    }
+
+    private void OnCommonCustomizationPacket(CommonCustomizationPacket packet) => CustomizationStateManager.ApplyAction(packet);
 
     private void OnCommonPaintThemePacket(CommonPaintThemePacket packet)
     {
@@ -1891,6 +1944,9 @@ public class NetworkClient : NetworkManager
         SendNetSerializablePacketToServer(new CommonItemChangePacket { Items = items },
                 DeliveryMethod.ReliableOrdered);
     }
+
+    public void SendCustomizationAction(CommonCustomizationPacket packet) =>
+        SendNetSerializablePacketToServer(packet, DeliveryMethod.ReliableOrdered);
 
     public void SendPaintThemeChange(NetworkedTrainCar netTraincar, TrainCarPaint.Target targetArea, uint themeId)
     {
