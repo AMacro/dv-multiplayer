@@ -50,27 +50,58 @@ public static class GadgetRelationshipPatch
     private static void BeforeDropSpool(GadgetSolderingTool __instance, out SpoolDropState __state)
     {
         __state = default;
+        if (CustomizationSyncScope.IsApplyingRemote || !__instance.HasEjectableSpool)
+            return;
+
         var magazineItems = __instance.magazine?.items;
         var spoolObject = magazineItems != null && magazineItems.Length > 0 ? magazineItems[0] : null;
-        if (!CustomizationSyncScope.IsApplyingRemote && __instance.HasEjectableSpool && spoolObject != null &&
-            NetworkedItem.TryGetNetworkedItem(__instance.GetComponent<ItemBase>(), out var toolItem) &&
-            NetworkedItem.TryGetNetworkedItem(spoolObject.GetComponent<ItemBase>(), out var spoolItem))
-            __state = new SpoolDropState { ToolItemNetId = toolItem.NetId, SpoolItem = spoolItem };
+        if (spoolObject == null)
+        {
+            Multiplayer.LogWarning($"Cannot capture empty-reel ejection for {__instance.name}: magazine slot 0 is empty");
+            return;
+        }
+
+        if (!NetworkedItem.TryGetNetworkedItem(__instance.GetComponent<ItemBase>(), out var toolItem) || toolItem.NetId == 0)
+        {
+            Multiplayer.LogWarning($"Cannot capture empty-reel ejection for {__instance.name}: soldering tool has no network identity");
+            return;
+        }
+
+        if (!NetworkedItem.TryGetNetworkedItem(spoolObject.GetComponent<ItemBase>(), out var spoolItem) || spoolItem.NetId == 0)
+        {
+            Multiplayer.LogWarning($"Cannot capture empty-reel ejection for tool {toolItem.NetId}: contained reel {spoolObject.name} has no network identity");
+            return;
+        }
+
+        __state = new SpoolDropState
+        {
+            ToolItemNetId = toolItem.NetId,
+            SpoolItemNetId = spoolItem.NetId,
+            Position = __instance.reelInteractionPoint.transform.position - WorldMover.currentMove,
+            Rotation = __instance.reelInteractionPoint.transform.rotation,
+        };
     }
 
     [HarmonyPatch(typeof(GadgetSolderingTool), nameof(GadgetSolderingTool.DropEmptySpool)), HarmonyPostfix]
     private static void DroppedSpool(GadgetSolderingTool __instance, SpoolDropState __state)
     {
-        if (__state.ToolItemNetId == 0 || __state.SpoolItem == null || __instance.HasEjectableSpool)
+        if (__state.ToolItemNetId == 0 || __state.SpoolItemNetId == 0)
             return;
 
+        if (__instance.HasEjectableSpool)
+        {
+            Multiplayer.LogWarning($"Did not send empty-reel ejection for tool {__state.ToolItemNetId}: native ejection left reel {__state.SpoolItemNetId} loaded");
+            return;
+        }
+
+        Multiplayer.LogDebug(() => $"Sending empty-reel ejection for tool {__state.ToolItemNetId}, reel {__state.SpoolItemNetId}");
         CustomizationStateManager.SendAction(new CommonCustomizationPacket
         {
             Action = CustomizationAction.DropEmptySpool,
             ItemNetId = __state.ToolItemNetId,
-            OtherItemNetId = __state.SpoolItem.NetId,
-            Position = __state.SpoolItem.transform.position - WorldMover.currentMove,
-            Rotation = __state.SpoolItem.transform.rotation,
+            OtherItemNetId = __state.SpoolItemNetId,
+            Position = __state.Position,
+            Rotation = __state.Rotation,
             Flag = true,
         });
     }
@@ -217,6 +248,8 @@ public static class GadgetRelationshipPatch
     private struct SpoolDropState
     {
         public ushort ToolItemNetId;
-        public NetworkedItem SpoolItem;
+        public ushort SpoolItemNetId;
+        public UnityEngine.Vector3 Position;
+        public UnityEngine.Quaternion Rotation;
     }
 }

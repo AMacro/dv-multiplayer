@@ -829,6 +829,9 @@ public static class CustomizationStateManager
             CustomizationAction.ReplaceDuctTape when hasLocalDuctTapeReplacement => [],
             CustomizationAction.ReplaceDuctTape => [packet.ItemNetId],
             CustomizationAction.ReplaceSpool => [packet.ItemNetId],
+            // The contained reel is recoverable from the tool's magazine even when
+            // a replacement reassigned its ID before the lookup cache caught up.
+            CustomizationAction.DropEmptySpool => [packet.ItemNetId],
             _ => GetActionItemIds(packet),
         };
 
@@ -889,6 +892,17 @@ public static class CustomizationStateManager
             if (!IsValidIndex(packet.IndexB, second.WireLinkPorts.Count))
             {
                 waitingFor = $"wire port {packet.IndexB} on gadget {packet.OtherItemNetId}";
+                return false;
+            }
+
+            // Gadget registration can complete while placement is still being
+            // reconciled. Wire() rejects ports whose owners do not yet reference
+            // the same Customization, and the old client drain discarded that
+            // failed action permanently.
+            if (packet.Action == CustomizationAction.Wire &&
+                (first.Custom == null || second.Custom == null || first.Custom != second.Custom))
+            {
+                waitingFor = $"gadgets {packet.ItemNetId} and {packet.OtherItemNetId} to share a customization target";
                 return false;
             }
         }
@@ -1037,9 +1051,55 @@ public static class CustomizationStateManager
         var firstPort = first.WireLinkPorts[packet.IndexA];
         var secondPort = second.WireLinkPorts[packet.IndexB];
         if (packet.Action == CustomizationAction.Wire)
-            GadgetWiringModule.WireLinkPort.Wire(firstPort, secondPort);
+        {
+            if (GadgetWiringModule.WireLinkPort.AreWired(firstPort, secondPort))
+                return;
+
+            // The relationship packet is authoritative. A mono port can retain a
+            // stale local counterpart after placement/LOD reconstruction, causing
+            // native Wire() to fail silently. Clear only mono ports; multi ports
+            // (such as an alternating controller) must retain their other lights.
+            ClearStaleMonoWireLinks(firstPort);
+            ClearStaleMonoWireLinks(secondPort);
+
+            bool wired = GadgetWiringModule.WireLinkPort.Wire(firstPort, secondPort);
+            if (!wired || !GadgetWiringModule.WireLinkPort.AreWired(firstPort, secondPort))
+            {
+                Multiplayer.LogWarning($"Could not apply authoritative wire {packet.ItemNetId}:{packet.IndexA} -> " +
+                    $"{packet.OtherItemNetId}:{packet.IndexB}; first={first.GetType().Name}, " +
+                    $"second={second.GetType().Name}, sameTarget={first.Custom != null && first.Custom == second.Custom}");
+            }
+            else
+            {
+                Multiplayer.LogDebug(() => $"Wired gadget {packet.ItemNetId}:{packet.IndexA} to " +
+                    $"{packet.OtherItemNetId}:{packet.IndexB}");
+            }
+        }
         else
-            GadgetWiringModule.WireLinkPort.Unwire(firstPort, secondPort);
+        {
+            if (!GadgetWiringModule.WireLinkPort.AreWired(firstPort, secondPort))
+                return;
+
+            if (!GadgetWiringModule.WireLinkPort.Unwire(firstPort, secondPort))
+                Multiplayer.LogWarning($"Could not unwire gadget {packet.ItemNetId}:{packet.IndexA} from " +
+                    $"{packet.OtherItemNetId}:{packet.IndexB}");
+        }
+    }
+
+    private static void ClearStaleMonoWireLinks(GadgetWiringModule.WireLinkPort port)
+    {
+        Type type = port?.GetType();
+        while (type != null)
+        {
+            if (type.IsGenericType &&
+                type.GetGenericTypeDefinition() == typeof(GadgetWiringModule.WireLinkPortMono<>))
+            {
+                GadgetWiringModule.WireLinkPort.Unwire(port);
+                return;
+            }
+
+            type = type.BaseType;
+        }
     }
 
     private static void ApplySpoolAction(CommonCustomizationPacket packet)
@@ -1061,12 +1121,63 @@ public static class CustomizationStateManager
         }
 
         if (tool?.magazine != null && NetworkedItem.TryGet(packet.OtherItemNetId, out var spoolItem))
+            LoadSpool(toolItem, tool, spoolItem);
+    }
+
+    private static void LoadSpool(NetworkedItem toolItem, GadgetSolderingTool tool, NetworkedItem spoolItem)
+    {
+        var magazineItems = tool.magazine.items;
+        var current = magazineItems != null && magazineItems.Length > 0 ? magazineItems[0] : null;
+        NetworkedItem currentItem = null;
+        if (current != null)
+            NetworkedItem.TryGetNetworkedItem(current.GetComponent<DV.CabControls.ItemBase>(), out currentItem);
+
+        if (currentItem == spoolItem)
         {
-            if (tool.magazine.AddItem(spoolItem.gameObject, 0))
-                FinalizeContainedSpool(spoolItem);
-            else
-                Multiplayer.LogWarning($"Could not load reel {spoolItem.NetId} into soldering tool {toolItem.NetId}");
+            FinalizeContainedSpool(spoolItem);
+            return;
         }
+
+        if (current != null)
+        {
+            var currentAmmo = current.GetComponent<DV.Items.MagazineAmmo>();
+            if (currentItem == null || currentAmmo == null)
+            {
+                Multiplayer.LogWarning($"Could not reconcile reel load for soldering tool {toolItem.NetId}: " +
+                    $"contained item hasNetworkIdentity={currentItem != null}, isMagazineAmmo={currentAmmo != null}");
+                return;
+            }
+
+            ushort loadedNetId = spoolItem.NetId;
+            byte loadedOwner = spoolItem.OwnerPlayerId;
+            bool belongsToPlayer = spoolItem.Item?.InventorySpecs?.BelongsToPlayer ?? true;
+
+            Multiplayer.LogWarning($"Reconcile reel load for soldering tool {toolItem.NetId}: updating contained reel " +
+                $"{currentItem.NetId} with loaded reel {loadedNetId} instead of ejecting it");
+
+            // Keep the object already held by ItemMagazine and transfer the loaded
+            // reel's network identity and state onto it. The separately represented
+            // incoming object is only a duplicate on this peer.
+            spoolItem.SuppressDestroySync();
+            spoolItem.NetId = 0;
+            Inventory.Instance.DestroyItem(spoolItem.gameObject);
+
+            currentItem.NetId = loadedNetId;
+            currentItem.SetOwner(loadedOwner);
+            if (currentItem.Item?.InventorySpecs != null)
+                currentItem.Item.InventorySpecs.BelongsToPlayer = belongsToPlayer;
+            currentAmmo.isSpent = false;
+            tool.currentSpool = currentAmmo;
+            tool.ReloadResource();
+            FinalizeContainedSpool(currentItem);
+            return;
+        }
+
+        EnsureInWorldStorage(spoolItem.Item);
+        if (tool.magazine.AddItem(spoolItem.gameObject, 0))
+            FinalizeContainedSpool(spoolItem);
+        else
+            Multiplayer.LogWarning($"Could not load reel {spoolItem.NetId} into soldering tool {toolItem.NetId}");
     }
 
     private static void ApplySpoolReplacement(NetworkedItem toolItem, GadgetSolderingTool tool, CommonCustomizationPacket packet)
@@ -1138,19 +1249,77 @@ public static class CustomizationStateManager
 
     private static void DropEmptySpool(GadgetSolderingTool tool, CommonCustomizationPacket packet)
     {
-        var magazineItems = tool?.magazine?.items;
-        var spoolObject = magazineItems != null && magazineItems.Length > 0 ? magazineItems[0] : null;
-        var spoolAmmo = spoolObject?.GetComponent<DV.Items.MagazineAmmo>();
-        NetworkedItem spoolItem = null;
-        if (packet.OtherItemNetId != 0)
-            NetworkedItem.TryGet(packet.OtherItemNetId, out spoolItem);
-        if (spoolObject != null)
-            NetworkedItem.TryGetNetworkedItem(spoolObject.GetComponent<DV.CabControls.ItemBase>(), out spoolItem);
-
-        if (tool == null || spoolAmmo == null || !spoolAmmo.isSpent)
+        if (tool?.magazine == null)
         {
-            Multiplayer.LogWarning($"Cannot apply empty-spool ejection: tool={tool != null}, spool={spoolObject != null}, spent={spoolAmmo?.isSpent}");
+            Multiplayer.LogWarning($"Cannot apply empty-reel ejection: tool={tool != null}, magazine={tool?.magazine != null}");
             return;
+        }
+
+        var magazineItems = tool.magazine.items;
+        var current = magazineItems != null && magazineItems.Length > 0 ? magazineItems[0] : null;
+        NetworkedItem currentItem = null;
+        if (current != null)
+            NetworkedItem.TryGetNetworkedItem(current.GetComponent<DV.CabControls.ItemBase>(), out currentItem);
+
+        NetworkedItem spoolItem = currentItem != null && currentItem.NetId == packet.OtherItemNetId
+            ? currentItem
+            : null;
+        if (spoolItem == null)
+            NetworkedItem.TryGet(packet.OtherItemNetId, out spoolItem);
+        if (spoolItem == null && currentItem != null)
+        {
+            Multiplayer.LogWarning($"Recover empty-reel identity for soldering tool {packet.ItemNetId}: " +
+                $"binding contained reel {currentItem.NetId} to packet reel {packet.OtherItemNetId}");
+            currentItem.NetId = packet.OtherItemNetId;
+            spoolItem = currentItem;
+        }
+
+        if (spoolItem == null)
+        {
+            Multiplayer.LogWarning($"Cannot apply empty-reel ejection for tool {packet.ItemNetId}: " +
+                $"reel {packet.OtherItemNetId} is unavailable and magazine slot 0 has no networked reel");
+            return;
+        }
+
+        if (currentItem != spoolItem)
+        {
+            Multiplayer.LogWarning($"Reconcile empty-reel ejection for soldering tool {packet.ItemNetId}: replacing stale reel " +
+                $"{currentItem?.NetId ?? 0} with authoritative reel {spoolItem.NetId}");
+            if (current != null)
+            {
+                if (!tool.magazine.RemoveItem(0, true, true))
+                    return;
+
+                // This object represents the full reel that was logically consumed.
+                // Let its normal host-side destroy sync remove any phantom copy on
+                // peers that missed the physical full-to-empty replacement.
+                Inventory.Instance.DestroyItem(current);
+            }
+
+            EnsureInWorldStorage(spoolItem.Item);
+            if (!tool.magazine.AddItem(spoolItem.gameObject, 0))
+            {
+                Multiplayer.LogWarning($"Could not place authoritative reel {spoolItem.NetId} in soldering tool {packet.ItemNetId} before ejection");
+                return;
+            }
+        }
+
+        var spoolObject = spoolItem.gameObject;
+        var spoolAmmo = spoolObject.GetComponent<DV.Items.MagazineAmmo>();
+        if (spoolAmmo == null)
+        {
+            Multiplayer.LogWarning($"Cannot apply empty-reel ejection: item {spoolItem.NetId} is not magazine ammunition");
+            return;
+        }
+
+        // The action and synchronized remainingUnits are authoritative. A peer may
+        // still have the full-reel prefab/flag after a missed replacement or load.
+        spoolAmmo.isSpent = true;
+        tool.currentSpool = spoolAmmo;
+        if (!tool.HasEjectableSpool)
+        {
+            tool.remainingUnits = -1;
+            tool.OnUnitsChanged();
         }
 
         tool.DropEmptySpool();
@@ -1167,16 +1336,27 @@ public static class CustomizationStateManager
                 packet.Position + WorldMover.currentMove,
                 packet.Rotation);
         }
-        var storage = StorageController.Instance;
-        var spoolItemBase = spoolObject.GetComponent<DV.CabControls.ItemBase>();
-        if (storage != null && spoolItemBase.BelongsToPlayer() && !storage.AnyStorageContains(spoolItemBase))
-            storage.AddItemToWorldStorage(spoolItemBase);
-        spoolItem?.MarkAsSynchronized();
+        FinalizeDroppedSpool(spoolItem, spoolObject);
     }
 
     private static void FinalizeContainedSpool(NetworkedItem spoolItem)
     {
         spoolItem.MarkAsSynchronized();
+    }
+
+    private static void FinalizeDroppedSpool(NetworkedItem spoolItem, GameObject spoolObject)
+    {
+        spoolObject.SetActive(true);
+        var spoolItemBase = spoolObject.GetComponent<DV.CabControls.ItemBase>();
+        EnsureInWorldStorage(spoolItemBase);
+        spoolItem?.MarkAsSynchronized();
+    }
+
+    private static void EnsureInWorldStorage(DV.CabControls.ItemBase item)
+    {
+        var storage = StorageController.Instance;
+        if (storage != null && item != null && item.BelongsToPlayer() && !storage.AnyStorageContains(item))
+            storage.AddItemToWorldStorage(item);
     }
 
     private static void ApplyDuctTapeReplacement(CommonCustomizationPacket packet)

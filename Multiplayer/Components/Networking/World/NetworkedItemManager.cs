@@ -356,6 +356,25 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
 
         if (NetworkedItem.TryGet(snapshot.ItemNetId, out NetworkedItem netItem))
         {
+            // A remote hand/inventory proxy exists outside the observing client's
+            // real Inventory and can therefore look dropped at the hidden parking
+            // coordinates. Only the current owner may transition a held item to a
+            // dropped/thrown state. This still permits ordinary world-item pickup
+            // and the owning player's genuine drop.
+            bool changesItemState = snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.ItemState);
+            bool dropsHeldItem = netItem.CurrentState is ItemState.InHand or ItemState.InInventory &&
+                snapshot.ItemState is ItemState.Dropped or ItemState.Thrown;
+            bool belongsToAnotherPlayer = netItem.OwnerPlayerId != 0 &&
+                netItem.OwnerPlayerId != player.PlayerId;
+            if (changesItemState && dropsHeldItem && belongsToAnotherPlayer)
+            {
+                NetworkLifecycle.Instance.Server.LogWarning(
+                    $"NetworkedItemManager.ProcessReceivedAsHost() Ignoring non-owner drop for item " +
+                    $"{snapshot.ItemNetId}: sender={player.PlayerId}, owner={netItem.OwnerPlayerId}, " +
+                    $"state={snapshot.ItemState}");
+                return;
+            }
+
             // Clients are authoritative for their item interactions. The host may not
             // have the sender's area loaded, so its physical item position is not a
             // reliable basis for ownership or reach validation.

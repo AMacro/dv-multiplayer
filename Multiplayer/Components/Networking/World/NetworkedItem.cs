@@ -322,6 +322,26 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         if (!stateDirty && !ownerDirty && !hasDirtyVals)
             return null;
 
+        // A standalone client must never publish incidental mutations from another
+        // player's hand/inventory proxy. Remote customization can dirty tracked
+        // values locally (for example while ejecting a soldering reel), but that
+        // does not grant authority over the tool's item state or position.
+        if (!NetworkLifecycle.Instance.IsHost() && NetworkLifecycle.Instance.IsClientRunning)
+        {
+            byte localPlayerId = NetworkLifecycle.Instance.Client?.PlayerId ?? 0;
+            bool belongsToAnotherPlayer = OwnerPlayerId != 0 && localPlayerId != 0 &&
+                OwnerPlayerId != localPlayerId;
+            bool locallyHeld = Item.IsGrabbed() || Inventory.Instance.Contains(gameObject, false);
+            if (belongsToAnotherPlayer && !locallyHeld &&
+                lastState is ItemState.InHand or ItemState.InInventory)
+            {
+                stateDirty = false;
+                ownerDirty = false;
+                MarkValuesClean();
+                return null;
+            }
+        }
+
         ItemState currentState = GetItemState();
 
         // A local pickup is observed rather than applied through ReceiveSnapshot.
@@ -572,10 +592,15 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         // dropped and can echo a false drop back with an unrelated object-state
         // update (for example when ejecting a soldering reel). Their most recent
         // client-supplied state is authoritative instead.
-        if (NetworkLifecycle.Instance.IsHost() && OwnerPlayerId != 0 &&
-            OwnerPlayerId != NetworkLifecycle.Instance.Server.SelfId &&
-            lastState is ItemState.InHand or ItemState.InInventory)
-            return ObserveState(lastState);
+        if (OwnerPlayerId != 0 && lastState is ItemState.InHand or ItemState.InInventory)
+        {
+            byte localPlayerId = NetworkLifecycle.Instance.IsHost()
+                ? NetworkLifecycle.Instance.Server?.SelfId ?? 0
+                : NetworkLifecycle.Instance.Client?.PlayerId ?? 0;
+            bool locallyHeld = Item.IsGrabbed() || Inventory.Instance.Contains(gameObject, false);
+            if (localPlayerId != 0 && OwnerPlayerId != localPlayerId && !locallyHeld)
+                return ObserveState(lastState);
+        }
 
         if (Item.transform.parent == WorldMover.OriginShiftParent && !wasThrown)
             return ObserveState(ItemState.Dropped);
