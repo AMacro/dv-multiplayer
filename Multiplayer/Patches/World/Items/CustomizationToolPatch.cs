@@ -54,11 +54,13 @@ public static class CustomizationToolPatch
 
         __state.OldItem.SuppressDestroySync();
         replacementItem.MarkAsSynchronized();
+        CustomizationStateManager.RegisterPendingDuctTapeReplacement(__state.OldItem.NetId, replacementItem);
         CustomizationStateManager.SendAction(new CommonCustomizationPacket
         {
             Action = CustomizationAction.ReplaceDuctTape,
             ItemNetId = __state.OldItem.NetId,
             OtherItemNetId = replacementItem.NetId,
+            OwnerPlayerId = __state.OldItem.OwnerPlayerId,
             Position = replacementObject.transform.position - WorldMover.currentMove,
             Rotation = replacementObject.transform.rotation,
             Flag = true,

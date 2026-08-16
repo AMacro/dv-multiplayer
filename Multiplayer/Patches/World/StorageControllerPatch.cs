@@ -24,7 +24,7 @@ internal static class LostAndFoundOwnership
             if (item == null || !NetworkedItem.TryGetNetworkedItem(item, out var networkedItem))
                 continue;
 
-            if (networkedItem.OwnerId == localPlayerId)
+            if (networkedItem.OwnerPlayerId == localPlayerId)
                 ownedItems.Add(item);
         }
 

@@ -10,6 +10,7 @@ using Newtonsoft.Json.Linq;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 namespace Multiplayer.Networking.Data;
@@ -43,6 +44,10 @@ public class ServerPlayer : IDisposable
     public string CharacterId { get; set; }
     public bool IsVR { get; }
     public uint LastHighPingTickLogged { get; set; }
+    public uint LastTrackingTick { get; set; }
+    public bool HasTrackingTick { get; set; }
+    public bool CustomizationSnapshotSent { get; set; }
+    public HashSet<uint> ProcessedCustomizationActionIds { get; } = [];
 
     public PlayerTrackingData TrackingData { get; set; }
     public PlayerPostureFlags Posture { get; set; }        // already exists — keep
@@ -96,7 +101,9 @@ public class ServerPlayer : IDisposable
 
     public Dictionary<NetworkedItem, uint> KnownItems { get; private set; } = new Dictionary<NetworkedItem, uint>(); //NetworkedItem, last updated tick
     public Dictionary<NetworkedItem, float> NearbyItems { get; private set; } = new Dictionary<NetworkedItem, float>(); //NetworkedItem, time since near the item
-    public HashSet<ushort> OwnedItems { get; private set; } = new HashSet<ushort>();
+    public IEnumerable<ushort> OwnedItems => NetworkedItem.GetAll()
+        .Where(item => item != null && item.OwnerPlayerId == PlayerId)
+        .Select(item => item.NetId);
     public StorageBase Storage { get; set; } = new StorageBase();
 
     private Vector3 _lastWorldPos = Vector3.zero;
@@ -198,37 +205,12 @@ public class ServerPlayer : IDisposable
     #endregion
 
     #region Item Ownership
-    public bool OwnsItem(ushort itemNetId) => OwnedItems.Contains(itemNetId);
-
-    public void AddOwnedItem(ushort itemNetId)
-    {
-        OwnedItems.Add(itemNetId);
-        NetworkLifecycle.Instance.Server.LogDebug(() => $"Player {Username} now owns item {itemNetId}");
-    }
-
-    public void AddOwnedItems(IEnumerable<ushort> itemNetIds)
-    {
-        OwnedItems.UnionWith(itemNetIds);
-        NetworkLifecycle.Instance.Server.LogDebug(() => $"Player {Username} batch added items: {string.Join(", ", itemNetIds)}");
-    }
-
-    public void RemoveOwnedItem(ushort itemNetId)
-    {
-        if (OwnedItems.Remove(itemNetId))
-        {
-            NetworkLifecycle.Instance.Server.LogDebug(() => $"Player {Username} no longer owns item {itemNetId}");
-        }
-    }
-
-    public void ClearOwnedItems()
-    {
-        OwnedItems.Clear();
-        NetworkLifecycle.Instance.Server.LogDebug(() => $"Cleared all owned items for player {Username}");
-    }
+    public bool OwnsItem(ushort itemNetId) =>
+        NetworkedItem.TryGet(itemNetId, out var item) && item.OwnerPlayerId == PlayerId;
 
     public bool TryGetOwnedItem(ushort itemNetId, out NetworkedItem item)
     {
-        if (OwnedItems.Contains(itemNetId) && NetworkedItem.TryGet(itemNetId, out item))
+        if (NetworkedItem.TryGet(itemNetId, out item) && item.OwnerPlayerId == PlayerId)
         {
             return true;
         }

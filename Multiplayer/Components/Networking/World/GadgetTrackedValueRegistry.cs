@@ -2,6 +2,7 @@ using DV.Customization;
 using DV.Customization.Gadgets;
 using DV.Customization.Gadgets.Implementations;
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Multiplayer.Components.Networking.World;
@@ -13,6 +14,7 @@ public static class GadgetTrackedValueRegistry
         if (gadget == null)
             return;
 
+        item.RegisterTrackedValue("gadget.onGlass", () => gadget.IsOnGlass, value => gadget.IsOnGlass = value);
         RegisterSoldering(item, gadget);
         RegisterDrillable(item, gadget);
         RegisterText(item, gadget);
@@ -119,11 +121,21 @@ public static class GadgetTrackedValueRegistry
 
         if (gadget is AlternatingController alternating)
         {
-            // AlternatingController inherits GadgetSwitch; its selected interval is the canonical state.
             item.RegisterTrackedValue(
                 "alternating.interval",
                 () => alternating.SelectedInterval,
                 value => SetAndRefresh(alternating, () => alternating.SelectedInterval = value));
+            item.RegisterTrackedValue(
+                "alternating.state",
+                () => alternating.alternatorState,
+                value => alternating.alternatorState = value);
+            // The timer changes every frame. It belongs in full/create snapshots for
+            // late observers, but state transitions provide incremental phase updates.
+            item.RegisterTrackedValue(
+                "alternating.timer",
+                () => alternating.timer,
+                value => alternating.timer = value,
+                thresholdComparer: (_, _) => false);
             return;
         }
 
@@ -195,6 +207,53 @@ public static class GadgetTrackedValueRegistry
     {
         setter();
         RefreshLoadedLods(gadget);
+    }
+
+    internal static void ApplyAlternatingPhase(
+        AlternatingController alternating,
+        Dictionary<string, object> values,
+        uint sentTick)
+    {
+        if (alternating == null || values == null ||
+            !values.TryGetValue("alternating.state", out object stateValue) || stateValue is not int state)
+            return;
+
+        float interval = alternating.intervals[alternating.SelectedInterval];
+        float timer = values.TryGetValue("alternating.timer", out object timerValue) && timerValue is float sentTimer
+            ? sentTimer
+            : 0f;
+
+        if (!alternating.PowerState || interval <= 0f)
+        {
+            alternating.alternatorState = 0;
+            alternating.timer = 0f;
+        }
+        else if (float.IsInfinity(interval))
+        {
+            alternating.alternatorState = state;
+            alternating.timer = timer;
+        }
+        else
+        {
+            double elapsedSeconds = sentTick != 0
+                ? NetworkLifecycle.Instance.SecondsSinceTick(sentTick)
+                : 0d;
+            double elapsedInCycle = Math.Max(0d, timer) + elapsedSeconds;
+            long transitions = (long)Math.Floor(elapsedInCycle / interval);
+            int stateCount = Math.Max(2, alternating.subscribers?.Count ?? 0);
+
+            alternating.alternatorState = PositiveModulo(state + transitions, stateCount);
+            alternating.timer = (float)(elapsedInCycle % interval);
+        }
+
+        alternating.FireOnOutputValueUpdated();
+        RefreshLoadedLods(alternating);
+    }
+
+    private static int PositiveModulo(long value, int modulus)
+    {
+        long result = value % modulus;
+        return (int)(result < 0 ? result + modulus : result);
     }
 
     private static void RefreshLoadedLods(GadgetBase gadget)

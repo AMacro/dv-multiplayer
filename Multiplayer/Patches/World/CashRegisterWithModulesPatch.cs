@@ -105,10 +105,10 @@ public class CashRegisterWithModulesPatch
             return;
 
         ShopPurchaseCoordinator.QueueOwnership(__state, buyer);
-        NetworkLifecycle.Instance.Server.SendCashRegisterAction(new CommonCashRegisterWithModulesActionPacket
+        NetworkLifecycle.Instance.Server.SendShopAction(new CommonShopPacket
         {
-            NetId = networkedRegister.NetId,
-            Action = CashRegisterAction.Approve,
+            RegisterNetId = networkedRegister.NetId,
+            Action = ShopAction.Approved,
             BuyerPlayerId = buyer.PlayerId,
             ItemPrefabNames = __state.Select(item => item.PrefabName).ToArray(),
             ItemAmounts = __state.Select(item => item.Amount).ToArray(),

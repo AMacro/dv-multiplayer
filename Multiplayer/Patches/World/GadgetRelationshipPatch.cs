@@ -104,6 +104,7 @@ public static class GadgetRelationshipPatch
             Action = CustomizationAction.ReplaceSpool,
             ItemNetId = __state.ToolItemNetId,
             OtherItemNetId = spentSpool?.NetId ?? 0,
+            OwnerPlayerId = __state.OldSpool?.OwnerPlayerId ?? 0,
         });
     }
 

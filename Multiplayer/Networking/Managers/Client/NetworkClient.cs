@@ -79,8 +79,19 @@ public class NetworkClient : NetworkManager
     internal uint trainSetsSpawned = 0;
     internal bool railwayStateLoaded = false;
     private bool customizerStateLoaded;
+    private bool customizationSnapshotApplied;
+    private bool applyingCustomizationSnapshot;
+    private bool customizationActionDrainRunning;
+    private bool customizationSnapshotTimedOut;
     private CustomizationStateData pendingCustomizationState;
+    private readonly List<GadgetPlacementData> pendingCustomizationSnapshotPlacements = [];
+    private readonly List<CommonCustomizationPacket> pendingCustomizationSnapshotRelationships = [];
+    private readonly Dictionary<string, List<CustomizationHoleData>> pendingCustomizationSnapshotHoleStates = [];
+    private readonly List<CommonCustomizationPacket> pendingCustomizationActions = [];
+    private readonly List<CommonCustomizationPacket> appliedActionsSinceSnapshotTimeout = [];
     private bool itemReconciliationComplete;
+    private uint nextCustomizationActionId = 1;
+    private uint nextShopRequestId = 1;
 
     // One way ping in milliseconds
     public int Ping { get; private set; }
@@ -145,6 +156,17 @@ public class NetworkClient : NetworkManager
     public override void Stop()
     {
         Log("Stopping client");
+        pendingCustomizationState = null;
+        pendingCustomizationSnapshotPlacements.Clear();
+        pendingCustomizationSnapshotRelationships.Clear();
+        pendingCustomizationSnapshotHoleStates.Clear();
+        pendingCustomizationActions.Clear();
+        appliedActionsSinceSnapshotTimeout.Clear();
+        customizationSnapshotApplied = false;
+        customizationSnapshotTimedOut = false;
+        customizerStateLoaded = false;
+        CustomizationStateManager.ClearPendingLocalState();
+
         if (!isAlsoHost && originalSession != null)
         {
             LogDebug(() => $"NetworkClient.Stop() destroying session... Original session is Null: {originalSession == null}");
@@ -256,6 +278,7 @@ public class NetworkClient : NetworkManager
         netPacketProcessor.SubscribeNetSerializable<CommonPitStopPlugInteractionPacket>(OnCommonPitStopPlugInteractionPacket);
         netPacketProcessor.SubscribeReusable<ClientboundPitStopBulkUpdatePacket>(OnClientboundPitStopBulkUpdatePacket);
         netPacketProcessor.SubscribeReusable<CommonCashRegisterWithModulesActionPacket>(OnCommonCashRegisterWithModulesActionPacket);
+        netPacketProcessor.SubscribeReusable<CommonShopPacket>(OnCommonShopPacket);
         netPacketProcessor.SubscribeReusable<CommonGenericSwitchStatePacket>(OnCommonGenericSwitchStatePacket);
 
         netPacketProcessor.SubscribeReusable<CommonChatPacket>(OnCommonChatPacket);
@@ -380,22 +403,43 @@ public class NetworkClient : NetworkManager
          */
 
         customizerStateLoaded = false;
+        customizationSnapshotApplied = false;
+        applyingCustomizationSnapshot = false;
+        customizationActionDrainRunning = false;
+        customizationSnapshotTimedOut = false;
         pendingCustomizationState = null;
+        pendingCustomizationSnapshotPlacements.Clear();
+        pendingCustomizationSnapshotRelationships.Clear();
+        pendingCustomizationSnapshotHoleStates.Clear();
+        pendingCustomizationActions.Clear();
+        appliedActionsSinceSnapshotTimeout.Clear();
+        CustomizationStateManager.ClearPendingLocalState();
         Log("Requesting customization state");
         SendLoadStateUpdate(PlayerLoadingState.ReadyForCustomizers);
         displayLoadingInfo.OnLoadingStatusChanged("Syncing customizations", false, ((float)LoadingState / (float)PlayerLoadingState.Complete) * 100);
 
+        // The host may need to stream customized train-car interiors before taking
+        // the complete world snapshot. Do not mistake that preparation for a lost
+        // packet on low-latency connections where RPC_Timeout is very small.
+        float customizationDeadline = Time.time + Mathf.Max(RPC_Timeout, 5f);
         while (!customizerStateLoaded)
         {
             if (pendingCustomizationState == null)
             {
+                if (Time.time >= customizationDeadline)
+                {
+                    LogWarning("Timed out waiting for customization state; continuing while retaining the late-snapshot path");
+                    customizationSnapshotTimedOut = true;
+                    customizationSnapshotApplied = true;
+                    customizerStateLoaded = true;
+                    StartCustomizationActionDrain();
+                    break;
+                }
                 yield return null;
                 continue;
             }
 
-            yield return CustomizationStateManager.ApplyCurrentStateWhenReady(pendingCustomizationState);
-            Log($"Customization state loaded ({pendingCustomizationState.Gadgets.Count} gadgets, {pendingCustomizationState.Holes.Count} holes)");
-            pendingCustomizationState = null;
+            yield return ApplyPendingCustomizationStates();
             customizerStateLoaded = true;
         }
 
@@ -406,13 +450,19 @@ public class NetworkClient : NetworkManager
         itemReconciliationComplete = false;
         Log("Reconciling local items");
         SendLoadStateUpdate(PlayerLoadingState.ReadyForItems);
-        SendNetSerializablePacketToServer(
-            NetworkedItemManager.Instance.CreateItemReconciliationRequest(),
-            DeliveryMethod.ReliableOrdered);
+        foreach (var reconciliationPacket in NetworkedItemManager.Instance.CreateItemReconciliationRequests())
+            SendNetSerializablePacketToServer(reconciliationPacket, DeliveryMethod.ReliableOrdered);
         displayLoadingInfo.OnLoadingStatusChanged("Syncing items", false, ((float)LoadingState / (float)PlayerLoadingState.Complete) * 100);
 
-        while (!itemReconciliationComplete)
+        float reconciliationDeadline = Time.time + Mathf.Max(RPC_Timeout, 5f);
+        while (!itemReconciliationComplete && Time.time < reconciliationDeadline)
             yield return null;
+        if (!itemReconciliationComplete)
+        {
+            LogWarning("Timed out waiting for item reconciliation; continuing in degraded state");
+            NetworkedItemManager.Instance.ContinueAfterItemReconciliationTimeout();
+            itemReconciliationComplete = true;
+        }
 
         /* 
          * ReadyForJobs
@@ -593,7 +643,7 @@ public class NetworkClient : NetworkManager
         Log($"Received player joined packet for player id: {packet.PlayerId}, username: {packet.Username}");
         ClientPlayerManager.AddPlayer(packet.PlayerId, packet.Username, packet.CrewName, packet.CharacterId, packet.IsVR);
 
-        ClientPlayerManager.UpdatePosition(packet.PlayerId, packet.TrackingData, packet.Posture, packet.IsOnCar, packet.CarID);
+        ClientPlayerManager.UpdatePosition(packet.PlayerId, packet.TrackingData, packet.Posture, packet.IsOnCar, packet.CarID, packet.Tick);
     }
 
     //For other player left the game
@@ -620,7 +670,7 @@ public class NetworkClient : NetworkManager
 
     private void OnClientboundPlayerPositionPacket(ClientboundPlayerPositionPacket packet)
     {
-        ClientPlayerManager.UpdatePosition(packet.PlayerId, packet.TrackingData, packet.Posture, packet.IsOnCar, packet.CarID);
+        ClientPlayerManager.UpdatePosition(packet.PlayerId, packet.TrackingData, packet.Posture, packet.IsOnCar, packet.CarID, packet.Tick);
     }
 
     private void OnClientboundPlayerPreferencesUpdatePacket(ClientboundPlayerPreferencesUpdatePacket packet)
@@ -643,7 +693,8 @@ public class NetworkClient : NetworkManager
 
     private void OnClientboundTickSyncPacket(ClientboundTickSyncPacket packet)
     {
-        NetworkLifecycle.Instance.Tick = (uint)(packet.ServerTick + Ping / 2.0f * (1f / NetworkLifecycle.TICK_RATE));
+        // Both transports normalize this to one-way latency in milliseconds.
+        NetworkLifecycle.Instance.SynchronizeClientTick(packet.ServerTick, Ping);
     }
 
     private void OnClientboundServerLoadingPacket(ClientboundServerLoadingPacket packet)
@@ -1370,9 +1421,11 @@ public class NetworkClient : NetworkManager
 
     private void OnClientboundItemReconciliationPacket(ClientboundItemReconciliationPacket packet)
     {
-        NetworkedItemManager.Instance.ApplyItemReconciliation(packet);
-        itemReconciliationComplete = true;
-        Log($"Item reconciliation complete ({packet?.Items?.Count ?? 0} local items)");
+        if (NetworkedItemManager.Instance.ApplyItemReconciliation(packet))
+        {
+            itemReconciliationComplete = true;
+            Log($"Item reconciliation complete ({packet?.Items?.Count ?? 0} items in final batch)");
+        }
     }
 
     private void OnClientboundCustomizationStatePacket(ClientboundCustomizationStatePacket packet)
@@ -1384,9 +1437,177 @@ public class NetworkClient : NetworkManager
         }
 
         pendingCustomizationState = packet.State;
+        // Pause live mutation application immediately. If the timeout path already
+        // released actions, they are replayed after this older baseline is applied.
+        customizationSnapshotApplied = false;
+        if (customizerStateLoaded && !applyingCustomizationSnapshot)
+            CoroutineManager.Instance.StartCoroutine(ApplyPendingCustomizationStates());
     }
 
-    private void OnCommonCustomizationPacket(CommonCustomizationPacket packet) => CustomizationStateManager.ApplyAction(packet);
+    private void OnCommonCustomizationPacket(CommonCustomizationPacket packet)
+    {
+        if (packet == null)
+            return;
+
+        pendingCustomizationActions.Add(packet);
+        StartCustomizationActionDrain();
+    }
+
+    private IEnumerator ApplyPendingCustomizationStates()
+    {
+        if (applyingCustomizationSnapshot)
+            yield break;
+
+        applyingCustomizationSnapshot = true;
+        try
+        {
+            while (pendingCustomizationState != null)
+            {
+                CustomizationStateData state = pendingCustomizationState;
+                pendingCustomizationState = null;
+                pendingCustomizationSnapshotPlacements.Clear();
+                pendingCustomizationSnapshotRelationships.Clear();
+                pendingCustomizationSnapshotHoleStates.Clear();
+                yield return CustomizationStateManager.ApplyCurrentStateWhenReady(state,
+                    pendingCustomizationSnapshotPlacements, pendingCustomizationSnapshotRelationships,
+                    pendingCustomizationSnapshotHoleStates);
+
+                if (customizationSnapshotTimedOut)
+                {
+                    var capturedLocalActions = state.ProcessedOriginActionIds.ToHashSet();
+                    pendingCustomizationActions.InsertRange(0, appliedActionsSinceSnapshotTimeout.Where(
+                        action => !capturedLocalActions.Contains(action.OriginActionId)));
+                    appliedActionsSinceSnapshotTimeout.Clear();
+                    customizationSnapshotTimedOut = false;
+                }
+
+                customizationSnapshotApplied = true;
+                Log($"Customization state loaded ({state.Gadgets.Count} gadgets, {state.Holes.Count} holes)");
+            }
+        }
+        finally
+        {
+            applyingCustomizationSnapshot = false;
+        }
+
+        StartCustomizationActionDrain();
+    }
+
+    private void StartCustomizationActionDrain()
+    {
+        if (customizationActionDrainRunning ||
+            pendingCustomizationSnapshotPlacements.Count == 0 &&
+            pendingCustomizationSnapshotRelationships.Count == 0 &&
+            pendingCustomizationSnapshotHoleStates.Count == 0 &&
+            pendingCustomizationActions.Count == 0)
+            return;
+
+        CoroutineManager.Instance.StartCoroutine(DrainPendingCustomizationActions());
+    }
+
+    private IEnumerator DrainPendingCustomizationActions()
+    {
+        customizationActionDrainRunning = true;
+        try
+        {
+            while (IsRunning && (pendingCustomizationSnapshotPlacements.Count > 0 ||
+                pendingCustomizationSnapshotRelationships.Count > 0 ||
+                pendingCustomizationSnapshotHoleStates.Count > 0 || pendingCustomizationActions.Count > 0))
+            {
+                if (!customizationSnapshotApplied || applyingCustomizationSnapshot)
+                {
+                    yield return null;
+                    continue;
+                }
+
+                bool appliedAny = false;
+                for (int index = 0; index < pendingCustomizationSnapshotPlacements.Count; index++)
+                {
+                    var placement = pendingCustomizationSnapshotPlacements[index];
+                    if (!CustomizationStateManager.IsSnapshotPlacementReady(placement, out _))
+                        continue;
+
+                    pendingCustomizationSnapshotPlacements.RemoveAt(index--);
+                    // The initial object-state pass already applied or queued these
+                    // values. If the item did not exist, its reliable Create carries
+                    // a newer full state. Reapplying this older baseline here could
+                    // roll back changes received while the target was unavailable.
+                    CustomizationStateManager.ApplySnapshotPlacement(placement, applyTrackedValues: false);
+                    appliedAny = true;
+                }
+
+                foreach (string targetKey in pendingCustomizationSnapshotHoleStates.Keys.ToArray())
+                {
+                    if (!CustomizationStateManager.ApplySnapshotHoleState(targetKey,
+                        pendingCustomizationSnapshotHoleStates[targetKey]))
+                        continue;
+
+                    pendingCustomizationSnapshotHoleStates.Remove(targetKey);
+                    appliedAny = true;
+                }
+
+                for (int index = 0; index < pendingCustomizationSnapshotRelationships.Count; index++)
+                {
+                    var action = pendingCustomizationSnapshotRelationships[index];
+                    bool blockedByEarlierDependency = pendingCustomizationSnapshotRelationships.Take(index)
+                        .Any(earlier => CustomizationStateManager.ActionsConflict(earlier, action));
+                    bool blockedByPlacement = pendingCustomizationSnapshotPlacements
+                        .Any(placement => CustomizationStateManager.SnapshotPlacementConflicts(placement, action));
+                    bool blockedByHoleState = pendingCustomizationSnapshotHoleStates.Keys
+                        .Any(targetKey => CustomizationStateManager.SnapshotHoleStateConflicts(targetKey, action));
+                    if (blockedByEarlierDependency || blockedByPlacement || blockedByHoleState ||
+                        !CustomizationStateManager.IsActionReady(action, out _))
+                        continue;
+
+                    pendingCustomizationSnapshotRelationships.RemoveAt(index--);
+                    try
+                    {
+                        CustomizationStateManager.ApplyAction(action);
+                    }
+                    catch (Exception exception)
+                    {
+                        LogError($"Failed to apply deferred snapshot relationship {action.Action}: {exception}");
+                    }
+                    appliedAny = true;
+                }
+
+                for (int index = 0; index < pendingCustomizationActions.Count; index++)
+                {
+                    var action = pendingCustomizationActions[index];
+                    bool blockedByEarlierDependency = pendingCustomizationActions.Take(index)
+                        .Any(earlier => CustomizationStateManager.ActionsConflict(earlier, action));
+                    bool blockedBySnapshotPlacement = pendingCustomizationSnapshotPlacements
+                        .Any(placement => CustomizationStateManager.SnapshotPlacementConflicts(placement, action));
+                    bool blockedBySnapshotRelationship = pendingCustomizationSnapshotRelationships
+                        .Any(relationship => CustomizationStateManager.ActionsConflict(relationship, action));
+                    bool blockedBySnapshotHoleState = pendingCustomizationSnapshotHoleStates.Keys
+                        .Any(targetKey => CustomizationStateManager.SnapshotHoleStateConflicts(targetKey, action));
+                    if (blockedByEarlierDependency || blockedBySnapshotPlacement ||
+                        blockedBySnapshotRelationship || blockedBySnapshotHoleState ||
+                        !CustomizationStateManager.IsActionReady(action, out _))
+                        continue;
+
+                    pendingCustomizationActions.RemoveAt(index--);
+                    try
+                    {
+                        CustomizationStateManager.ApplyAction(action);
+                    }
+                    catch (Exception exception)
+                    {
+                        LogError($"Failed to apply deferred customization action {action.Action}: {exception}");
+                    }
+                    appliedAny = true;
+                }
+
+                if (!appliedAny)
+                    yield return null;
+            }
+        }
+        finally
+        {
+            customizationActionDrainRunning = false;
+        }
+    }
 
     private void OnCommonPaintThemePacket(CommonPaintThemePacket packet)
     {
@@ -1490,7 +1711,30 @@ public class NetworkClient : NetworkManager
 
         Log($"Cash Register With Modules Action received for {netCashRegister.GetObjectPath()}, Action: {packet.Action}, Amount: {packet.Amount}");
 
-        netCashRegister.Client_ProcessCashRegisterAction(packet);
+        netCashRegister.Client_ProcessCashRegisterAction(packet.Action, packet.Amount);
+    }
+
+    private void OnCommonShopPacket(CommonShopPacket packet)
+    {
+        if (packet.Action == ShopAction.StockSnapshot)
+        {
+            ShopPurchaseCoordinator.ApplyStockSnapshot(packet.ItemPrefabNames, packet.ItemAmounts);
+            return;
+        }
+
+        if (packet.Action == ShopAction.StockChanged)
+        {
+            ShopPurchaseCoordinator.ApplyStockDelta(packet.ItemPrefabNames, packet.ItemAmounts);
+            return;
+        }
+
+        if (!NetworkedCashRegisterWithModules.Get(packet.RegisterNetId, out var register) || !register.IsShopRegister)
+        {
+            LogWarning($"Shop action received for invalid register {packet.RegisterNetId}");
+            return;
+        }
+
+        register.Client_ProcessShopAction(packet);
     }
 
     private void OnCommonGenericSwitchStatePacket(CommonGenericSwitchStatePacket packet)
@@ -1547,6 +1791,7 @@ public class NetworkClient : NetworkManager
 
         SendPacketToServer(new ServerboundPlayerPositionPacket
         {
+            Tick = NetworkLifecycle.Instance.SynchronizedTick,
             TrackingData = trackingData,
             Posture = posture,
             IsOnCar = isOnCar,
@@ -1947,8 +2192,22 @@ public class NetworkClient : NetworkManager
                 DeliveryMethod.ReliableOrdered);
     }
 
-    public void SendCustomizationAction(CommonCustomizationPacket packet) =>
+    public void SendCustomizationAction(CommonCustomizationPacket packet)
+    {
+        packet.OriginActionId = nextCustomizationActionId++;
+        if (nextCustomizationActionId == 0)
+            nextCustomizationActionId = 1;
+
+        // Ordinary actions are not echoed to their sender. Preserve locally
+        // originated mutations so a snapshot that arrives after the loading
+        // timeout cannot erase them. Replacement actions are server-echoed after
+        // their authoritative replacement item id has been assigned.
+        if (customizationSnapshotTimedOut && packet.Action is not
+            (CustomizationAction.ReplaceSpool or CustomizationAction.ReplaceDuctTape))
+            appliedActionsSinceSnapshotTimeout.Add(packet);
+
         SendNetSerializablePacketToServer(packet, DeliveryMethod.ReliableOrdered);
+    }
 
     public void SendPaintThemeChange(NetworkedTrainCar netTraincar, TrainCarPaint.Target targetArea, uint themeId)
     {
@@ -1957,20 +2216,36 @@ public class NetworkClient : NetworkManager
         SendPacketToServer(new CommonPaintThemePacket { NetId = netTraincar.NetId, TargetArea = targetArea, PaintThemeId = themeId }, DeliveryMethod.ReliableUnordered);
     }
 
-    public void SendCashRegisterAction(ushort netId, CashRegisterAction action, double amount = 0.0f,
-        string[] itemPrefabNames = null, int[] itemAmounts = null)
+    public void SendCashRegisterAction(ushort netId, CashRegisterAction action, double amount = 0.0f)
     {
         SendPacketToServer(
             new CommonCashRegisterWithModulesActionPacket
             {
                 NetId = netId,
                 Action = action,
-                Amount = amount,
-                ItemPrefabNames = itemPrefabNames ?? [],
-                ItemAmounts = itemAmounts ?? []
+                Amount = amount
             },
             DeliveryMethod.ReliableOrdered
         );
+    }
+
+
+    public uint SendShopPurchase(ushort registerNetId, double amount, string[] itemPrefabNames, int[] itemAmounts)
+    {
+        uint requestId = nextShopRequestId++;
+        if (nextShopRequestId == 0)
+            nextShopRequestId = 1;
+
+        SendPacketToServer(new CommonShopPacket
+        {
+            RegisterNetId = registerNetId,
+            RequestId = requestId,
+            Action = ShopAction.Purchase,
+            Amount = amount,
+            ItemPrefabNames = itemPrefabNames ?? [],
+            ItemAmounts = itemAmounts ?? [],
+        }, DeliveryMethod.ReliableOrdered);
+        return requestId;
     }
 
     public void SendTrainControlAuthorityRequest(ushort netId, uint portNetId, bool requestAuthority)

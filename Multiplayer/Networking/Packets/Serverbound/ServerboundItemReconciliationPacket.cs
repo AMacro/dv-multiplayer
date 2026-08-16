@@ -1,20 +1,22 @@
 using LiteNetLib.Utils;
 using Multiplayer.Networking.Data.Items;
 using System.Collections.Generic;
-using System.Linq;
+using Multiplayer.Networking.Packets;
 
 namespace Multiplayer.Networking.Packets.Serverbound;
 
 internal sealed class ServerboundItemReconciliationPacket : INetSerializable
 {
-    private const int MaxItems = 128;
     public List<ItemReconciliationRequest> Items = [];
+    public bool IsFinalBatch;
 
     public void Serialize(NetDataWriter writer)
     {
-        int count = System.Math.Min(Items.Count, MaxItems);
-        writer.Put(count);
-        foreach (var item in Items.Take(count))
+        if (Items.Count > ItemReconciliationProtocol.MaxItems)
+            throw new System.InvalidOperationException($"Too many item reconciliation requests: {Items.Count}");
+        writer.Put(IsFinalBatch);
+        writer.Put(Items.Count);
+        foreach (var item in Items)
         {
             writer.Put(item.LocalId);
             writer.Put(item.BelongsToPlayer);
@@ -25,8 +27,9 @@ internal sealed class ServerboundItemReconciliationPacket : INetSerializable
     public void Deserialize(NetDataReader reader)
     {
         Items.Clear();
+        IsFinalBatch = reader.GetBool();
         int count = reader.GetInt();
-        if (count < 0 || count > MaxItems)
+        if (count < 0 || count > ItemReconciliationProtocol.MaxItems)
             throw new System.InvalidOperationException($"Invalid item reconciliation count: {count}");
         for (int i = 0; i < count; i++)
         {

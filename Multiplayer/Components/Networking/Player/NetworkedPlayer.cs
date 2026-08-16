@@ -93,6 +93,9 @@ public class NetworkedPlayer : MonoBehaviour
     private Quaternion targetRotation;
     private Vector2 moveDir;
     private Vector2 targetMoveDir;
+    private uint lastTrackingTick;
+    private bool hasTrackingTick;
+    private float pendingTrackingAge;
 
     private float currentLeanAngle;
     private float angleSmoothRefVel;
@@ -243,7 +246,11 @@ public class NetworkedPlayer : MonoBehaviour
 
     protected void Update()
     {
-        float t = Time.deltaTime * LERP_SPEED;
+        // Consume packet age once so smoothing does not add its full delay on top
+        // of the time this sample has already spent in transit.
+        float interpolationDelta = Time.deltaTime + pendingTrackingAge;
+        pendingTrackingAge = 0f;
+        float t = 1f - Mathf.Exp(-LERP_SPEED * interpolationDelta);
 
         Vector3 position = Vector3.Lerp(
             IsOnCar ? selfTransform.localPosition : selfTransform.position,
@@ -372,6 +379,23 @@ public class NetworkedPlayer : MonoBehaviour
     /// <param name="trackingData"></param>
     /// <param name="posture"></param>
     /// <param name="movePacketIsOnCar"></param>
+    public bool TryAcceptTrackingTick(uint sampleTick)
+    {
+        if (sampleTick == 0)
+            return true;
+
+        if (hasTrackingTick && NetworkLifecycle.SignedTickDelta(sampleTick, lastTrackingTick) < 0)
+            return false;
+
+        lastTrackingTick = sampleTick;
+        hasTrackingTick = true;
+        pendingTrackingAge = Mathf.Clamp(
+            NetworkLifecycle.Instance.SecondsSinceTick(sampleTick),
+            0f,
+            0.25f);
+        return true;
+    }
+
     public void UpdatePosition(PlayerTrackingData trackingData, PlayerPostureFlags posture, bool movePacketIsOnCar)
     {
         if (trackingData.Position.HasValue)

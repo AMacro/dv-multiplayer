@@ -4,6 +4,7 @@ using LiteNetLib;
 using MPAPI;
 using Multiplayer.API;
 using Multiplayer.Components.Networking.UI;
+using Multiplayer.Components.Networking.World;
 using Multiplayer.Networking.Data;
 using Multiplayer.Networking.Managers.Client;
 using Multiplayer.Networking.Managers.Server;
@@ -33,6 +34,7 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
     public NetworkClient Client { get; private set; }
 
     public uint Tick { get; internal set; }
+    public uint SynchronizedTick => IsServerRunning || clientTickSynchronized ? Tick : 0;
     public Action<uint> OnTick;
 
     public bool IsServerRunning => Server?.IsRunning ?? false;
@@ -46,6 +48,42 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
     private NetworkStatsGui Stats;
     private readonly ExecutionTimer tickTimer = new();
     private readonly ExecutionTimer tickWatchdog = new(0.25f);
+    private bool clientTickSynchronized;
+    private uint clientTicksToHold;
+
+    public static int SignedTickDelta(uint newer, uint older) => unchecked((int)(newer - older));
+
+    public float SecondsSinceTick(uint sampleTick)
+    {
+        return Mathf.Max(0f, SignedTickDelta(Tick, sampleTick) / (float)TICK_RATE);
+    }
+
+    internal void SynchronizeClientTick(uint serverTick, int oneWayLatencyMs)
+    {
+        uint latencyTicks = (uint)Mathf.Max(0, Mathf.RoundToInt(oneWayLatencyMs / 1000f * TICK_RATE));
+        uint estimatedServerTick = unchecked(serverTick + latencyTicks);
+
+        if (!clientTickSynchronized)
+        {
+            Tick = estimatedServerTick;
+            clientTickSynchronized = true;
+            clientTicksToHold = 0;
+            return;
+        }
+
+        int drift = SignedTickDelta(estimatedServerTick, Tick);
+        if (drift > 0)
+        {
+            Tick = estimatedServerTick;
+            clientTicksToHold = 0;
+        }
+        else if (drift < 0)
+        {
+            // Never rewind the public tick: pause local generation briefly while
+            // the server clock catches up. Cap one correction against bad samples.
+            clientTicksToHold = (uint)Math.Min(-(long)drift, TICK_RATE * 2L);
+        }
+    }
 
     /// <summary>
     ///     Whether the provided ITransportPeer is the host.
@@ -126,6 +164,8 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
         if (Server != null)
             throw new InvalidOperationException("NetworkManager already exists!");
 
+        ShopPurchaseCoordinator.ResetSessionState();
+
         if (!IsSinglePlayer)
         {
             if (serverData != null)
@@ -159,6 +199,12 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
     {
         if (Client != null)
             throw new InvalidOperationException("NetworkManager already exists!");
+        if (!IsServerRunning)
+        {
+            clientTickSynchronized = false;
+            clientTicksToHold = 0;
+        }
+
         NetworkClient client = new(Multiplayer.Settings, isSinglePlayer);
         client.Start(address, port, password, isSinglePlayer, onDisconnect);
 
@@ -175,13 +221,18 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
     {
         while (!UnloadWatcher.isQuitting)
         {
-            Tick++;
+            bool advanceTick = IsServerRunning || clientTicksToHold == 0;
+            if (advanceTick)
+                Tick++;
+            else
+                clientTicksToHold--;
+
             tickTimer.Start();
 
             tickWatchdog.Start();
             try
             {
-                if (!UnloadWatcher.isUnloading && !UnloadWatcher.isQuitting && !IsReturningToMenu)
+                if (advanceTick && !UnloadWatcher.isUnloading && !UnloadWatcher.isQuitting && !IsReturningToMenu)
                     OnTick?.Invoke(Tick);
             }
             catch (Exception e)
@@ -230,6 +281,7 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
     public void Stop()
     {
         Stats?.Hide();
+        ShopPurchaseCoordinator.ResetSessionState();
 
         if (Server != null)
         {

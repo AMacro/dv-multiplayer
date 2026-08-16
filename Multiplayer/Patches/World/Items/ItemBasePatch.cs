@@ -13,9 +13,7 @@ public static class ItemBase_Patch
     private static void Awake(ItemBase __instance)
     {
         //Multiplayer.Log($"ItemBase.Awake() ItemSpec: {__instance?.InventorySpecs?.itemPrefabName}");
-        var networkedItem = __instance.GetOrAddComponent<NetworkedItem>();
-
-        ShopPurchaseCoordinator.TryAssignOwner(networkedItem);
+        __instance.GetOrAddComponent<NetworkedItem>();
 
         //networkedItem.FinaliseTrackedValues();
         return;

@@ -7,6 +7,7 @@ using Multiplayer.Networking.Packets.Common;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Reflection.Emit;
 using UnityEngine;
 
 namespace Multiplayer.Patches.World;
@@ -47,16 +48,9 @@ internal static class GlobalShopControllerPatch
         if (!NetworkLifecycle.Instance.IsHost() || data == null || data.purchasedItems >= __state)
             return;
 
-        var register = __instance.globalShopList
-            .Select(shop => shop.cashRegister)
-            .FirstOrDefault(cashRegister => NetworkedCashRegisterWithModules.TryGet(cashRegister, out _));
-        if (register == null || !NetworkedCashRegisterWithModules.TryGet(register, out var networkedRegister))
-            return;
-
-        NetworkLifecycle.Instance.Server.SendCashRegisterAction(new CommonCashRegisterWithModulesActionPacket
+        NetworkLifecycle.Instance.Server.SendShopAction(new CommonShopPacket
         {
-            NetId = networkedRegister.NetId,
-            Action = CashRegisterAction.ShopStockChanged,
+            Action = ShopAction.StockChanged,
             ItemPrefabNames = [itemPrefabName],
             ItemAmounts = [-1]
         });
@@ -79,6 +73,7 @@ internal static class GlobalShopControllerInstantiatePurchasedItemsPatch
         MethodInfo closestPlayerDelta = AccessTools.Method(typeof(ShopPurchaseCoordinator),
             nameof(ShopPurchaseCoordinator.ClosestPlayerDelta));
         bool replaced = false;
+        bool ownershipInjected = false;
 
         foreach (CodeInstruction instruction in instructions)
         {
@@ -89,9 +84,26 @@ internal static class GlobalShopControllerInstantiatePurchasedItemsPatch
             }
 
             yield return instruction;
+
+            if (!ownershipInjected && instruction.operand is MethodInfo called &&
+                called.Name == nameof(Object.Instantiate) && called.IsGenericMethod &&
+                called.GetGenericArguments().Length == 1 && called.GetGenericArguments()[0] == typeof(GameObject))
+            {
+                var parameters = called.GetParameters();
+                if (parameters.Length == 3 && parameters[1].ParameterType == typeof(Vector3) &&
+                    parameters[2].ParameterType == typeof(Quaternion))
+                {
+                    yield return new CodeInstruction(OpCodes.Dup);
+                    yield return CodeInstruction.Call(typeof(ShopPurchaseCoordinator),
+                        nameof(ShopPurchaseCoordinator.AssignPurchasedObject));
+                    ownershipInjected = true;
+                }
+            }
         }
 
         if (!replaced)
             Multiplayer.LogError("GlobalShopController.InstantiatePurchasedItems distance patch failed");
+        if (!ownershipInjected)
+            Multiplayer.LogError("GlobalShopController.InstantiatePurchasedItems ownership patch failed");
     }
 }

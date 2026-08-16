@@ -15,7 +15,7 @@ public static class CustomizationPatch
     {
         if (__result == null || gadgetItem == null || CustomizationSyncScope.IsApplyingRemote || !NetworkedItem.TryGetNetId(gadgetItem.Item, out var id) || !CustomizationRef.TryCreate(destination, out var target)) return;
         CustomizationStateManager.SendAction(new CommonCustomizationPacket { Action = CustomizationAction.PlaceGadget, ItemNetId = id,
-            TargetKind = (byte)target.Kind, TargetTrainCarNetId = target.TrainCarNetId, Position = localPos, Rotation = localRot, Flag = __result.IsOnGlass });
+            TargetKey = target.IdentificationKey, Position = localPos, Rotation = localRot });
     }
 
     [HarmonyPatch(typeof(GadgetBase), nameof(GadgetBase.Remove)), HarmonyPrefix]
@@ -82,8 +82,8 @@ public static class CustomizationPatch
     private static void SendHole(Customization c, CustomizationAction action, Vector3 pos, Vector3 old, Vector3 normal)
     {
         if (CustomizationSyncScope.IsApplyingRemote || !CustomizationRef.TryCreate(c, out var target)) return;
-        CustomizationStateManager.SendAction(new CommonCustomizationPacket { Action = action, TargetKind = (byte)target.Kind,
-            TargetTrainCarNetId = target.TrainCarNetId, Position = pos, PreviousPosition = old, Normal = normal });
+        CustomizationStateManager.SendAction(new CommonCustomizationPacket { Action = action, TargetKey = target.IdentificationKey,
+            Position = pos, PreviousPosition = old, Normal = normal });
     }
 
     private struct RemoveGadgetState

@@ -42,6 +42,7 @@ using Multiplayer.Patches.MainMenu;
 using Multiplayer.Patches.World;
 using Multiplayer.Utils;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -100,6 +101,8 @@ public class NetworkServer : NetworkManager
     public ChatManager ChatManager => _chatManager;
 
     private uint lastTick;
+    private readonly List<PendingHostCustomizationAction> pendingHostCustomizationActions = [];
+    private bool hostCustomizationDrainRunning;
 
     public NetworkServer(IDifficulty difficulty, Settings settings, bool singlePlayer, LobbyServerData serverData) : base(settings)
     {
@@ -147,6 +150,8 @@ public class NetworkServer : NetworkManager
     {
         Log($"Stopping server...");
         WorldStreamingInit.LoadingFinished -= OnLoaded;
+        pendingHostCustomizationActions.Clear();
+        hostCustomizationDrainRunning = false;
 
         if (lobbyServerManager != null)
         {
@@ -190,6 +195,7 @@ public class NetworkServer : NetworkManager
         netPacketProcessor.SubscribeNetSerializable<CommonPitStopPlugInteractionPacket, ITransportPeer>(OnCommonPitStopPlugInteractionPacket);
 
         netPacketProcessor.SubscribeReusable<CommonCashRegisterWithModulesActionPacket, ITransportPeer>(OnCommonCashRegisterWithModulesActionPacket);
+        netPacketProcessor.SubscribeReusable<CommonShopPacket, ITransportPeer>(OnCommonShopPacket);
 
         netPacketProcessor.SubscribeReusable<CommonGenericSwitchStatePacket, ITransportPeer>(OnCommonGenericSwitchStatePacket);
 
@@ -409,6 +415,9 @@ public class NetworkServer : NetworkManager
         foreach (var peer in peers.Values)
         {
             if (excludeSelf && peer == SelfPeer)
+                continue;
+
+            if (TryGetServerPlayer(peer, out var player) && player.LoadingState < minimumLoadState)
                 continue;
 
             peer?.Send(writer, deliveryMethod);
@@ -1287,6 +1296,11 @@ public class NetworkServer : NetworkManager
                     }, DeliveryMethod.ReliableOrdered);
                 }
 
+                // Deltas are intentionally withheld until this state because the
+                // client's shop controller and register lookup do not exist before
+                // world initialization. This baseline closes that late-join gap.
+                SendPacket(peer, ShopPurchaseCoordinator.CreateStockSnapshot(), DeliveryMethod.ReliableOrdered);
+
                 break;
 
             case PlayerLoadingState.ReadyForTrainSets:
@@ -1313,16 +1327,8 @@ public class NetworkServer : NetworkManager
                 break;
 
             case PlayerLoadingState.ReadyForCustomizers:
-                var customizationState = CustomizationStateManager.CaptureCurrentState();
-                foreach (ushort itemNetId in customizationState.Gadgets.Select(gadget => gadget.ItemNetId)
-                    .Concat(customizationState.RelatedItems.Select(item => item.ItemNetId)).Distinct())
-                    if (NetworkedItem.TryGet(itemNetId, out var knownItem))
-                        player.KnownItems[knownItem] = NetworkLifecycle.Instance.Tick;
-
-                SendNetSerializablePacket(peer, new ClientboundCustomizationStatePacket
-                {
-                    State = customizationState,
-                }, DeliveryMethod.ReliableOrdered);
+                player.CustomizationSnapshotSent = false;
+                CoroutineManager.Instance.StartCoroutine(SendInitialCustomizationStateWhenReady(player, peer));
 
                 break;
 
@@ -1384,6 +1390,7 @@ public class NetworkServer : NetworkManager
                 IsVR = player.IsVR,
                 CharacterId = player.CharacterId,
                 CrewName = player.CrewName,
+                Tick = player.LastTrackingTick,
                 TrackingData = player.TrackingData,
                 Posture = player.Posture,
                 IsOnCar = player.CarId != 0,
@@ -1409,6 +1416,7 @@ public class NetworkServer : NetworkManager
                     IsVR = otherPlayer.IsVR,
                     CrewName = otherPlayer.CrewName,
                     CarID = otherPlayer.CarId,
+                    Tick = otherPlayer.LastTrackingTick,
                     TrackingData = otherPlayer.TrackingData,  // full merged state
                     Posture = otherPlayer.Posture,
                     IsOnCar = otherPlayer.CarId != 0,
@@ -1426,6 +1434,15 @@ public class NetworkServer : NetworkManager
         {
             LogWarning($"Received Player Position from {peer.GetType()}, peerId: {peer.Id}, but could not find matching player.");
             return;
+        }
+
+        if (packet.Tick != 0)
+        {
+            if (player.HasTrackingTick && NetworkLifecycle.SignedTickDelta(packet.Tick, player.LastTrackingTick) < 0)
+                return;
+
+            player.LastTrackingTick = packet.Tick;
+            player.HasTrackingTick = true;
         }
 
         // If the player's car has changed, remove the player from the old car
@@ -1447,6 +1464,7 @@ public class NetworkServer : NetworkManager
         SendPacketToAll(new ClientboundPlayerPositionPacket
         {
             PlayerId = player.PlayerId,
+            Tick = packet.Tick,
             TrackingData = packet.TrackingData,
             Posture = packet.Posture,
             IsOnCar = packet.IsOnCar,
@@ -2152,6 +2170,15 @@ public class NetworkServer : NetworkManager
         NetworkedItemManager.Instance.ReceiveSnapshots(packet.Items, player);
     }
 
+    public void SendShopAction(CommonShopPacket packet, ServerPlayer[] players = null)
+    {
+        if (players == null)
+            SendPacketToAll(packet, DeliveryMethod.ReliableOrdered, PlayerLoadingState.ReadyForWorldState, true);
+        else
+            foreach (var player in players)
+                SendPacket(player.Peer, packet, DeliveryMethod.ReliableOrdered);
+    }
+
     private void OnServerboundItemReconciliationPacket(ServerboundItemReconciliationPacket packet, ITransportPeer peer)
     {
         if (!TryGetServerPlayer(peer, out var player))
@@ -2168,16 +2195,215 @@ public class NetworkServer : NetworkManager
     }
 
     public void SendCustomizationAction(CommonCustomizationPacket packet) =>
-        SendNetSerializablePacketToAll(packet, DeliveryMethod.ReliableOrdered, excludeSelf: true);
+        RelayCustomizationAction(packet);
 
     private void OnCommonCustomizationPacket(CommonCustomizationPacket packet, ITransportPeer peer)
     {
-        if (!TryGetServerPlayer(peer, out _)) return;
-        CustomizationStateManager.ApplyAction(packet);
-        if (packet.Action == CustomizationAction.ReplaceSpool || packet.Action == CustomizationAction.ReplaceDuctTape)
-            SendNetSerializablePacketToAll(packet, DeliveryMethod.ReliableOrdered, excludeSelf: true);
-        else
-            SendNetSerializablePacketToAll(packet, DeliveryMethod.ReliableOrdered, peer, excludeSelf: true);
+        if (packet == null || !TryGetServerPlayer(peer, out var player))
+            return;
+
+        pendingHostCustomizationActions.Add(new PendingHostCustomizationAction(packet, player, peer));
+        StartHostCustomizationDrain();
+    }
+
+    private void StartHostCustomizationDrain()
+    {
+        if (hostCustomizationDrainRunning || pendingHostCustomizationActions.Count == 0)
+            return;
+
+        CoroutineManager.Instance.StartCoroutine(DrainPendingHostCustomizationActions());
+    }
+
+    private IEnumerator DrainPendingHostCustomizationActions()
+    {
+        hostCustomizationDrainRunning = true;
+        try
+        {
+            while (IsRunning && pendingHostCustomizationActions.Count > 0)
+            {
+                bool appliedAny = false;
+                for (int index = 0; index < pendingHostCustomizationActions.Count; index++)
+                {
+                    var pending = pendingHostCustomizationActions[index];
+                    if (!peerToPlayer.TryGetValue(pending.Peer, out var connectedPlayer) ||
+                        connectedPlayer != pending.Player)
+                    {
+                        pendingHostCustomizationActions.RemoveAt(index--);
+                        continue;
+                    }
+
+                    bool blockedByEarlierDependency = pendingHostCustomizationActions.Take(index)
+                        .Any(earlier => CustomizationStateManager.ActionsConflict(earlier.Packet, pending.Packet));
+                    if (blockedByEarlierDependency ||
+                        !CustomizationStateManager.IsActionReady(pending.Packet, out _))
+                        continue;
+
+                    pendingHostCustomizationActions.RemoveAt(index--);
+                    bool applied = false;
+                    try
+                    {
+                        applied = CustomizationStateManager.ProcessActionAsHost(pending.Packet, pending.Player);
+                    }
+                    catch (Exception exception)
+                    {
+                        LogError($"Failed to apply customization action {pending.Packet.Action} from " +
+                            $"{pending.Player.Username}: {exception}");
+                    }
+
+                    if (pending.Packet.OriginActionId != 0)
+                        pending.Player.ProcessedCustomizationActionIds.Add(pending.Packet.OriginActionId);
+
+                    if (applied)
+                    {
+                        bool echoSender = pending.Packet.Action is CustomizationAction.ReplaceSpool or
+                            CustomizationAction.ReplaceDuctTape;
+                        RelayCustomizationAction(pending.Packet, pending.Peer, echoSender);
+                    }
+                    appliedAny = true;
+                }
+
+                if (!appliedAny)
+                    yield return null;
+            }
+        }
+        finally
+        {
+            hostCustomizationDrainRunning = false;
+        }
+    }
+
+    private sealed class PendingHostCustomizationAction
+    {
+        public readonly CommonCustomizationPacket Packet;
+        public readonly ServerPlayer Player;
+        public readonly ITransportPeer Peer;
+
+        public PendingHostCustomizationAction(CommonCustomizationPacket packet, ServerPlayer player,
+            ITransportPeer peer)
+        {
+            Packet = packet;
+            Player = player;
+            Peer = peer;
+        }
+    }
+
+    private void RelayCustomizationAction(CommonCustomizationPacket packet, ITransportPeer origin = null,
+        bool echoOrigin = false)
+    {
+        foreach (var player in CustomizationStateManager.GetCustomizationRecipients(packet).ToArray())
+        {
+            if (player.Peer == null || player.Peer == SelfPeer || (!echoOrigin && player.Peer == origin))
+                continue;
+
+            EnsureCustomizationItemsKnown(packet, player);
+            SendNetSerializablePacket(player.Peer, packet, DeliveryMethod.ReliableOrdered);
+        }
+    }
+
+    private IEnumerator SendInitialCustomizationStateWhenReady(ServerPlayer player, ITransportPeer peer)
+    {
+        // Installed gadget items remain in this storage even while their train-car
+        // interior is streamed out. Use it as a second source in addition to the
+        // persistent TrainCarCustomization links/holes.
+        HashSet<TrainCar> carsWithStoredGadgets = [];
+        var installedGadgets = StorageController.Instance?.StorageInstalledGadgets;
+        if (installedGadgets != null)
+        {
+            foreach (var item in installedGadgets.GetStorageItemList())
+            {
+                if (item == null)
+                    continue;
+
+                var trainCar = TrainCar.Resolve(item.gameObject);
+                if (trainCar != null)
+                    carsWithStoredGadgets.Add(trainCar);
+            }
+        }
+
+        var pinnedCars = NetworkedTrainCar.GetAll()
+            .Where(car => car != null && car.TrainCar != null &&
+                (car.HasAttachedCustomizations || carsWithStoredGadgets.Contains(car.TrainCar)))
+            .ToList();
+
+        try
+        {
+            foreach (var car in pinnedCars)
+            {
+                try
+                {
+                    car.BeginInteriorNetworkSync();
+                }
+                catch (Exception exception)
+                {
+                    LogWarning($"Could not load customized train-car interior [{car.CurrentID}, {car.NetId}]: {exception}");
+                }
+            }
+
+            // Interior streaming may finish asynchronously. Keep the selected cars
+            // pinned until they load, but bound the wait so one unsupported interior
+            // cannot block a joining client indefinitely.
+            float interiorLoadDeadline = Time.realtimeSinceStartup + 2f;
+            while (pinnedCars.Any(car => car != null && car.TrainCar != null &&
+                       !car.TrainCar.IsInteriorLoaded) &&
+                   Time.realtimeSinceStartup < interiorLoadDeadline)
+                yield return null;
+
+            // Allow newly created gadget components to finish their Unity Start pass.
+            if (pinnedCars.Count > 0)
+                yield return null;
+
+            foreach (var car in pinnedCars.Where(car => car != null && car.TrainCar != null &&
+                         !car.TrainCar.IsInteriorLoaded))
+                LogWarning($"Customized train-car interior [{car.CurrentID}, {car.NetId}] did not load before the join snapshot deadline");
+
+            // The player may disconnect while the interiors are being initialized.
+            if (!peerToPlayer.TryGetValue(peer, out var connectedPlayer) || connectedPlayer != player)
+                yield break;
+
+            var customizationState = CustomizationStateManager.CaptureCurrentState();
+            customizationState.ProcessedOriginActionIds.AddRange(player.ProcessedCustomizationActionIds);
+            NetworkedItemManager.Instance.SendInitialItems(player,
+                CustomizationStateManager.GetReferencedItemIds(customizationState),
+                CustomizationStateManager.GetItemsRequiringDroppedCreate(customizationState));
+
+            SendNetSerializablePacket(peer, new ClientboundCustomizationStatePacket
+            {
+                State = customizationState,
+            }, DeliveryMethod.ReliableOrdered);
+            player.CustomizationSnapshotSent = true;
+            player.ProcessedCustomizationActionIds.Clear();
+
+            LogDebug(() => $"Sent join customization snapshot to {player.Username} after loading {pinnedCars.Count} customized train-car interiors");
+        }
+        finally
+        {
+            foreach (var car in pinnedCars)
+                if (car != null)
+                    car.EndInteriorNetworkSync();
+        }
+    }
+
+    private void EnsureCustomizationItemsKnown(CommonCustomizationPacket packet, ServerPlayer player)
+    {
+        // Replacement actions construct (or reuse) their replacement object locally
+        // and assign OtherItemNetId while applying the action. Sending a separate
+        // Create for that ID first represents the contained reel/tape as Dropped and
+        // can pull it back out of its tool on the receiving peer.
+        bool createsReplacementLocally = packet.Action is
+            CustomizationAction.ReplaceSpool or CustomizationAction.ReplaceDuctTape;
+        IEnumerable<ushort> itemIds = createsReplacementLocally
+            ? [packet.ItemNetId]
+            : CustomizationStateManager.GetActionItemIds(packet);
+        HashSet<ushort> forceDropped = packet.Action is CustomizationAction.LoadSpool or CustomizationAction.SnapItem
+            ? [packet.OtherItemNetId]
+            : [];
+        NetworkedItemManager.Instance.SendInitialItems(player, itemIds, forceDropped);
+
+        // The action itself is the replacement's create message. Record that fact so
+        // ordinary item discovery does not send a conflicting Create(Dropped) later.
+        if (createsReplacementLocally &&
+            NetworkedItem.TryGet(packet.OtherItemNetId, out NetworkedItem replacementItem))
+            player.KnownItems[replacementItem] = NetworkLifecycle.Instance.Tick;
     }
 
     private void OnCommonCashRegisterWithModulesActionPacket(CommonCashRegisterWithModulesActionPacket packet, ITransportPeer peer)
@@ -2196,6 +2422,23 @@ public class NetworkServer : NetworkManager
 
         Log($"Cash Register With Modules Action received for {netCashRegister.GetObjectPath()}, Action: {packet.Action}, Amount: {packet.Amount}");
         netCashRegister.Server_ProcessCashRegisterAction(player, packet);
+    }
+
+    private void OnCommonShopPacket(CommonShopPacket packet, ITransportPeer peer)
+    {
+        if (!TryGetServerPlayer(peer, out var player) || packet.Action != ShopAction.Purchase)
+        {
+            LogWarning("Ignoring invalid shop request");
+            return;
+        }
+
+        if (!NetworkedCashRegisterWithModules.Get(packet.RegisterNetId, out var register) || !register.IsShopRegister)
+        {
+            LogWarning($"Shop purchase received for invalid register {packet.RegisterNetId}");
+            return;
+        }
+
+        register.Server_ProcessShopPurchase(player, packet);
     }
 
     private void OnCommonGenericSwitchStatePacket(CommonGenericSwitchStatePacket packet, ITransportPeer peer)

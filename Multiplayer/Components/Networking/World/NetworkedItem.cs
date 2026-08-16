@@ -3,6 +3,7 @@ using DV.Interaction;
 using DV.InventorySystem;
 using DV.Items;
 using DV.Customization.Gadgets;
+using DV.Customization.Gadgets.Implementations;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Networking.Data;
 using Multiplayer.Networking.Data.Items;
@@ -85,6 +86,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
     public Type TrackedItemType { get; private set; }
     public uint LastDirtyTick { get; private set; }
     public bool IsReadyForSnapshots => registrationComplete && Item != null;
+    public ItemState CurrentState => lastState;
     public Vector3 WorldPosition => GetItemState() == ItemState.InstalledGadget &&
         trackedItem is GadgetItem gadgetItem && gadgetItem.Gadget != null
             ? gadgetItem.Gadget.transform.position
@@ -108,33 +110,17 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
     private Vector3 throwDirection;
 
     //Handle ownership
-    public sbyte OwnerId { get; private set; } = -1; // 0 means no owner
+    public byte OwnerPlayerId { get; private set; } // 0 means no owner
 
     public void SetOwner(byte playerId, bool markDirty = false)
     {
-        if (OwnerId == (sbyte)playerId)
+        if (OwnerPlayerId == playerId)
             return;
 
-        OwnerId = (sbyte)playerId;
+        OwnerPlayerId = playerId;
         if (markDirty)
             ownerDirty = true;
     }
-
-    //public void SetOwner(ushort playerId)
-    //{
-    //    if (OwnerId != playerId)
-    //    {
-    //        if (OwnerId != 0)
-    //        {
-    //            NetworkedItemManager.Instance.RemoveItemFromPlayerInventory(this);
-    //        }
-    //        OwnerId = playerId;
-    //        if (playerId != 0)
-    //        {
-    //            NetworkedItemManager.Instance.AddItemToPlayerInventory(playerId, this);
-    //        }
-    //    }
-    //}
 
     protected override bool IsIdServerAuthoritative => true;
 
@@ -346,16 +332,8 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
             byte localPlayerId = NetworkLifecycle.Instance.Client?.PlayerId ?? 0;
             bool isHeldByLocalPlayer = currentState is ItemState.InHand or ItemState.InInventory;
             if (isHeldByLocalPlayer)
-                SetOwner(localPlayerId);
+                SetOwner(localPlayerId, markDirty: true);
 
-            if (NetworkLifecycle.Instance.IsHost() &&
-                NetworkLifecycle.Instance.Server.TryGetServerPlayer(localPlayerId, out ServerPlayer localPlayer))
-            {
-                if (isHeldByLocalPlayer && !localPlayer.OwnsItem(NetId))
-                    localPlayer.AddOwnedItem(NetId);
-                else if (!isHeldByLocalPlayer && localPlayer.OwnsItem(NetId))
-                    localPlayer.RemoveOwnedItem(NetId);
-            }
         }
 
         if (!createdDirty)
@@ -415,11 +393,12 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         // Shop clients instantiate the raw prefab, whose local flag can differ from
         // the host's purchased instance. Apply this before dropped-state handling so
         // the item is restored to the client's world storage list.
-        if (Item?.InventorySpecs != null)
+        if (Item?.InventorySpecs != null && snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.Create))
             Item.InventorySpecs.BelongsToPlayer = snapshot.BelongsToPlayer;
 
         if (snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.ItemState) || snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.FullSync) || snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.Create))
         {
+            lastState = snapshot.ItemState;
             Multiplayer.Log($"NetworkedItem.ApplySnapshot() netId: {snapshot?.ItemNetId}, ItemUpdateType: {snapshot?.UpdateType}, ItemState: {snapshot?.ItemState}, Active state: {gameObject.activeInHierarchy}");
 
             switch (snapshot.ItemState)
@@ -440,7 +419,6 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
                 case ItemState.InstalledGadget:
                     gameObject.SetActive(false);
-                    OwnerId = 0;
                     break;
 
                 default:
@@ -451,8 +429,6 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         }
 
         if (snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.Ownership) ||
-            snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.ItemState) ||
-            snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.FullSync) ||
             snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.Create))
         {
             // Ownership-only updates must not activate or relocate the item.
@@ -468,6 +444,15 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
             if (trackedItem != null && snapshot.States != null)
             {
                 ApplyTrackedValues(snapshot.States);
+
+                if (trackedItem is GadgetItem gadgetItem &&
+                    gadgetItem.Gadget is AlternatingController alternating)
+                {
+                    GadgetTrackedValueRegistry.ApplyAlternatingPhase(
+                        alternating,
+                        snapshot.States,
+                        snapshot.SentTick);
+                }
             }
         }
 
@@ -531,13 +516,16 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         {
             UpdateType = updateType,
             ItemNetId = NetId,
-            OwnerPlayerId = OwnerId > 0 ? (byte)OwnerId : (byte)0,
+            OwnerPlayerId = this.OwnerPlayerId,
             BelongsToPlayer = Item.InventorySpecs.BelongsToPlayer,
             PrefabName = Item.InventorySpecs.ItemPrefabName,
             ItemState = lastState,
             ItemPosition = position,
             ItemRotation = rotation,
             ThrowDirection = throwDirection,
+            Player = lastState is ItemState.InHand or ItemState.InInventory
+                ? OwnerPlayerId
+                : (byte)0,
             CarNetId = carId,
             AttachedFront = frontCoupler,
             States = states,
@@ -553,6 +541,11 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
     }
 
     public void SuppressDestroySync() => suppressDestroySync = true;
+
+    internal void MarkRemoteUpdateAccepted()
+    {
+        LastDirtyTick = NetworkLifecycle.Instance.Tick;
+    }
 
     public void MarkAsSynchronized()
     {
@@ -573,6 +566,16 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
     {
         if (trackedItem is GadgetItem gadgetItem && gadgetItem.Gadget != null && gadgetItem.Gadget.IsLinked)
             return ObserveState(ItemState.InstalledGadget);
+
+        // Remote hand/inventory proxies are inactive and reparented outside the
+        // host's Inventory. Inspecting that local representation makes them look
+        // dropped and can echo a false drop back with an unrelated object-state
+        // update (for example when ejecting a soldering reel). Their most recent
+        // client-supplied state is authoritative instead.
+        if (NetworkLifecycle.Instance.IsHost() && OwnerPlayerId != 0 &&
+            OwnerPlayerId != NetworkLifecycle.Instance.Server.SelfId &&
+            lastState is ItemState.InHand or ItemState.InInventory)
+            return ObserveState(lastState);
 
         if (Item.transform.parent == WorldMover.OriginShiftParent && !wasThrown)
             return ObserveState(ItemState.Dropped);
@@ -664,16 +667,10 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
             Item.SnappableItem.SnappedTo.UnsnapItem(false);
         }
 
-        //resolve ownership
-        if (NetworkLifecycle.Instance.IsHost())
-            if (NetworkLifecycle.Instance.Server.TryGetServerPlayer(snapshot.Player, out ServerPlayer player) && player.OwnsItem(NetId))
-                player.RemoveOwnedItem(NetId);
-
         //activate and relocate item
         gameObject.SetActive(true);
         transform.position = snapshot.ItemPosition + WorldMover.currentMove;
         transform.rotation = snapshot.ItemRotation;
-        OwnerId = 0;
 
         // Network-created/cached items were removed from every StorageController
         // list. ItemMagazine.AddItem expects a dropped item to belong to world
@@ -708,11 +705,6 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
     private void HandleAttachedState(ItemUpdateData snapshot)
     {
-        //resovle ownership
-        if (NetworkLifecycle.Instance.IsHost())
-            if (NetworkLifecycle.Instance.Server.TryGetServerPlayer(snapshot.Player, out ServerPlayer player) && player.OwnsItem(NetId))
-                player.RemoveOwnedItem(NetId);
-
         //handle attaching the item
         gameObject.SetActive(true);
         Multiplayer.LogDebug(() => $"NetworkedItem.HandleAttachedState() ItemNetId: {snapshot?.ItemNetId} attempting attachment to car {snapshot.CarNetId}, at the front {snapshot.AttachedFront}");
@@ -747,10 +739,6 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         {
             Item.SnappableItem.SnappedTo.UnsnapItem(false);
         }
-
-        if (NetworkLifecycle.Instance.IsHost())
-            if (NetworkLifecycle.Instance.Server.TryGetServerPlayer(snapshot.Player, out ServerPlayer player) && !player.OwnsItem(NetId))
-                player.AddOwnedItem(NetId);
 
         // Mirror ItemReparentingBase.OnGrab for a remote pickup. This removes the
         // proxy from the train's item activity/LOD container and notifies

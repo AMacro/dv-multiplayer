@@ -1,4 +1,5 @@
 using LiteNetLib.Utils;
+using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.World;
 using Multiplayer.Networking.Serialization;
 using System;
@@ -9,6 +10,8 @@ namespace Multiplayer.Networking.Data.Items;
 
 public class ItemUpdateData
 {
+    private const int MaxTrackedValues = 4096;
+
     [Flags]
     public enum ItemUpdateType : byte
     {
@@ -35,6 +38,7 @@ public class ItemUpdateData
     public ushort CarNetId { get; set; }
     public bool AttachedFront  { get; set; }
     public Dictionary<string, object> States { get; set; }
+    public uint SentTick { get; set; }
 
     public void Serialize(NetDataWriter writer)
     {
@@ -44,15 +48,27 @@ public class ItemUpdateData
         if (UpdateType == ItemUpdateType.Destroy)
             return;
 
-        writer.Put(OwnerPlayerId);
-        writer.Put(BelongsToPlayer);
-        writer.Put((byte)ItemState);
+        // Stamp newly-created snapshots when they first go on the wire, but retain
+        // the sender's capture tick when the host relays a client update. Replacing
+        // that tick at the host would pair old phase values with a newer timestamp.
+        if (SentTick == 0)
+            SentTick = NetworkLifecycle.Instance.SynchronizedTick;
+        writer.Put(SentTick);
 
         if (UpdateType.HasFlag(ItemUpdateType.Create))
+        {
+            writer.Put(OwnerPlayerId);
+            writer.Put(BelongsToPlayer);
             writer.Put(PrefabName);
+        }
+        else if (UpdateType.HasFlag(ItemUpdateType.Ownership))
+        {
+            writer.Put(OwnerPlayerId);
+        }
 
         if (UpdateType.HasFlag(ItemUpdateType.Create) || UpdateType.HasFlag(ItemUpdateType.ItemState))
         {
+            writer.Put((byte)ItemState);
             if (ItemState == ItemState.Dropped || ItemState == ItemState.Thrown) // || UpdateType.HasFlag(ItemUpdateType.ItemPosition)
             {
                 Vector3Serializer.Serialize(writer, ItemPosition);
@@ -74,15 +90,17 @@ public class ItemUpdateData
 
         if (UpdateType.HasFlag(ItemUpdateType.Create) || UpdateType.HasFlag(ItemUpdateType.ObjectState))
         {
-            if (States == null)
-                writer.Put(0);
-            else
+            int stateCount = States?.Count ?? 0;
+            if (stateCount > MaxTrackedValues)
+                throw new InvalidOperationException($"Too many tracked item values: {stateCount}");
+
+            writer.Put(stateCount);
+            if (States != null)
             {
-                writer.Put(States.Count);
                 foreach (var state in States)
                 {
                     writer.Put(state.Key);
-                    SerializeTrackedValue(writer, state.Value);
+                    TrackedValueSerializer.Serialize(writer, state.Value);
                 }
             }
         }
@@ -96,15 +114,22 @@ public class ItemUpdateData
         if (UpdateType == ItemUpdateType.Destroy)
             return;
 
-        OwnerPlayerId = reader.GetByte();
-        BelongsToPlayer = reader.GetBool();
-        ItemState = (ItemState)reader.GetByte();
+        SentTick = reader.GetUInt();
 
         if (UpdateType.HasFlag(ItemUpdateType.Create))
+        {
+            OwnerPlayerId = reader.GetByte();
+            BelongsToPlayer = reader.GetBool();
             PrefabName = reader.GetString();
+        }
+        else if (UpdateType.HasFlag(ItemUpdateType.Ownership))
+        {
+            OwnerPlayerId = reader.GetByte();
+        }
 
         if (UpdateType.HasFlag(ItemUpdateType.Create) || UpdateType.HasFlag(ItemUpdateType.ItemState))
         {
+            ItemState = (ItemState)reader.GetByte();
             if (ItemState == ItemState.Dropped || ItemState == ItemState.Thrown) // || UpdateType.HasFlag(ItemUpdateType.ItemPosition)
             {
                 ItemPosition = Vector3Serializer.Deserialize(reader);
@@ -131,65 +156,20 @@ public class ItemUpdateData
         if (UpdateType.HasFlag(ItemUpdateType.Create) || UpdateType.HasFlag(ItemUpdateType.ObjectState))
         {
             int stateCount = reader.GetInt();
+            if (stateCount < 0 || stateCount > MaxTrackedValues)
+                throw new InvalidOperationException($"Invalid tracked item value count: {stateCount}");
+
             if (stateCount > 0)
             {
                 States = new Dictionary<string, object>();
                 for (int i = 0; i < stateCount; i++)
                 {
                     string key = reader.GetString();
-                    object value = DeserializeTrackedValue(reader);
+                    object value = TrackedValueSerializer.Deserialize(reader);
                     States[key] = value;
                 }
             }
         }
     }
 
-    private void SerializeTrackedValue(NetDataWriter writer, object value)
-    {
-        if (value is bool boolValue)
-        {
-            writer.Put((byte)0);
-            writer.Put(boolValue);
-        }
-        else if (value is int intValue)
-        {
-            writer.Put((byte)1);
-            writer.Put(intValue);
-        }
-        else if (value is uint uintValue)
-        {
-            writer.Put((byte)2);
-            writer.Put(uintValue);
-        }
-        else if (value is float floatValue)
-        {
-            writer.Put((byte)3);
-            writer.Put(floatValue);
-        }
-        else if (value is string stringValue)
-        {
-            writer.Put((byte)4);
-            writer.Put(stringValue);
-        }
-        else
-        {
-            throw new NotSupportedException($"ItemUpdateData.SerializeTrackedValue({ItemNetId}, {PrefabName??""}) Unsupported type for serialization: {value.GetType()}");
-        }
-    }
-
-    private object DeserializeTrackedValue(NetDataReader reader)
-    {
-        byte typeCode = reader.GetByte();
-        switch (typeCode)
-        {
-            case 0: return reader.GetBool();
-            case 1: return reader.GetInt();
-            case 2: return reader.GetUInt();
-            case 3: return reader.GetFloat();
-            case 4: return reader.GetString();
-
-            default:
-                throw new NotSupportedException($"ItemUpdateData.DeserializeTrackedValue({ItemNetId}, {PrefabName ?? ""}) Unsupported type code for deserialization: {typeCode}");
-        }
-    }
 }

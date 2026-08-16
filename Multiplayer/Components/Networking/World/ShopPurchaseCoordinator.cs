@@ -7,6 +7,7 @@ using Multiplayer.Networking.Packets.Common;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using UnityEngine;
 
 namespace Multiplayer.Components.Networking.World;
 
@@ -27,6 +28,7 @@ internal readonly struct ShopPurchase
 internal static class ShopPurchaseCoordinator
 {
     private static readonly Dictionary<string, Queue<ServerPlayer>> pendingOwners = [];
+    private static readonly Dictionary<ShopItemData, int> scaledAllowances = [];
     private static bool applyingClientApproval;
 
     public static ShopPurchase[] Capture(CashRegisterWithModules register) => register.registerModules
@@ -62,8 +64,41 @@ internal static class ShopPurchaseCoordinator
         }
     }
 
-    public static void TryAssignOwner(NetworkedItem item)
+    public static void TransferPendingOwnership(ServerPlayer from, ServerPlayer to)
     {
+        if (from == null)
+            return;
+
+        foreach (string prefabName in pendingOwners.Keys.ToArray())
+        {
+            var owners = pendingOwners[prefabName];
+            var replacements = new Queue<ServerPlayer>(owners.Count);
+            while (owners.Count > 0)
+            {
+                ServerPlayer owner = owners.Dequeue();
+                if (owner == from)
+                    owner = to;
+                if (owner != null)
+                    replacements.Enqueue(owner);
+            }
+
+            if (replacements.Count == 0)
+                pendingOwners.Remove(prefabName);
+            else
+                pendingOwners[prefabName] = replacements;
+        }
+    }
+
+    public static void ResetSessionState()
+    {
+        pendingOwners.Clear();
+        scaledAllowances.Clear();
+    }
+
+    public static void AssignPurchasedObject(GameObject purchasedObject)
+    {
+        var itemBase = purchasedObject?.GetComponent<ItemBase>();
+        NetworkedItem.TryGetNetworkedItem(itemBase, out var item);
         if (!NetworkLifecycle.Instance.IsHost() || item?.Item?.InventorySpecs == null)
             return;
 
@@ -75,7 +110,6 @@ internal static class ShopPurchaseCoordinator
         if (owners.Count == 0)
             pendingOwners.Remove(prefabName);
 
-        buyer.AddOwnedItem(item.NetId);
         item.SetOwner(buyer.PlayerId);
         Multiplayer.LogDebug(() => $"Assigned purchased item {item.NetId} ({prefabName}) to {buyer.Username}");
     }
@@ -97,12 +131,13 @@ internal static class ShopPurchaseCoordinator
     }
 
     public static void ApplyApproval(NetworkedCashRegisterWithModules networkedRegister,
-        CommonCashRegisterWithModulesActionPacket packet)
+        CommonShopPacket packet)
     {
         bool isBuyer = NetworkLifecycle.Instance.Client?.PlayerId == packet.BuyerPlayerId;
         if (isBuyer)
         {
-            ApplyApprovedPrices(networkedRegister.CashRegister, packet.ItemPrefabNames, packet.ItemUnitPrices);
+            ApplyApprovedBasket(networkedRegister.CashRegister, packet.ItemPrefabNames,
+                packet.ItemAmounts, packet.ItemUnitPrices);
             networkedRegister.CompleteApprovedShopPurchase();
             return;
         }
@@ -110,18 +145,30 @@ internal static class ShopPurchaseCoordinator
         ApplyStockDelta(packet.ItemPrefabNames, packet.ItemAmounts);
     }
 
-    private static void ApplyApprovedPrices(CashRegisterWithModules register, string[] prefabNames, float[] prices)
+    private static void ApplyApprovedBasket(CashRegisterWithModules register, string[] prefabNames,
+        int[] amounts, float[] prices)
     {
-        if (prefabNames == null || prices == null || prefabNames.Length != prices.Length)
+        if (prefabNames == null || amounts == null || prices == null ||
+            prefabNames.Length != amounts.Length || prefabNames.Length != prices.Length)
             return;
 
-        var pricesByPrefab = prefabNames
-            .Select((prefabName, index) => new { prefabName, price = prices[index] })
-            .ToDictionary(entry => entry.prefabName, entry => entry.price);
+        var approvedByPrefab = prefabNames
+            .Select((prefabName, index) => new { prefabName, amount = amounts[index], price = prices[index] })
+            .ToDictionary(entry => entry.prefabName, entry => (entry.amount, entry.price));
         foreach (ScanItemCashRegisterModule module in register.registerModules.OfType<ScanItemCashRegisterModule>())
-            if (module.sellingItemSpec != null &&
-                pricesByPrefab.TryGetValue(module.sellingItemSpec.ItemPrefabName, out float price))
-                module.Data.pricePerUnit = price;
+        {
+            if (module.sellingItemSpec != null && approvedByPrefab.TryGetValue(
+                module.sellingItemSpec.ItemPrefabName, out var approved))
+            {
+                module.Data.unitsToBuy = approved.amount;
+                module.Data.pricePerUnit = approved.price;
+            }
+            else
+            {
+                module.Data.unitsToBuy = 0;
+            }
+        }
+        register.OnUnitsToBuyChanged();
     }
 
     public static UnityEngine.Vector3 ClosestPlayerDelta(UnityEngine.Vector3 localPlayerPosition,
@@ -170,6 +217,35 @@ internal static class ShopPurchaseCoordinator
         GlobalShopController.Instance.Fire_GlobalShopDataChanged();
     }
 
+    public static CommonShopPacket CreateStockSnapshot()
+    {
+        IReadOnlyList<ShopItemData> items = GlobalShopController.Instance?.shopItemsData ?? [];
+        return new CommonShopPacket
+        {
+            Action = ShopAction.StockSnapshot,
+            ItemPrefabNames = items.Select(data => data.item.ItemPrefabName).ToArray(),
+            ItemAmounts = items.Select(data => data.purchasedItems).ToArray(),
+        };
+    }
+
+    public static void ApplyStockSnapshot(string[] prefabNames, int[] purchasedAmounts)
+    {
+        if (prefabNames == null || purchasedAmounts == null || prefabNames.Length != purchasedAmounts.Length)
+            return;
+
+        var purchasedByPrefab = prefabNames
+            .Select((prefabName, index) => new { prefabName, amount = purchasedAmounts[index] })
+            .Where(entry => !string.IsNullOrEmpty(entry.prefabName))
+            .GroupBy(entry => entry.prefabName)
+            .ToDictionary(group => group.Key, group => Math.Max(group.Last().amount, 0));
+        foreach (ShopItemData data in GlobalShopController.Instance.shopItemsData)
+            data.purchasedItems = purchasedByPrefab.TryGetValue(data.item.ItemPrefabName, out int amount)
+                ? amount
+                : 0;
+
+        GlobalShopController.Instance.Fire_GlobalShopDataChanged();
+    }
+
     public static int MaxPlayers
     {
         get
@@ -187,8 +263,19 @@ internal static class ShopPurchaseCoordinator
         foreach (ShopItemData data in controller.shopItemsData)
         {
             // A zero allowance is meaningful for locked/disabled shop entries.
-            if (data.allowedToHaveAmount > 0)
-                data.allowedToHaveAmount = checked(data.initialAmount * maxPlayers);
+            if (data.allowedToHaveAmount <= 0)
+                continue;
+
+            // Only rescale the vanilla allowance or a value previously produced by
+            // this method. Preserve positive runtime overrides from the game or
+            // another mod just as we preserve the game's zero-valued lockouts.
+            if (data.allowedToHaveAmount != data.initialAmount &&
+                (!scaledAllowances.TryGetValue(data, out int previous) || data.allowedToHaveAmount != previous))
+                continue;
+
+            int scaled = checked(data.initialAmount * maxPlayers);
+            data.allowedToHaveAmount = scaled;
+            scaledAllowances[data] = scaled;
         }
     }
 
