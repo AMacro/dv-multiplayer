@@ -31,6 +31,7 @@ public class ItemUpdateData
     public bool BelongsToPlayer { get; set; }
     public string PrefabName { get; set; }
     public ItemState ItemState { get; set; }
+    public bool Active { get; set; }
     public Vector3 ItemPosition { get; set; }
     public Quaternion ItemRotation { get; set; }
     public Vector3 ThrowDirection { get; set; }
@@ -85,6 +86,12 @@ public class ItemUpdateData
             {
                 writer.Put(CarNetId);
                 writer.Put(AttachedFront);
+            }
+            else if (ItemState == ItemState.InLostAndFound)
+            {
+                writer.Put(Active);
+                Vector3Serializer.Serialize(writer, ItemPosition);
+                QuaternionSerializer.Serialize(writer, ItemRotation);
             }
         }
 
@@ -150,6 +157,12 @@ public class ItemUpdateData
             {
                 CarNetId = reader.GetUShort();
                 AttachedFront = reader.GetBool();
+            }
+            else if (ItemState == ItemState.InLostAndFound)
+            {
+                Active = reader.GetBool();
+                ItemPosition = Vector3Serializer.Deserialize(reader);
+                ItemRotation = QuaternionSerializer.Deserialize(reader);
             }
         }
 

@@ -24,7 +24,8 @@ public enum ItemState : byte
     InHand,         //held by player
     InInventory,    //in player's inventory
     Attached,       //attached to another object (e.g. EOT Lanterns)
-    InstalledGadget //backing item is hidden while its Gadget is linked to a customization target
+    InstalledGadget, //backing item is hidden while its Gadget is linked to a customization target
+    InLostAndFound
 }
 
 public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
@@ -101,6 +102,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
     private ItemState observedState;
     private bool hasObservedState;
     private bool stateDirty;
+    private bool forceStateSnapshot;
     private bool ownerDirty;
     private bool wasThrown;
     private bool suppressDestroySync;
@@ -141,6 +143,8 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         // Mark registration as complete for items that don't need tracked values
         if (!registrationComplete && !UsefulItem)
             FinaliseTrackedValues();
+
+        NetworkedItemManager.Instance.CacheLateLocalWorldDuplicate(this);
     }
 
     public T GetTrackedItem<T>() where T : Component
@@ -195,6 +199,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
             Item.Grabbed += OnGrabbed;
             Item.Ungrabbed += OnUngrabbed;
+            Item.ItemInventoryStateChanged += OnItemInventoryStateChanged;
 
             //Find special interaction components
             TryGetComponent<GrabHandlerItem>(out grabHandler);
@@ -203,6 +208,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
             lastState = GetItemState();
             stateDirty = false;
+            forceStateSnapshot = false;
 
             initialised = true;
             return true;
@@ -224,6 +230,22 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
     {
         //Multiplayer.LogDebug(() => $"NetworkedItem.OnGrabbed() NetID: {NetId}, {name}");
         stateDirty = true;
+    }
+
+    private void OnItemInventoryStateChanged(ItemBase item, InventoryActionType actionType,
+        InventoryItemState itemState)
+    {
+        const InventoryActionType stateChangingActions = InventoryActionType.Add |
+            InventoryActionType.Drop | InventoryActionType.Purge | InventoryActionType.Equip |
+            InventoryActionType.Unequip;
+        if ((actionType & stateChangingActions) != 0)
+            stateDirty = true;
+    }
+
+    internal void MarkItemStateDirty()
+    {
+        stateDirty = true;
+        forceStateSnapshot = true;
     }
 
     public void OnThrow(Vector3 direction)
@@ -336,6 +358,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
                 lastState is ItemState.InHand or ItemState.InInventory)
             {
                 stateDirty = false;
+                forceStateSnapshot = false;
                 ownerDirty = false;
                 MarkValuesClean();
                 return null;
@@ -358,7 +381,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
         if (!createdDirty)
         {
-            if (lastState != currentState)
+            if (lastState != currentState || forceStateSnapshot)
                 updateType |= ItemUpdateData.ItemUpdateType.ItemState;
 
             if (hasDirtyVals)
@@ -385,6 +408,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
         createdDirty = false;
         stateDirty = false;
+        forceStateSnapshot = false;
         ownerDirty = false;
         wasThrown = false;
 
@@ -441,6 +465,10 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
                     gameObject.SetActive(false);
                     break;
 
+                case ItemState.InLostAndFound:
+                    HandleLostAndFoundState(snapshot);
+                    break;
+
                 default:
                     throw new Exception($"NetworkedItem.ApplySnapshot() Item state not implemented: {snapshot?.ItemState}");
 
@@ -481,6 +509,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         //mark values as clean
         createdDirty = false;
         stateDirty = false;
+        forceStateSnapshot = false;
         ownerDirty = false;
 
         MarkValuesClean();
@@ -540,6 +569,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
             BelongsToPlayer = Item.InventorySpecs.BelongsToPlayer,
             PrefabName = Item.InventorySpecs.ItemPrefabName,
             ItemState = lastState,
+            Active = gameObject.activeSelf,
             ItemPosition = position,
             ItemRotation = rotation,
             ThrowDirection = throwDirection,
@@ -571,6 +601,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
     {
         createdDirty = false;
         stateDirty = false;
+        forceStateSnapshot = false;
         ownerDirty = false;
         lastState = GetItemState();
         MarkValuesClean();
@@ -586,6 +617,10 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
     {
         if (trackedItem is GadgetItem gadgetItem && gadgetItem.Gadget != null && gadgetItem.Gadget.IsLinked)
             return ObserveState(ItemState.InstalledGadget);
+
+        var storage = StorageController.Instance;
+        if (storage?.StorageLostAndFound != null && storage.StorageLostAndFound.ContainsItem(Item))
+            return ObserveState(ItemState.InLostAndFound);
 
         // Remote hand/inventory proxies are inactive and reparented outside the
         // host's Inventory. Inspecting that local representation makes them look
@@ -701,7 +736,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         // list. ItemMagazine.AddItem expects a dropped item to belong to world
         // storage and otherwise can pass a null StorageBase into the base game.
         var storage = StorageController.Instance;
-        if (storage != null && Item.BelongsToPlayer() && !storage.AnyStorageContains(Item))
+        if (storage != null && Item.BelongsToPlayer() && !storage.StorageWorld.ContainsItem(Item))
             storage.AddItemToWorldStorage(Item);
 
         // Installed gadgets can retain stale rigidbody velocity while their backing
@@ -779,8 +814,37 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
             }
         }
 
+        var storage = StorageController.Instance;
+        if (storage != null && storage.AnyStorageContains(Item))
+            storage.RemoveItemFromStorageItemList(Item);
+
         //todo add to player model's hand
         this.gameObject.SetActive(false);
+    }
+
+    private void HandleLostAndFoundState(ItemUpdateData snapshot)
+    {
+        if (Item.IsSnapped)
+            Item.SnappableItem.SnappedTo.UnsnapItem(false);
+
+        if (WorldMover.OriginShiftParent != null && transform.parent != WorldMover.OriginShiftParent)
+        {
+            if (itemReparenting != null)
+                itemReparenting.ParentItemExternal(WorldMover.OriginShiftParent, null);
+            else
+            {
+                TrainPhysicsLod.RemoveItemFromAnyCar(Item);
+                transform.SetParent(WorldMover.OriginShiftParent, true);
+            }
+        }
+
+        var storage = StorageController.Instance;
+        if (storage != null && !storage.StorageLostAndFound.ContainsItem(Item))
+            storage.AddItemToLostAndFound(Item, false);
+
+        transform.position = snapshot.ItemPosition + WorldMover.currentMove;
+        transform.rotation = snapshot.ItemRotation;
+        gameObject.SetActive(snapshot.Active);
     }
     #endregion
 
@@ -796,6 +860,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         {
             Item.Grabbed -= OnGrabbed;
             Item.Ungrabbed -= OnUngrabbed;
+            Item.ItemInventoryStateChanged -= OnItemInventoryStateChanged;
             itemBaseToNetworkedItem.Remove(Item);
         }
         else if (!UnloadWatcher.isUnloading)

@@ -460,7 +460,11 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
             return;
         }
 
-        NetworkedItem newItem = GetFromCache(snapshot.PrefabName);
+        // Streamed locations instantiate their scene-authored items on every peer.
+        // Those items can appear after the one-time CacheWorldItems pass. Reuse the
+        // matching unassigned client item instead of adding a network-created copy
+        // on top of it.
+        NetworkedItem newItem = FindMatchingLocalWorldItem(snapshot) ?? GetFromCache(snapshot.PrefabName);
 
         if(newItem == null)
         {
@@ -494,6 +498,74 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
         }
 
         newItem.ReceiveSnapshot(snapshot);
+    }
+
+    private static NetworkedItem FindMatchingLocalWorldItem(ItemUpdateData snapshot)
+    {
+        const float maxMatchDistance = 1f;
+        float maxMatchDistanceSqr = maxMatchDistance * maxMatchDistance;
+        Vector3 authoritativePosition = snapshot.ItemPosition + WorldMover.currentMove;
+        NetworkedItem closest = null;
+        float closestDistanceSqr = maxMatchDistanceSqr;
+
+        foreach (var candidate in NetworkedItem.GetAll())
+        {
+            if (candidate?.Item?.InventorySpecs == null || candidate.NetId != 0 ||
+                IsLocalShopItem(candidate) || candidate.Item.IsEssential() || candidate.Item.IsGrabbed() ||
+                !string.Equals(candidate.Item.InventorySpecs.ItemPrefabName, snapshot.PrefabName,
+                    StringComparison.Ordinal))
+                continue;
+
+            var inventory = Inventory.Instance;
+            var storage = StorageController.Instance;
+            if (inventory != null && inventory.Contains(candidate.gameObject, true) ||
+                storage?.StorageInventory != null && storage.StorageInventory.ContainsItem(candidate.Item))
+                continue;
+
+            float distanceSqr = (candidate.transform.position - authoritativePosition).sqrMagnitude;
+            if (distanceSqr > closestDistanceSqr)
+                continue;
+
+            closest = candidate;
+            closestDistanceSqr = distanceSqr;
+        }
+
+        if (closest != null)
+            Multiplayer.LogDebug(() =>
+                $"Adopting local world item {closest.name} for authoritative NetId {snapshot.ItemNetId}");
+
+        return closest;
+    }
+
+    internal void CacheLateLocalWorldDuplicate(NetworkedItem localItem)
+    {
+        const float duplicatePositionTolerance = 0.05f;
+
+        if (!ClientInitialised || NetworkLifecycle.Instance.IsHost() ||
+            localItem?.Item?.InventorySpecs == null || localItem.NetId != 0 ||
+            IsLocalShopItem(localItem) || localItem.Item.IsEssential() || localItem.Item.IsGrabbed())
+            return;
+
+        var inventory = Inventory.Instance;
+        var storage = StorageController.Instance;
+        if (inventory != null && inventory.Contains(localItem.gameObject, true) ||
+            storage?.StorageInventory != null && storage.StorageInventory.ContainsItem(localItem.Item))
+            return;
+
+        string prefabName = localItem.Item.InventorySpecs.ItemPrefabName;
+        float toleranceSqr = duplicatePositionTolerance * duplicatePositionTolerance;
+        bool hasAuthoritativeCounterpart = NetworkedItem.GetAll().Any(candidate =>
+            candidate != null && candidate != localItem && candidate.NetId != 0 &&
+            candidate.Item?.InventorySpecs != null &&
+            string.Equals(candidate.Item.InventorySpecs.ItemPrefabName, prefabName, StringComparison.Ordinal) &&
+            (candidate.transform.position - localItem.transform.position).sqrMagnitude <= toleranceSqr);
+
+        if (!hasAuthoritativeCounterpart)
+            return;
+
+        Multiplayer.LogDebug(() =>
+            $"Caching late local duplicate {localItem.name}; authoritative counterpart already exists");
+        SendToCache(localItem);
     }
 
     private static IEnumerator ApplyInstalledGadgetCreateAfterStart(NetworkedItem item, ItemUpdateData snapshot)

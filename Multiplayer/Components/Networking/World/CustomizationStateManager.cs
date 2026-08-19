@@ -3,11 +3,12 @@ using DV.Customization.Gadgets;
 using DV.Customization.Gadgets.Implementations;
 using DV.InventorySystem;
 using DV.Items.Snapping;
+using LiteNetLib.Utils;
 using Multiplayer.Networking.Data.Customization;
 using Multiplayer.Networking.Data.Items;
 using Multiplayer.Networking.Data;
 using Multiplayer.Networking.Data.Player;
-using Multiplayer.Networking.Packets.Common;
+using Multiplayer.Networking.Packets.Common.Customization;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -40,9 +41,9 @@ public static class CustomizationStateManager
         return state;
     }
 
-    public static IEnumerator ApplyCurrentStateWhenReady(CustomizationStateData state,
+    internal static IEnumerator ApplyCurrentStateWhenReady(CustomizationStateData state,
         ICollection<GadgetPlacementData> deferredPlacements = null,
-        ICollection<CommonCustomizationPacket> deferredRelationships = null,
+        ICollection<ICustomizationActionPacket> deferredRelationships = null,
         IDictionary<string, List<CustomizationHoleData>> deferredHoleStates = null)
     {
         LogSnapshot("applying", state);
@@ -81,7 +82,7 @@ public static class CustomizationStateManager
         const int maxSnapInitializationFrames = 120;
         int snapInitializationFrames = 0;
         bool loggedSnapWait = false;
-        bool snapRelationshipsReady = AreSnapRelationshipsReady(state.Relationships, out string snapWaitingFor);
+        bool snapRelationshipsReady = AreSnapRelationshipsReady(state.SnappedItems, out string snapWaitingFor);
         while (!snapRelationshipsReady && snapInitializationFrames < maxSnapInitializationFrames)
         {
             if (!loggedSnapWait)
@@ -91,7 +92,7 @@ public static class CustomizationStateManager
             }
             yield return null;
             snapInitializationFrames++;
-            snapRelationshipsReady = AreSnapRelationshipsReady(state.Relationships, out snapWaitingFor);
+            snapRelationshipsReady = AreSnapRelationshipsReady(state.SnappedItems, out snapWaitingFor);
         }
 
         if (!snapRelationshipsReady)
@@ -101,7 +102,7 @@ public static class CustomizationStateManager
 
         using (CustomizationSyncScope.Remote())
         {
-            ApplyRelationships(state.Relationships, deferredRelationships);
+            ApplyRelationships(GetSnapshotRelationships(state), deferredRelationships);
             ApplyFreeHoles(state.CustomizationKeys, state.Holes, deferredHoleStates);
             ApplyTrackedValues(state.Gadgets);
         }
@@ -115,20 +116,19 @@ public static class CustomizationStateManager
             return [];
 
         return state.Gadgets.Select(gadget => gadget.ItemNetId)
-            .Concat(state.Relationships.SelectMany(relationship => new[] { relationship.ItemNetId, relationship.OtherItemNetId }))
+            .Concat(GetSnapshotRelationships(state).SelectMany(GetActionItemIds))
             .Where(itemNetId => itemNetId != 0)
             .Distinct();
     }
 
     public static HashSet<ushort> GetItemsRequiringDroppedCreate(CustomizationStateData state) =>
-        state.Relationships
-            .Where(relationship => relationship.Action is
-                CustomizationAction.LoadSpool or CustomizationAction.SnapItem)
-            .Select(relationship => relationship.OtherItemNetId)
+        state.LoadedSpools.Select(packet => packet.SpoolItemNetId)
+            .Concat(state.SnappedItems.Select(packet => packet.SnappedItemNetId))
             .Where(itemNetId => itemNetId != 0)
             .ToHashSet();
 
-    public static void SendAction(CommonCustomizationPacket packet)
+    internal static void SendAction<T>(T packet)
+        where T : CustomizationActionPacket, INetSerializable, new()
     {
         if (NetworkLifecycle.Instance.IsHost())
             NetworkLifecycle.Instance.Server.SendCustomizationAction(packet);
@@ -136,51 +136,34 @@ public static class CustomizationStateManager
             NetworkLifecycle.Instance.Client.SendCustomizationAction(packet);
     }
 
-    public static void ApplyAction(CommonCustomizationPacket packet)
+    internal static void ApplyAction(ICustomizationActionPacket packet)
     {
-        Multiplayer.LogDebug(() => $"Applying customization action={packet.Action} item={packet.ItemNetId} " +
-            $"other={packet.OtherItemNetId} indices={packet.IndexA}:{packet.IndexB}");
+        Multiplayer.LogDebug(() => $"Applying customization action={packet.GetType().Name}");
 
         using (CustomizationSyncScope.Remote())
         {
-            switch (packet.Action)
+            switch (packet)
             {
-                case CustomizationAction.PlaceGadget:
-                    ApplyPlacement(packet);
-                    break;
-                case CustomizationAction.RemoveGadget:
-                    ApplyRemoval(packet);
-                    break;
-                case CustomizationAction.AddHole:
-                case CustomizationAction.MoveHole:
-                case CustomizationAction.RemoveHole:
-                    ApplyHoleAction(packet);
-                    break;
-                case CustomizationAction.Mount:
-                case CustomizationAction.Unmount:
-                    ApplyMountAction(packet);
-                    break;
-                case CustomizationAction.Wire:
-                case CustomizationAction.Unwire:
-                    ApplyWireAction(packet);
-                    break;
-                case CustomizationAction.DropEmptySpool:
-                case CustomizationAction.LoadSpool:
-                case CustomizationAction.ReplaceSpool:
-                    ApplySpoolAction(packet);
-                    break;
-                case CustomizationAction.ReplaceDuctTape:
-                    ApplyDuctTapeReplacement(packet);
-                    break;
-                case CustomizationAction.SnapItem:
-                case CustomizationAction.UnsnapItem:
-                    ApplySnapAction(packet);
-                    break;
+                case PlaceGadgetPacket action: ApplyPlacement(action); break;
+                case RemoveGadgetPacket action: ApplyRemoval(action); break;
+                case AddHolePacket action: ApplyHoleAction(action); break;
+                case MoveHolePacket action: ApplyHoleAction(action); break;
+                case RemoveHolePacket action: ApplyHoleAction(action); break;
+                case MountGadgetPacket action: ApplyMountAction(action); break;
+                case UnmountGadgetPacket action: ApplyMountAction(action); break;
+                case WireGadgetsPacket action: ApplyWireAction(action); break;
+                case UnwireGadgetsPacket action: ApplyWireAction(action); break;
+                case DropEmptySpoolPacket action: ApplySpoolAction(action); break;
+                case LoadSpoolPacket action: ApplySpoolAction(action); break;
+                case ReplaceSpoolPacket action: ApplySpoolAction(action); break;
+                case ReplaceDuctTapePacket action: ApplyDuctTapeReplacement(action); break;
+                case SnapItemPacket action: ApplySnapAction(action); break;
+                case UnsnapItemPacket action: ApplySnapAction(action); break;
             }
         }
     }
 
-    public static bool ProcessActionAsHost(CommonCustomizationPacket packet, ServerPlayer sender)
+    internal static bool ProcessActionAsHost(ICustomizationActionPacket packet, ServerPlayer sender)
     {
         if (packet == null || sender == null || !IsActionReady(packet, out _))
             return false;
@@ -188,86 +171,87 @@ public static class CustomizationStateManager
         // Customization interactions are client-authoritative. In particular, the
         // host may not have the sender's area loaded, making host-side item and
         // target positions unsuitable for reach validation.
-        if (packet.Action is CustomizationAction.ReplaceSpool or CustomizationAction.ReplaceDuctTape)
-            packet.OwnerPlayerId = sender.PlayerId;
+        if (packet is ReplaceSpoolPacket spool)
+            spool.OwnerPlayerId = sender.PlayerId;
+        else if (packet is ReplaceDuctTapePacket tape)
+            tape.OwnerPlayerId = sender.PlayerId;
 
         ApplyAction(packet);
         bool applied = WasActionApplied(packet);
         if (!applied)
-            Multiplayer.LogWarning($"Host did not apply customization action {packet.Action} " +
-                $"({packet.ItemNetId}, {packet.OtherItemNetId}); mutation will not be relayed");
+            Multiplayer.LogWarning($"Host did not apply customization action {packet.GetType().Name}; mutation will not be relayed");
         return applied;
     }
 
-    private static bool WasActionApplied(CommonCustomizationPacket packet)
+    private static bool WasActionApplied(ICustomizationActionPacket packet)
     {
-        switch (packet.Action)
+        switch (packet)
         {
-            case CustomizationAction.PlaceGadget:
-                return TryGadget(packet.ItemNetId, out var placed) && placed.IsLinked &&
-                    CustomizationRef.TryResolve(TargetOf(packet), out var placementTarget) &&
+            case PlaceGadgetPacket action:
+                return TryGadget(action.ItemNetId, out var placed) && placed.IsLinked &&
+                    CustomizationRef.TryResolve(TargetOf(action.TargetKey), out var placementTarget) &&
                     placed.Custom == placementTarget;
-            case CustomizationAction.RemoveGadget:
-                return TryGadget(packet.ItemNetId, out var removed) && !removed.IsLinked;
-            case CustomizationAction.AddHole:
-            case CustomizationAction.MoveHole:
-                return CustomizationRef.TryResolve(TargetOf(packet), out var holeTarget) &&
-                    holeTarget.FindHole(packet.Position, out _);
-            case CustomizationAction.RemoveHole:
-                return CustomizationRef.TryResolve(TargetOf(packet), out var removalTarget) &&
-                    !removalTarget.FindHole(packet.PreviousPosition, out _);
-            case CustomizationAction.Mount:
-            case CustomizationAction.Unmount:
-                if (!TryGadget(packet.ItemNetId, out var mountOwner))
+            case RemoveGadgetPacket action:
+                return TryGadget(action.ItemNetId, out var removed) && !removed.IsLinked;
+            case AddHolePacket action:
+                return CustomizationRef.TryResolve(TargetOf(action.TargetKey), out var addedTarget) &&
+                    addedTarget.FindHole(action.Position, out _);
+            case MoveHolePacket action:
+                return CustomizationRef.TryResolve(TargetOf(action.TargetKey), out var movedTarget) &&
+                    movedTarget.FindHole(action.Position, out _);
+            case RemoveHolePacket action:
+                return CustomizationRef.TryResolve(TargetOf(action.TargetKey), out var removalTarget) &&
+                    !removalTarget.FindHole(action.PreviousPosition, out _);
+            case MountGadgetPacket action:
+                if (!TryGadget(action.MountItemNetId, out var mountOwner))
                     return false;
                 var mounts = mountOwner.GetComponents<Mount>();
-                if (!IsValidIndex(packet.IndexA, mounts.Length))
+                if (!IsValidIndex(action.MountIndex, mounts.Length))
                     return false;
-                return packet.Action == CustomizationAction.Unmount
-                    ? mounts[packet.IndexA].MountedGadget == null
-                    : TryGadget(packet.OtherItemNetId, out var mounted) &&
-                      mounts[packet.IndexA].MountedGadget == mounted;
-            case CustomizationAction.Wire:
-            case CustomizationAction.Unwire:
-                if (!TryGadget(packet.ItemNetId, out var first) ||
-                    !TryGadget(packet.OtherItemNetId, out var second) ||
-                    !IsValidIndex(packet.IndexA, first.WireLinkPorts.Count) ||
-                    !IsValidIndex(packet.IndexB, second.WireLinkPorts.Count))
-                    return false;
-                var links = new List<GadgetWiringModule.WireLinkPort>();
-                first.WireLinkPorts[packet.IndexA].GetLinks(links);
-                bool linked = links.Contains(second.WireLinkPorts[packet.IndexB]);
-                return packet.Action == CustomizationAction.Wire ? linked : !linked;
-            case CustomizationAction.DropEmptySpool:
-                return NetworkedItem.TryGet(packet.ItemNetId, out var dropToolItem) &&
+                return TryGadget(action.MountedItemNetId, out var mounted) &&
+                    mounts[action.MountIndex].MountedGadget == mounted;
+            case UnmountGadgetPacket action:
+                return TryGadget(action.MountItemNetId, out var unmountOwner) &&
+                    IsValidIndex(action.MountIndex, unmountOwner.GetComponents<Mount>().Length) &&
+                    unmountOwner.GetComponents<Mount>()[action.MountIndex].MountedGadget == null;
+            case WireGadgetsPacket action:
+                return IsWireStateApplied(action.FirstItemNetId, action.SecondItemNetId,
+                    action.FirstPortIndex, action.SecondPortIndex, shouldBeLinked: true);
+            case UnwireGadgetsPacket action:
+                return IsWireStateApplied(action.FirstItemNetId, action.SecondItemNetId,
+                    action.FirstPortIndex, action.SecondPortIndex, shouldBeLinked: false);
+            case DropEmptySpoolPacket action:
+                return NetworkedItem.TryGet(action.ToolItemNetId, out var dropToolItem) &&
                     dropToolItem.GetTrackedItem<GadgetSolderingTool>() is { HasEjectableSpool: false };
-            case CustomizationAction.LoadSpool:
-                return NetworkedItem.TryGet(packet.ItemNetId, out var loadToolItem) &&
+            case LoadSpoolPacket action:
+                return NetworkedItem.TryGet(action.ToolItemNetId, out var loadToolItem) &&
                     loadToolItem.GetTrackedItem<GadgetSolderingTool>()?.magazine?.items?.FirstOrDefault() is GameObject loaded &&
                     NetworkedItem.TryGetNetworkedItem(loaded.GetComponent<DV.CabControls.ItemBase>(), out var loadedItem) &&
-                    loadedItem.NetId == packet.OtherItemNetId;
-            case CustomizationAction.ReplaceSpool:
-                return packet.OtherItemNetId != 0 && NetworkedItem.TryGet(packet.OtherItemNetId, out _);
-            case CustomizationAction.ReplaceDuctTape:
-                return packet.OtherItemNetId != 0 && NetworkedItem.TryGet(packet.OtherItemNetId, out _);
-            case CustomizationAction.SnapItem:
-            case CustomizationAction.UnsnapItem:
-                if (!TryGadget(packet.ItemNetId, out var snapOwner))
+                    loadedItem.NetId == action.SpoolItemNetId;
+            case ReplaceSpoolPacket action:
+                return action.ReplacementSpoolItemNetId != 0 && NetworkedItem.TryGet(action.ReplacementSpoolItemNetId, out _);
+            case ReplaceDuctTapePacket action:
+                return action.ReplacementItemNetId != 0 && NetworkedItem.TryGet(action.ReplacementItemNetId, out _);
+            case SnapItemPacket action:
+                if (!TryGadget(action.GadgetItemNetId, out var snapOwner))
                     return false;
                 var snapPoints = GetSnapPoints(snapOwner);
-                if (!IsValidIndex(packet.IndexA, snapPoints.Length))
+                return IsValidIndex(action.SnapPointIndex, snapPoints.Length) &&
+                    snapPoints[action.SnapPointIndex].SnappedItem != null &&
+                    NetworkedItem.TryGetNetId(snapPoints[action.SnapPointIndex].SnappedItem, out ushort snappedId) &&
+                    snappedId == action.SnappedItemNetId;
+            case UnsnapItemPacket action:
+                if (!TryGadget(action.GadgetItemNetId, out var unsnapOwner))
                     return false;
-                if (packet.Action == CustomizationAction.UnsnapItem)
-                    return snapPoints[packet.IndexA].SnappedItem == null;
-                return snapPoints[packet.IndexA].SnappedItem != null &&
-                    NetworkedItem.TryGetNetId(snapPoints[packet.IndexA].SnappedItem, out ushort snappedId) &&
-                    snappedId == packet.OtherItemNetId;
+                var unsnapPoints = GetSnapPoints(unsnapOwner);
+                return IsValidIndex(action.SnapPointIndex, unsnapPoints.Length) &&
+                    unsnapPoints[action.SnapPointIndex].SnappedItem == null;
             default:
                 return false;
         }
     }
 
-    public static IEnumerable<ServerPlayer> GetCustomizationRecipients(CommonCustomizationPacket packet)
+    internal static IEnumerable<ServerPlayer> GetCustomizationRecipients(ICustomizationActionPacket packet)
     {
         if (packet == null || NetworkLifecycle.Instance?.Server == null)
             return [];
@@ -281,15 +265,23 @@ public static class CustomizationStateManager
             player.CustomizationSnapshotSent);
     }
 
-    public static IEnumerable<ushort> GetActionItemIds(CommonCustomizationPacket packet)
+    internal static IEnumerable<ushort> GetActionItemIds(ICustomizationActionPacket packet) => packet switch
     {
-        if (packet?.ItemNetId > 0)
-            yield return packet.ItemNetId;
-        if (packet?.OtherItemNetId > 0)
-            yield return packet.OtherItemNetId;
-    }
+        PlaceGadgetPacket p => NonZero(p.ItemNetId), RemoveGadgetPacket p => NonZero(p.ItemNetId),
+        MountGadgetPacket p => NonZero(p.MountItemNetId, p.MountedItemNetId),
+        UnmountGadgetPacket p => NonZero(p.MountItemNetId),
+        WireGadgetsPacket p => NonZero(p.FirstItemNetId, p.SecondItemNetId),
+        UnwireGadgetsPacket p => NonZero(p.FirstItemNetId, p.SecondItemNetId),
+        LoadSpoolPacket p => NonZero(p.ToolItemNetId, p.SpoolItemNetId),
+        ReplaceSpoolPacket p => NonZero(p.ToolItemNetId, p.ReplacementSpoolItemNetId),
+        DropEmptySpoolPacket p => NonZero(p.ToolItemNetId, p.SpoolItemNetId),
+        SnapItemPacket p => NonZero(p.GadgetItemNetId, p.SnappedItemNetId),
+        UnsnapItemPacket p => NonZero(p.GadgetItemNetId, p.SnappedItemNetId),
+        ReplaceDuctTapePacket p => NonZero(p.ConsumedItemNetId, p.ReplacementItemNetId),
+        _ => [],
+    };
 
-    internal static bool ActionsConflict(CommonCustomizationPacket first, CommonCustomizationPacket second)
+    internal static bool ActionsConflict(ICustomizationActionPacket first, ICustomizationActionPacket second)
     {
         if (first == null || second == null)
             return false;
@@ -299,31 +291,49 @@ public static class CustomizationStateManager
     }
 
     internal static bool SnapshotPlacementConflicts(GadgetPlacementData placement,
-        CommonCustomizationPacket action)
+        ICustomizationActionPacket action)
     {
         if (placement == null || action == null)
             return false;
 
-        return placement.ItemNetId != 0 &&
-                (placement.ItemNetId == action.ItemNetId || placement.ItemNetId == action.OtherItemNetId) ||
+        return placement.ItemNetId != 0 && GetActionItemIds(action).Contains(placement.ItemNetId) ||
             !string.IsNullOrEmpty(placement.Target.IdentificationKey) &&
-                placement.Target.IdentificationKey == action.TargetKey;
+                placement.Target.IdentificationKey == GetTargetKey(action);
     }
 
-    internal static bool SnapshotHoleStateConflicts(string targetKey, CommonCustomizationPacket action) =>
-        action != null && !string.IsNullOrEmpty(targetKey) && targetKey == action.TargetKey;
+    internal static bool SnapshotHoleStateConflicts(string targetKey, ICustomizationActionPacket action) =>
+        action != null && !string.IsNullOrEmpty(targetKey) && targetKey == GetTargetKey(action);
 
-    private static IEnumerable<string> GetActionDependencyKeys(CommonCustomizationPacket packet)
+    private static IEnumerable<string> GetActionDependencyKeys(ICustomizationActionPacket packet)
     {
         if (packet == null)
             yield break;
 
-        if (packet.ItemNetId != 0)
-            yield return $"item:{packet.ItemNetId}";
-        if (packet.OtherItemNetId != 0)
-            yield return $"item:{packet.OtherItemNetId}";
-        if (!string.IsNullOrEmpty(packet.TargetKey))
-            yield return $"target:{packet.TargetKey}";
+        foreach (ushort itemNetId in GetActionItemIds(packet))
+            yield return $"item:{itemNetId}";
+        string targetKey = GetTargetKey(packet);
+        if (!string.IsNullOrEmpty(targetKey))
+            yield return $"target:{targetKey}";
+    }
+
+    private static IEnumerable<ushort> NonZero(params ushort[] values) => values.Where(value => value != 0);
+
+    private static string GetTargetKey(ICustomizationActionPacket packet) => packet switch
+    {
+        PlaceGadgetPacket p => p.TargetKey, AddHolePacket p => p.TargetKey,
+        MoveHolePacket p => p.TargetKey, RemoveHolePacket p => p.TargetKey, _ => null,
+    };
+
+    private static bool IsWireStateApplied(ushort firstId, ushort secondId, int firstIndex,
+        int secondIndex, bool shouldBeLinked)
+    {
+        if (!TryGadget(firstId, out var first) || !TryGadget(secondId, out var second) ||
+            !IsValidIndex(firstIndex, first.WireLinkPorts.Count) ||
+            !IsValidIndex(secondIndex, second.WireLinkPorts.Count))
+            return false;
+        var links = new List<GadgetWiringModule.WireLinkPort>();
+        first.WireLinkPorts[firstIndex].GetLinks(links);
+        return links.Contains(second.WireLinkPorts[secondIndex]) == shouldBeLinked;
     }
 
     public static bool TryGadget(ushort itemNetId, out GadgetBase gadget)
@@ -399,7 +409,8 @@ public static class CustomizationStateManager
         if (!NetworkedItem.TryGetNetworkedItem(spoolItemBase, out var spoolItem))
             return;
 
-        AddRelationship(state, CustomizationAction.LoadSpool, toolItem.NetId, spoolItem.NetId);
+        state.LoadedSpools.Add(new LoadSpoolPacket
+            { ToolItemNetId = toolItem.NetId, SpoolItemNetId = spoolItem.NetId });
     }
 
     private static void CapturePlacement(
@@ -430,7 +441,8 @@ public static class CustomizationStateManager
         for (int index = 0; index < mounts.Length; index++)
         {
             if (mounts[index].MountedGadget != null && TryItemId(mounts[index].MountedGadget, out var mountedId))
-                AddRelationship(state, CustomizationAction.Mount, ownerItem.NetId, mountedId, index);
+                state.Mounts.Add(new MountGadgetPacket
+                    { MountItemNetId = ownerItem.NetId, MountedItemNetId = mountedId, MountIndex = index });
         }
     }
 
@@ -455,8 +467,9 @@ public static class CustomizationStateManager
                 }
             }
 
-            AddRelationship(state, CustomizationAction.SnapItem, ownerItem.NetId, snappedId, index,
-                hasPosition: hasAnchorPosition, position: anchorPosition);
+            state.SnappedItems.Add(new SnapItemPacket { GadgetItemNetId = ownerItem.NetId,
+                SnappedItemNetId = snappedId, SnapPointIndex = index,
+                HasAnchorPosition = hasAnchorPosition, AnchorPosition = anchorPosition });
             Multiplayer.LogDebug(() => $"Customization snapshot snap owner={ownerItem.NetId} item={snappedId} " +
                 $"point={snapPoints[index].GetType().Name}:{snapPoints[index].SnapPointType} " +
                 $"anchor={hasAnchorPosition} offset={anchorPosition}");
@@ -477,7 +490,8 @@ public static class CustomizationStateManager
 
                 int linkedPortIndex = link.owner.WireLinkPorts.ToList().IndexOf(link);
                 if (linkedPortIndex >= 0)
-                    AddRelationship(state, CustomizationAction.Wire, ownerItem.NetId, linkedId, portIndex, linkedPortIndex);
+                    state.Wires.Add(new WireGadgetsPacket { FirstItemNetId = ownerItem.NetId,
+                        SecondItemNetId = linkedId, FirstPortIndex = portIndex, SecondPortIndex = linkedPortIndex });
             }
         }
     }
@@ -538,13 +552,10 @@ public static class CustomizationStateManager
         return true;
     }
 
-    private static bool AreSnapRelationshipsReady(IEnumerable<CommonCustomizationPacket> relationships, out string waitingFor)
+    private static bool AreSnapRelationshipsReady(IEnumerable<SnapItemPacket> relationships, out string waitingFor)
     {
         foreach (var relationship in relationships)
         {
-            if (relationship.Action != CustomizationAction.SnapItem)
-                continue;
-
             if (!IsSnapActionReady(relationship, out waitingFor))
                 return false;
         }
@@ -651,8 +662,8 @@ public static class CustomizationStateManager
         }
     }
 
-    private static void ApplyRelationships(IEnumerable<CommonCustomizationPacket> relationships,
-        ICollection<CommonCustomizationPacket> deferredRelationships)
+    private static void ApplyRelationships(IEnumerable<ICustomizationActionPacket> relationships,
+        ICollection<ICustomizationActionPacket> deferredRelationships)
     {
         foreach (var relationship in relationships)
         {
@@ -662,8 +673,8 @@ public static class CustomizationStateManager
             if (blockedByEarlierDependency || !IsActionReady(relationship, out waitingFor))
             {
                 deferredRelationships?.Add(relationship);
-                Multiplayer.LogDebug(() => $"Deferring snapshot relationship {relationship.Action} " +
-                    $"({relationship.ItemNetId}, {relationship.OtherItemNetId}) until {waitingFor ?? "an earlier dependency"}");
+                Multiplayer.LogDebug(() => $"Deferring snapshot relationship {relationship.GetType().Name} " +
+                    $"until {waitingFor ?? "an earlier dependency"}");
                 continue;
             }
 
@@ -673,8 +684,7 @@ public static class CustomizationStateManager
             }
             catch (Exception exception)
             {
-                Multiplayer.LogError($"Failed to apply snapshot relationship {relationship.Action} " +
-                    $"({relationship.ItemNetId}, {relationship.OtherItemNetId}): {exception}");
+                Multiplayer.LogError($"Failed to apply snapshot relationship {relationship.GetType().Name}: {exception}");
             }
         }
     }
@@ -804,34 +814,33 @@ public static class CustomizationStateManager
         }
     }
 
-    internal static bool IsActionReady(CommonCustomizationPacket packet, out string waitingFor)
+    internal static bool IsActionReady(ICustomizationActionPacket packet, out string waitingFor)
     {
         waitingFor = null;
         if (packet == null)
             return false;
 
-        bool needsTarget = packet.Action is CustomizationAction.PlaceGadget or
-            CustomizationAction.AddHole or CustomizationAction.MoveHole or CustomizationAction.RemoveHole;
-        if (needsTarget && !CustomizationRef.TryResolve(TargetOf(packet), out _))
+        string targetKey = GetTargetKey(packet);
+        if (targetKey != null && !CustomizationRef.TryResolve(TargetOf(targetKey), out _))
         {
-            waitingFor = $"customization target '{packet.TargetKey}'";
+            waitingFor = $"customization target '{targetKey}'";
             return false;
         }
 
-        bool hasLocalDuctTapeReplacement = packet.Action == CustomizationAction.ReplaceDuctTape &&
-            pendingLocalDuctTapeReplacements.TryGetValue(packet.ItemNetId, out var localReplacement) &&
+        bool hasLocalDuctTapeReplacement = packet is ReplaceDuctTapePacket tape &&
+            pendingLocalDuctTapeReplacements.TryGetValue(tape.ConsumedItemNetId, out var localReplacement) &&
             localReplacement != null && localReplacement.NetId == 0;
 
-        IEnumerable<ushort> requiredItems = packet.Action switch
+        IEnumerable<ushort> requiredItems = packet switch
         {
             // These actions construct or adopt the replacement locally. The old
             // duct tape may already have been destroyed on the originating peer.
-            CustomizationAction.ReplaceDuctTape when hasLocalDuctTapeReplacement => [],
-            CustomizationAction.ReplaceDuctTape => [packet.ItemNetId],
-            CustomizationAction.ReplaceSpool => [packet.ItemNetId],
+            ReplaceDuctTapePacket when hasLocalDuctTapeReplacement => [],
+            ReplaceDuctTapePacket action => NonZero(action.ConsumedItemNetId),
+            ReplaceSpoolPacket action => NonZero(action.ToolItemNetId),
             // The contained reel is recoverable from the tool's magazine even when
             // a replacement reassigned its ID before the lookup cache caught up.
-            CustomizationAction.DropEmptySpool => [packet.ItemNetId],
+            DropEmptySpoolPacket action => NonZero(action.ToolItemNetId),
             _ => GetActionItemIds(packet),
         };
 
@@ -844,54 +853,64 @@ public static class CustomizationStateManager
             }
         }
 
-        if (packet.Action == CustomizationAction.PlaceGadget &&
-            (!NetworkedItem.TryGet(packet.ItemNetId, out var placedItem) ||
+        if (packet is PlaceGadgetPacket placement &&
+            (!NetworkedItem.TryGet(placement.ItemNetId, out var placedItem) ||
              placedItem.GetTrackedItem<GadgetItem>() is not { Gadget: not null, Item: not null }))
         {
-            waitingFor = $"gadget item {packet.ItemNetId}";
+            waitingFor = $"gadget item {placement.ItemNetId}";
             return false;
         }
 
-        bool needsFirstGadget = packet.Action is CustomizationAction.RemoveGadget or
-            CustomizationAction.Mount or CustomizationAction.Unmount or CustomizationAction.Wire or
-            CustomizationAction.Unwire or CustomizationAction.SnapItem or CustomizationAction.UnsnapItem;
-        if (needsFirstGadget && !TryGadget(packet.ItemNetId, out _))
+        ushort firstGadgetId = packet switch
         {
-            waitingFor = $"gadget {packet.ItemNetId}";
+            RemoveGadgetPacket p => p.ItemNetId, MountGadgetPacket p => p.MountItemNetId,
+            UnmountGadgetPacket p => p.MountItemNetId, WireGadgetsPacket p => p.FirstItemNetId,
+            UnwireGadgetsPacket p => p.FirstItemNetId, SnapItemPacket p => p.GadgetItemNetId,
+            UnsnapItemPacket p => p.GadgetItemNetId, _ => 0,
+        };
+        if (firstGadgetId != 0 && !TryGadget(firstGadgetId, out _))
+        {
+            waitingFor = $"gadget {firstGadgetId}";
             return false;
         }
 
-        bool needsSecondGadget = packet.Action is CustomizationAction.Mount or
-            CustomizationAction.Wire or CustomizationAction.Unwire;
-        if (needsSecondGadget && !TryGadget(packet.OtherItemNetId, out _))
+        ushort secondGadgetId = packet switch
         {
-            waitingFor = $"gadget {packet.OtherItemNetId}";
+            MountGadgetPacket p => p.MountedItemNetId, WireGadgetsPacket p => p.SecondItemNetId,
+            UnwireGadgetsPacket p => p.SecondItemNetId, _ => 0,
+        };
+        if (secondGadgetId != 0 && !TryGadget(secondGadgetId, out _))
+        {
+            waitingFor = $"gadget {secondGadgetId}";
             return false;
         }
 
-        if (packet.Action is CustomizationAction.Mount or CustomizationAction.Unmount)
+        if (packet is MountGadgetPacket or UnmountGadgetPacket)
         {
-            TryGadget(packet.ItemNetId, out var owner);
-            if (!IsValidIndex(packet.IndexA, owner.GetComponents<Mount>().Length))
+            int mountIndex = packet is MountGadgetPacket mount ? mount.MountIndex : ((UnmountGadgetPacket)packet).MountIndex;
+            TryGadget(firstGadgetId, out var owner);
+            if (!IsValidIndex(mountIndex, owner.GetComponents<Mount>().Length))
             {
-                waitingFor = $"mount {packet.IndexA} on gadget {packet.ItemNetId}";
+                waitingFor = $"mount {mountIndex} on gadget {firstGadgetId}";
                 return false;
             }
         }
 
-        if (packet.Action is CustomizationAction.Wire or CustomizationAction.Unwire)
+        if (packet is WireGadgetsPacket or UnwireGadgetsPacket)
         {
-            TryGadget(packet.ItemNetId, out var first);
-            TryGadget(packet.OtherItemNetId, out var second);
-            if (!IsValidIndex(packet.IndexA, first.WireLinkPorts.Count))
+            int firstPort = packet is WireGadgetsPacket wire ? wire.FirstPortIndex : ((UnwireGadgetsPacket)packet).FirstPortIndex;
+            int secondPort = packet is WireGadgetsPacket wire2 ? wire2.SecondPortIndex : ((UnwireGadgetsPacket)packet).SecondPortIndex;
+            TryGadget(firstGadgetId, out var first);
+            TryGadget(secondGadgetId, out var second);
+            if (!IsValidIndex(firstPort, first.WireLinkPorts.Count))
             {
-                waitingFor = $"wire port {packet.IndexA} on gadget {packet.ItemNetId}";
+                waitingFor = $"wire port {firstPort} on gadget {firstGadgetId}";
                 return false;
             }
 
-            if (!IsValidIndex(packet.IndexB, second.WireLinkPorts.Count))
+            if (!IsValidIndex(secondPort, second.WireLinkPorts.Count))
             {
-                waitingFor = $"wire port {packet.IndexB} on gadget {packet.OtherItemNetId}";
+                waitingFor = $"wire port {secondPort} on gadget {secondGadgetId}";
                 return false;
             }
 
@@ -899,25 +918,30 @@ public static class CustomizationStateManager
             // reconciled. Wire() rejects ports whose owners do not yet reference
             // the same Customization, and the old client drain discarded that
             // failed action permanently.
-            if (packet.Action == CustomizationAction.Wire &&
+            if (packet is WireGadgetsPacket &&
                 (first.Custom == null || second.Custom == null || first.Custom != second.Custom))
             {
-                waitingFor = $"gadgets {packet.ItemNetId} and {packet.OtherItemNetId} to share a customization target";
+                waitingFor = $"gadgets {firstGadgetId} and {secondGadgetId} to share a customization target";
                 return false;
             }
         }
 
-        if ((packet.Action is CustomizationAction.SnapItem or CustomizationAction.UnsnapItem) &&
-            !IsSnapActionReady(packet, out waitingFor))
+        if (packet is SnapItemPacket snap && !IsSnapActionReady(snap, out waitingFor))
+            return false;
+        if (packet is UnsnapItemPacket unsnap && !IsSnapActionReady(unsnap, out waitingFor))
             return false;
 
-        if (packet.Action is CustomizationAction.DropEmptySpool or CustomizationAction.LoadSpool or
-            CustomizationAction.ReplaceSpool)
+        ushort toolId = packet switch
         {
-            NetworkedItem.TryGet(packet.ItemNetId, out var toolItem);
+            DropEmptySpoolPacket p => p.ToolItemNetId, LoadSpoolPacket p => p.ToolItemNetId,
+            ReplaceSpoolPacket p => p.ToolItemNetId, _ => 0,
+        };
+        if (toolId != 0)
+        {
+            NetworkedItem.TryGet(toolId, out var toolItem);
             if (toolItem?.GetTrackedItem<GadgetSolderingTool>()?.magazine == null)
             {
-                waitingFor = $"soldering tool {packet.ItemNetId}";
+                waitingFor = $"soldering tool {toolId}";
                 return false;
             }
         }
@@ -925,40 +949,34 @@ public static class CustomizationStateManager
         return true;
     }
 
-    private static bool IsSnapActionReady(CommonCustomizationPacket packet, out string waitingFor)
+    private static bool IsSnapActionReady(SnapItemPacket packet, out string waitingFor)
     {
-        if (!TryGadget(packet.ItemNetId, out var owner))
+        if (!TryGadget(packet.GadgetItemNetId, out var owner))
         {
-            waitingFor = $"snap-point owner {packet.ItemNetId}";
+            waitingFor = $"snap-point owner {packet.GadgetItemNetId}";
             return false;
         }
 
         var snapPoints = GetSnapPoints(owner);
-        if (!IsValidIndex(packet.IndexA, snapPoints.Length))
+        if (!IsValidIndex(packet.SnapPointIndex, snapPoints.Length))
         {
-            waitingFor = $"snap point {packet.IndexA} on gadget {packet.ItemNetId}";
+            waitingFor = $"snap point {packet.SnapPointIndex} on gadget {packet.GadgetItemNetId}";
             return false;
         }
 
-        if (packet.Action == CustomizationAction.UnsnapItem)
-        {
-            waitingFor = null;
-            return true;
-        }
-
-        if (!NetworkedItem.TryGet(packet.OtherItemNetId, out var snappedItem) ||
+        if (!NetworkedItem.TryGet(packet.SnappedItemNetId, out var snappedItem) ||
             snappedItem.Item?.SnappableItem == null)
         {
-            waitingFor = $"snappable item {packet.OtherItemNetId}";
+            waitingFor = $"snappable item {packet.SnappedItemNetId}";
             return false;
         }
 
-        var snapPoint = snapPoints[packet.IndexA];
+        var snapPoint = snapPoints[packet.SnapPointIndex];
         var snappable = snappedItem.Item.SnappableItem;
         if (((int)snappable.AllowedSnapPointTypes & (int)snapPoint.SnapPointType) == 0 ||
             snappable.GetAnchor(snapPoint.SnapPointType) == null)
         {
-            waitingFor = $"snap anchor on item {packet.OtherItemNetId}";
+            waitingFor = $"snap anchor on item {packet.SnappedItemNetId}";
             return false;
         }
 
@@ -966,25 +984,41 @@ public static class CustomizationStateManager
         return true;
     }
 
-    private static void ApplyPlacement(CommonCustomizationPacket packet)
+    private static bool IsSnapActionReady(UnsnapItemPacket packet, out string waitingFor)
+    {
+        if (!TryGadget(packet.GadgetItemNetId, out var owner))
+        {
+            waitingFor = $"snap-point owner {packet.GadgetItemNetId}";
+            return false;
+        }
+        if (!IsValidIndex(packet.SnapPointIndex, GetSnapPoints(owner).Length))
+        {
+            waitingFor = $"snap point {packet.SnapPointIndex} on gadget {packet.GadgetItemNetId}";
+            return false;
+        }
+        waitingFor = null;
+        return true;
+    }
+
+    private static void ApplyPlacement(PlaceGadgetPacket packet)
     {
         if (!NetworkedItem.TryGet(packet.ItemNetId, out var item) ||
             item.GetTrackedItem<GadgetItem>() is not GadgetItem gadgetItem ||
-            !CustomizationRef.TryResolve(TargetOf(packet), out var target))
+            !CustomizationRef.TryResolve(TargetOf(packet.TargetKey), out var target))
             return;
 
         GadgetItem.Place(target, packet.Position, packet.Rotation, gadgetItem, colliderForPlacementData: null);
     }
 
-    private static void ApplyRemoval(CommonCustomizationPacket packet)
+    private static void ApplyRemoval(RemoveGadgetPacket packet)
     {
         if (!NetworkedItem.TryGet(packet.ItemNetId, out var item))
             return;
 
-        var removedItem = item.GetTrackedItem<GadgetItem>()?.Gadget?.Remove(packet.Flag);
+        var removedItem = item.GetTrackedItem<GadgetItem>()?.Gadget?.Remove(packet.ReparentToTrainCar);
         if (removedItem != null)
         {
-            if (packet.Flag)
+            if (packet.ReparentToTrainCar)
             {
                 // Gadget remover: native removal reparents the item to the train car,
                 // where it must remain visible until somebody actually picks it up.
@@ -1000,57 +1034,61 @@ public static class CustomizationStateManager
         }
     }
 
-    private static void ApplyHoleAction(CommonCustomizationPacket packet)
+    private static void ApplyHoleAction(AddHolePacket packet)
     {
-        if (!CustomizationRef.TryResolve(TargetOf(packet), out var target))
-            return;
-
-        switch (packet.Action)
-        {
-            case CustomizationAction.AddHole:
-                target.AddHole(packet.Position, packet.Normal);
-                break;
-            case CustomizationAction.MoveHole:
-                if (target.FindHole(packet.PreviousPosition, out var movedHole))
-                    target.MoveHole(movedHole, packet.Position, packet.Normal);
-                break;
-            case CustomizationAction.RemoveHole:
-                if (target.FindHole(packet.PreviousPosition, out var removedHole))
-                    target.RemoveHole(removedHole);
-                break;
-        }
+        if (CustomizationRef.TryResolve(TargetOf(packet.TargetKey), out var target))
+            target.AddHole(packet.Position, packet.Normal);
     }
 
-    private static void ApplyMountAction(CommonCustomizationPacket packet)
+    private static void ApplyHoleAction(MoveHolePacket packet)
     {
-        if (!TryGadget(packet.ItemNetId, out var owner))
-            return;
+        if (CustomizationRef.TryResolve(TargetOf(packet.TargetKey), out var target) &&
+            target.FindHole(packet.PreviousPosition, out var movedHole))
+            target.MoveHole(movedHole, packet.Position, packet.Normal);
+    }
 
+    private static void ApplyHoleAction(RemoveHolePacket packet)
+    {
+        if (CustomizationRef.TryResolve(TargetOf(packet.TargetKey), out var target) &&
+            target.FindHole(packet.PreviousPosition, out var removedHole))
+            target.RemoveHole(removedHole);
+    }
+
+    private static void ApplyMountAction(MountGadgetPacket packet)
+    {
+        if (!TryGadget(packet.MountItemNetId, out var owner)) return;
         var mounts = owner.GetComponents<Mount>();
-        if (!IsValidIndex(packet.IndexA, mounts.Length))
-            return;
-
-        if (packet.Action == CustomizationAction.Unmount)
-        {
-            mounts[packet.IndexA].UnmountGadget();
-            return;
-        }
-
-        if (TryGadget(packet.OtherItemNetId, out var mounted))
-            mounts[packet.IndexA].MountGadget(mounted);
+        if (IsValidIndex(packet.MountIndex, mounts.Length) && TryGadget(packet.MountedItemNetId, out var mounted))
+            mounts[packet.MountIndex].MountGadget(mounted);
     }
 
-    private static void ApplyWireAction(CommonCustomizationPacket packet)
+    private static void ApplyMountAction(UnmountGadgetPacket packet)
     {
-        if (!TryGadget(packet.ItemNetId, out var first) ||
-            !TryGadget(packet.OtherItemNetId, out var second) ||
-            !IsValidIndex(packet.IndexA, first.WireLinkPorts.Count) ||
-            !IsValidIndex(packet.IndexB, second.WireLinkPorts.Count))
+        if (!TryGadget(packet.MountItemNetId, out var owner)) return;
+        var mounts = owner.GetComponents<Mount>();
+        if (IsValidIndex(packet.MountIndex, mounts.Length))
+            mounts[packet.MountIndex].UnmountGadget();
+    }
+
+    private static void ApplyWireAction(WireGadgetsPacket packet) =>
+        ApplyWireAction(packet.FirstItemNetId, packet.SecondItemNetId, packet.FirstPortIndex,
+            packet.SecondPortIndex, unwire: false);
+
+    private static void ApplyWireAction(UnwireGadgetsPacket packet) =>
+        ApplyWireAction(packet.FirstItemNetId, packet.SecondItemNetId, packet.FirstPortIndex,
+            packet.SecondPortIndex, unwire: true);
+
+    private static void ApplyWireAction(ushort firstItemNetId, ushort secondItemNetId,
+        int firstPortIndex, int secondPortIndex, bool unwire)
+    {
+        if (!TryGadget(firstItemNetId, out var first) || !TryGadget(secondItemNetId, out var second) ||
+            !IsValidIndex(firstPortIndex, first.WireLinkPorts.Count) ||
+            !IsValidIndex(secondPortIndex, second.WireLinkPorts.Count))
             return;
 
-        var firstPort = first.WireLinkPorts[packet.IndexA];
-        var secondPort = second.WireLinkPorts[packet.IndexB];
-        if (packet.Action == CustomizationAction.Wire)
+        var firstPort = first.WireLinkPorts[firstPortIndex];
+        var secondPort = second.WireLinkPorts[secondPortIndex];
+        if (!unwire)
         {
             if (GadgetWiringModule.WireLinkPort.AreWired(firstPort, secondPort))
                 return;
@@ -1065,14 +1103,14 @@ public static class CustomizationStateManager
             bool wired = GadgetWiringModule.WireLinkPort.Wire(firstPort, secondPort);
             if (!wired || !GadgetWiringModule.WireLinkPort.AreWired(firstPort, secondPort))
             {
-                Multiplayer.LogWarning($"Could not apply authoritative wire {packet.ItemNetId}:{packet.IndexA} -> " +
-                    $"{packet.OtherItemNetId}:{packet.IndexB}; first={first.GetType().Name}, " +
+                Multiplayer.LogWarning($"Could not apply authoritative wire {firstItemNetId}:{firstPortIndex} -> " +
+                    $"{secondItemNetId}:{secondPortIndex}; first={first.GetType().Name}, " +
                     $"second={second.GetType().Name}, sameTarget={first.Custom != null && first.Custom == second.Custom}");
             }
             else
             {
-                Multiplayer.LogDebug(() => $"Wired gadget {packet.ItemNetId}:{packet.IndexA} to " +
-                    $"{packet.OtherItemNetId}:{packet.IndexB}");
+                Multiplayer.LogDebug(() => $"Wired gadget {firstItemNetId}:{firstPortIndex} to " +
+                    $"{secondItemNetId}:{secondPortIndex}");
             }
         }
         else
@@ -1081,8 +1119,8 @@ public static class CustomizationStateManager
                 return;
 
             if (!GadgetWiringModule.WireLinkPort.Unwire(firstPort, secondPort))
-                Multiplayer.LogWarning($"Could not unwire gadget {packet.ItemNetId}:{packet.IndexA} from " +
-                    $"{packet.OtherItemNetId}:{packet.IndexB}");
+                Multiplayer.LogWarning($"Could not unwire gadget {firstItemNetId}:{firstPortIndex} from " +
+                    $"{secondItemNetId}:{secondPortIndex}");
         }
     }
 
@@ -1102,25 +1140,23 @@ public static class CustomizationStateManager
         }
     }
 
-    private static void ApplySpoolAction(CommonCustomizationPacket packet)
+    private static void ApplySpoolAction(ReplaceSpoolPacket packet)
     {
-        if (!NetworkedItem.TryGet(packet.ItemNetId, out var toolItem))
-            return;
+        if (NetworkedItem.TryGet(packet.ToolItemNetId, out var toolItem))
+            ApplySpoolReplacement(toolItem, toolItem.GetTrackedItem<GadgetSolderingTool>(), packet);
+    }
 
-        var tool = toolItem.GetTrackedItem<GadgetSolderingTool>();
-        if (packet.Action == CustomizationAction.ReplaceSpool)
-        {
-            ApplySpoolReplacement(toolItem, tool, packet);
-            return;
-        }
+    private static void ApplySpoolAction(DropEmptySpoolPacket packet)
+    {
+        if (NetworkedItem.TryGet(packet.ToolItemNetId, out var toolItem))
+            DropEmptySpool(toolItem.GetTrackedItem<GadgetSolderingTool>(), packet);
+    }
 
-        if (packet.Action == CustomizationAction.DropEmptySpool)
-        {
-            DropEmptySpool(tool, packet);
-            return;
-        }
-
-        if (tool?.magazine != null && NetworkedItem.TryGet(packet.OtherItemNetId, out var spoolItem))
+    private static void ApplySpoolAction(LoadSpoolPacket packet)
+    {
+        if (NetworkedItem.TryGet(packet.ToolItemNetId, out var toolItem) &&
+            toolItem.GetTrackedItem<GadgetSolderingTool>() is { magazine: not null } tool &&
+            NetworkedItem.TryGet(packet.SpoolItemNetId, out var spoolItem))
             LoadSpool(toolItem, tool, spoolItem);
     }
 
@@ -1180,7 +1216,7 @@ public static class CustomizationStateManager
             Multiplayer.LogWarning($"Could not load reel {spoolItem.NetId} into soldering tool {toolItem.NetId}");
     }
 
-    private static void ApplySpoolReplacement(NetworkedItem toolItem, GadgetSolderingTool tool, CommonCustomizationPacket packet)
+    private static void ApplySpoolReplacement(NetworkedItem toolItem, GadgetSolderingTool tool, ReplaceSpoolPacket packet)
     {
         if (tool?.magazine == null)
             return;
@@ -1233,10 +1269,10 @@ public static class CustomizationStateManager
         if (!NetworkedItem.TryGetNetworkedItem(spentItemBase, out var spentItem))
             return;
 
-        if (packet.OtherItemNetId == 0 && NetworkLifecycle.Instance.IsHost())
-            packet.OtherItemNetId = spentItem.NetId;
-        else if (packet.OtherItemNetId != 0)
-            spentItem.NetId = packet.OtherItemNetId;
+        if (packet.ReplacementSpoolItemNetId == 0 && NetworkLifecycle.Instance.IsHost())
+            packet.ReplacementSpoolItemNetId = spentItem.NetId;
+        else if (packet.ReplacementSpoolItemNetId != 0)
+            spentItem.NetId = packet.ReplacementSpoolItemNetId;
 
         spentItem.SetOwner(replacementOwner);
         if (spentItem.Item?.InventorySpecs != null)
@@ -1247,7 +1283,7 @@ public static class CustomizationStateManager
         tool.OnUnitsChanged();
     }
 
-    private static void DropEmptySpool(GadgetSolderingTool tool, CommonCustomizationPacket packet)
+    private static void DropEmptySpool(GadgetSolderingTool tool, DropEmptySpoolPacket packet)
     {
         if (tool?.magazine == null)
         {
@@ -1261,29 +1297,29 @@ public static class CustomizationStateManager
         if (current != null)
             NetworkedItem.TryGetNetworkedItem(current.GetComponent<DV.CabControls.ItemBase>(), out currentItem);
 
-        NetworkedItem spoolItem = currentItem != null && currentItem.NetId == packet.OtherItemNetId
+        NetworkedItem spoolItem = currentItem != null && currentItem.NetId == packet.SpoolItemNetId
             ? currentItem
             : null;
         if (spoolItem == null)
-            NetworkedItem.TryGet(packet.OtherItemNetId, out spoolItem);
+            NetworkedItem.TryGet(packet.SpoolItemNetId, out spoolItem);
         if (spoolItem == null && currentItem != null)
         {
-            Multiplayer.LogWarning($"Recover empty-reel identity for soldering tool {packet.ItemNetId}: " +
-                $"binding contained reel {currentItem.NetId} to packet reel {packet.OtherItemNetId}");
-            currentItem.NetId = packet.OtherItemNetId;
+            Multiplayer.LogWarning($"Recover empty-reel identity for soldering tool {packet.ToolItemNetId}: " +
+                $"binding contained reel {currentItem.NetId} to packet reel {packet.SpoolItemNetId}");
+            currentItem.NetId = packet.SpoolItemNetId;
             spoolItem = currentItem;
         }
 
         if (spoolItem == null)
         {
-            Multiplayer.LogWarning($"Cannot apply empty-reel ejection for tool {packet.ItemNetId}: " +
-                $"reel {packet.OtherItemNetId} is unavailable and magazine slot 0 has no networked reel");
+            Multiplayer.LogWarning($"Cannot apply empty-reel ejection for tool {packet.ToolItemNetId}: " +
+                $"reel {packet.SpoolItemNetId} is unavailable and magazine slot 0 has no networked reel");
             return;
         }
 
         if (currentItem != spoolItem)
         {
-            Multiplayer.LogWarning($"Reconcile empty-reel ejection for soldering tool {packet.ItemNetId}: replacing stale reel " +
+            Multiplayer.LogWarning($"Reconcile empty-reel ejection for soldering tool {packet.ToolItemNetId}: replacing stale reel " +
                 $"{currentItem?.NetId ?? 0} with authoritative reel {spoolItem.NetId}");
             if (current != null)
             {
@@ -1299,7 +1335,7 @@ public static class CustomizationStateManager
             EnsureInWorldStorage(spoolItem.Item);
             if (!tool.magazine.AddItem(spoolItem.gameObject, 0))
             {
-                Multiplayer.LogWarning($"Could not place authoritative reel {spoolItem.NetId} in soldering tool {packet.ItemNetId} before ejection");
+                Multiplayer.LogWarning($"Could not place authoritative reel {spoolItem.NetId} in soldering tool {packet.ToolItemNetId} before ejection");
                 return;
             }
         }
@@ -1330,7 +1366,7 @@ public static class CustomizationStateManager
         }
 
         spoolObject.SetActive(true);
-        if (packet.Flag)
+        if (packet.HasWorldTransform)
         {
             spoolObject.transform.SetPositionAndRotation(
                 packet.Position + WorldMover.currentMove,
@@ -1359,33 +1395,33 @@ public static class CustomizationStateManager
             storage.AddItemToWorldStorage(item);
     }
 
-    private static void ApplyDuctTapeReplacement(CommonCustomizationPacket packet)
+    private static void ApplyDuctTapeReplacement(ReplaceDuctTapePacket packet)
     {
-        NetworkedItem.TryGet(packet.ItemNetId, out var oldItem);
+        NetworkedItem.TryGet(packet.ConsumedItemNetId, out var oldItem);
         var oldTape = oldItem?.GetTrackedItem<DV.Customization.Gadgets.Implementations.DuctTape>();
         byte replacementOwner = packet.OwnerPlayerId != 0 ? packet.OwnerPlayerId : oldItem?.OwnerPlayerId ?? 0;
         bool belongsToPlayer = oldItem?.Item?.InventorySpecs?.BelongsToPlayer ?? true;
-        Vector3 position = packet.Flag ? packet.Position + WorldMover.currentMove : oldItem?.transform.position ?? Vector3.zero;
-        Quaternion rotation = packet.Flag ? packet.Rotation : oldItem?.transform.rotation ?? Quaternion.identity;
+        Vector3 position = packet.HasWorldTransform ? packet.Position + WorldMover.currentMove : oldItem?.transform.position ?? Vector3.zero;
+        Quaternion rotation = packet.HasWorldTransform ? packet.Rotation : oldItem?.transform.rotation ?? Quaternion.identity;
 
         // The originating client records the exact object produced by the native
         // replacement path. Do not infer identity from position: inactive inventory
         // and cache entries can legitimately share the same transform.
         NetworkedItem replacementItem = null;
-        if (packet.OtherItemNetId != 0)
-            NetworkedItem.TryGet(packet.OtherItemNetId, out replacementItem);
+        if (packet.ReplacementItemNetId != 0)
+            NetworkedItem.TryGet(packet.ReplacementItemNetId, out replacementItem);
 
         if (replacementItem == null)
         {
-            pendingLocalDuctTapeReplacements.TryGetValue(packet.ItemNetId, out replacementItem);
+            pendingLocalDuctTapeReplacements.TryGetValue(packet.ConsumedItemNetId, out replacementItem);
             if (replacementItem == null || replacementItem.NetId != 0)
                 replacementItem = null;
             else
-                pendingLocalDuctTapeReplacements.Remove(packet.ItemNetId);
+                pendingLocalDuctTapeReplacements.Remove(packet.ConsumedItemNetId);
         }
         else
         {
-            pendingLocalDuctTapeReplacements.Remove(packet.ItemNetId);
+            pendingLocalDuctTapeReplacements.Remove(packet.ConsumedItemNetId);
         }
         bool existingReplacement = replacementItem != null;
 
@@ -1393,7 +1429,7 @@ public static class CustomizationStateManager
         {
             if (oldTape?.emptyTapeItemPrefab == null)
             {
-                Multiplayer.LogWarning($"Cannot replace consumed duct tape {packet.ItemNetId}: empty-tape prefab unavailable");
+                Multiplayer.LogWarning($"Cannot replace consumed duct tape {packet.ConsumedItemNetId}: empty-tape prefab unavailable");
                 return;
             }
 
@@ -1411,10 +1447,10 @@ public static class CustomizationStateManager
             Inventory.Instance.DestroyItem(oldItem.gameObject);
         }
 
-        if (packet.OtherItemNetId == 0 && NetworkLifecycle.Instance.IsHost())
-            packet.OtherItemNetId = replacementItem.NetId;
-        else if (packet.OtherItemNetId != 0)
-            replacementItem.NetId = packet.OtherItemNetId;
+        if (packet.ReplacementItemNetId == 0 && NetworkLifecycle.Instance.IsHost())
+            packet.ReplacementItemNetId = replacementItem.NetId;
+        else if (packet.ReplacementItemNetId != 0)
+            replacementItem.NetId = packet.ReplacementItemNetId;
 
         replacementItem.SetOwner(replacementOwner);
         if (replacementItem.Item?.InventorySpecs != null)
@@ -1431,57 +1467,49 @@ public static class CustomizationStateManager
         replacementItem.MarkAsSynchronized();
     }
 
-    private static void ApplySnapAction(CommonCustomizationPacket packet)
+    private static void ApplySnapAction(UnsnapItemPacket packet)
     {
-        if (!TryGadget(packet.ItemNetId, out var owner))
-        {
-            Multiplayer.LogWarning($"Cannot apply {packet.Action}: gadget item {packet.ItemNetId} was not found");
-            return;
-        }
-
+        if (!TryGadget(packet.GadgetItemNetId, out var owner)) return;
         var snapPoints = GetSnapPoints(owner);
-        if (!IsValidIndex(packet.IndexA, snapPoints.Length))
+        if (IsValidIndex(packet.SnapPointIndex, snapPoints.Length) &&
+            !snapPoints[packet.SnapPointIndex].UnsnapItem(forced: true))
+            Multiplayer.LogWarning($"Could not unsnap item {packet.SnappedItemNetId} from gadget {packet.GadgetItemNetId} point {packet.SnapPointIndex}");
+    }
+
+    private static void ApplySnapAction(SnapItemPacket packet)
+    {
+        if (!TryGadget(packet.GadgetItemNetId, out var owner)) return;
+        var snapPoints = GetSnapPoints(owner);
+        if (!IsValidIndex(packet.SnapPointIndex, snapPoints.Length)) return;
+        if (!NetworkedItem.TryGet(packet.SnappedItemNetId, out var snappedItem))
         {
-            Multiplayer.LogWarning($"Cannot apply {packet.Action}: snap point {packet.IndexA} was not found on gadget {packet.ItemNetId} ({snapPoints.Length} available)");
+            Multiplayer.LogWarning($"Cannot snap item {packet.SnappedItemNetId}: networked item was not found");
             return;
         }
 
-        if (packet.Action == CustomizationAction.UnsnapItem)
-        {
-            if (!snapPoints[packet.IndexA].UnsnapItem(forced: true))
-                Multiplayer.LogWarning($"Could not unsnap item {packet.OtherItemNetId} from gadget {packet.ItemNetId} point {packet.IndexA}");
-            return;
-        }
-
-        if (!NetworkedItem.TryGet(packet.OtherItemNetId, out var snappedItem))
-        {
-            Multiplayer.LogWarning($"Cannot snap item {packet.OtherItemNetId}: networked item was not found");
-            return;
-        }
-
-        var snapPoint = snapPoints[packet.IndexA];
+        var snapPoint = snapPoints[packet.SnapPointIndex];
         bool snapSucceeded;
         if (snapPoint is SnapPointGadgetSliding)
         {
             var anchor = snappedItem.Item.SnappableItem?.GetAnchor(snapPoint.SnapPointType);
             if (anchor == null)
             {
-                Multiplayer.LogWarning($"Could not restore sliding snap for item {packet.OtherItemNetId}: anchor {snapPoint.SnapPointType} was not found");
+                Multiplayer.LogWarning($"Could not restore sliding snap for item {packet.SnappedItemNetId}: anchor {snapPoint.SnapPointType} was not found");
                 return;
             }
 
             // The sliding override performs local physics queries even for a forced
             // snap. Prefer the authoritative anchor offset. Older/incomplete state
             // can derive the same offset from the synchronized snapped item pose.
-            if (packet.Flag)
+            if (packet.HasAnchorPosition)
             {
-                anchor.localPosition = packet.Position;
+                anchor.localPosition = packet.AnchorPosition;
             }
             else
             {
                 var target = snapPoint.snapPointTarget != null ? snapPoint.snapPointTarget : snapPoint.transform;
                 anchor.localPosition = snappedItem.transform.InverseTransformPoint(target.position);
-                Multiplayer.LogWarning($"Sliding snap {packet.ItemNetId}:{packet.IndexA} for item {packet.OtherItemNetId} " +
+                Multiplayer.LogWarning($"Sliding snap {packet.GadgetItemNetId}:{packet.SnapPointIndex} for item {packet.SnappedItemNetId} " +
                     $"had no anchor offset; derived {anchor.localPosition} from synchronized transforms");
             }
 
@@ -1501,7 +1529,7 @@ public static class CustomizationStateManager
         if (!snapSucceeded)
         {
             var snappable = snappedItem.Item?.SnappableItem;
-            Multiplayer.LogWarning($"Could not snap item {packet.OtherItemNetId} to gadget {packet.ItemNetId} point {packet.IndexA}: " +
+            Multiplayer.LogWarning($"Could not snap item {packet.SnappedItemNetId} to gadget {packet.GadgetItemNetId} point {packet.SnapPointIndex}: " +
                 $"pointType={snapPoint.SnapPointType}, allowedTypes={snappable?.AllowedSnapPointTypes}, occupied={snapPoint.SnappedItem != null}");
         }
         else
@@ -1509,17 +1537,23 @@ public static class CustomizationStateManager
             if (snappedItem.Item?.ItemRigidbody != null)
                 snappedItem.Item.ItemRigidbody.isKinematic = true;
             snappedItem.MarkAsSynchronized();
-            Multiplayer.LogDebug(() => $"Snapped item {packet.OtherItemNetId} to gadget {packet.ItemNetId} point {packet.IndexA}");
+            Multiplayer.LogDebug(() => $"Snapped item {packet.SnappedItemNetId} to gadget {packet.GadgetItemNetId} point {packet.SnapPointIndex}");
         }
     }
 
-    private static CustomizationRefData TargetOf(CommonCustomizationPacket packet)
+    private static CustomizationRefData TargetOf(string targetKey)
     {
         return new CustomizationRefData
         {
-            IdentificationKey = packet.TargetKey,
+            IdentificationKey = targetKey,
         };
     }
+
+    private static IEnumerable<ICustomizationActionPacket> GetSnapshotRelationships(CustomizationStateData state) =>
+        state.Mounts.Cast<ICustomizationActionPacket>()
+            .Concat(state.Wires)
+            .Concat(state.LoadedSpools)
+            .Concat(state.SnappedItems);
 
     private static bool TryItemId(GadgetBase gadget, out ushort id)
     {
@@ -1529,31 +1563,9 @@ public static class CustomizationStateManager
 
     private static bool IsValidIndex(int index, int count) => index >= 0 && index < count;
 
-    private static void AddRelationship(
-        CustomizationStateData state,
-        CustomizationAction action,
-        ushort firstItem,
-        ushort secondItem,
-        int firstIndex = 0,
-        int secondIndex = 0,
-        bool hasPosition = false,
-        Vector3 position = default)
-    {
-        state.Relationships.Add(new CommonCustomizationPacket
-        {
-            Action = action,
-            ItemNetId = firstItem,
-            OtherItemNetId = secondItem,
-            IndexA = firstIndex,
-            IndexB = secondIndex,
-            Flag = hasPosition,
-            Position = position,
-        });
-    }
-
     private static void LogSnapshot(string operation, CustomizationStateData state)
     {
         Multiplayer.LogDebug(() => $"Customization snapshot {operation} targets={state.CustomizationKeys.Count} " +
-            $"gadgets={state.Gadgets.Count} relationships={state.Relationships.Count} holes={state.Holes.Count}");
+            $"gadgets={state.Gadgets.Count} relationships={GetSnapshotRelationships(state).Count()} holes={state.Holes.Count}");
     }
 }

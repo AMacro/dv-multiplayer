@@ -2,7 +2,7 @@ using LiteNetLib.Utils;
 using Multiplayer.Networking.Serialization;
 using System.Collections.Generic;
 using UnityEngine;
-using Multiplayer.Networking.Packets.Common;
+using Multiplayer.Networking.Packets.Common.Customization;
 
 namespace Multiplayer.Networking.Data.Customization;
 
@@ -92,14 +92,18 @@ public sealed class CustomizationStateData
     public List<uint> ProcessedOriginActionIds = new();
     public List<string> CustomizationKeys = new();
     public List<GadgetPlacementData> Gadgets = new();
-    public List<CommonCustomizationPacket> Relationships = new();
+    internal List<MountGadgetPacket> Mounts = new();
+    internal List<WireGadgetsPacket> Wires = new();
+    internal List<LoadSpoolPacket> LoadedSpools = new();
+    internal List<SnapItemPacket> SnappedItems = new();
     public List<CustomizationHoleData> Holes = new();
 
     public void Serialize(NetDataWriter writer)
     {
         ValidateCount(CustomizationKeys.Count, MaxTargets, nameof(CustomizationKeys));
         ValidateCount(Gadgets.Count, MaxGadgets, nameof(Gadgets));
-        ValidateCount(Relationships.Count, MaxRelationships, nameof(Relationships));
+        ValidateCount(Mounts.Count + Wires.Count + LoadedSpools.Count + SnappedItems.Count,
+            MaxRelationships, "relationships");
         ValidateCount(Holes.Count, MaxHoles, nameof(Holes));
         ValidateCount(ProcessedOriginActionIds.Count, MaxProcessedActions, nameof(ProcessedOriginActionIds));
 
@@ -115,9 +119,10 @@ public sealed class CustomizationStateData
         foreach (var gadget in Gadgets)
             gadget.Serialize(writer);
 
-        writer.Put(Relationships.Count);
-        foreach (var relationship in Relationships)
-            relationship.Serialize(writer);
+        WritePackets(writer, Mounts);
+        WritePackets(writer, Wires);
+        WritePackets(writer, LoadedSpools);
+        WritePackets(writer, SnappedItems);
 
         writer.Put(Holes.Count);
         foreach (var hole in Holes)
@@ -140,13 +145,12 @@ public sealed class CustomizationStateData
         for (int i = 0; i < gadgetCount; i++)
             result.Gadgets.Add(GadgetPlacementData.Deserialize(reader));
 
-        int relationshipCount = ReadCount(reader, MaxRelationships, nameof(Relationships));
-        for (int i = 0; i < relationshipCount; i++)
-        {
-            var relationship = new CommonCustomizationPacket();
-            relationship.Deserialize(reader);
-            result.Relationships.Add(relationship);
-        }
+        ReadPackets(reader, result.Mounts);
+        ReadPackets(reader, result.Wires);
+        ReadPackets(reader, result.LoadedSpools);
+        ReadPackets(reader, result.SnappedItems);
+        ValidateCount(result.Mounts.Count + result.Wires.Count + result.LoadedSpools.Count +
+            result.SnappedItems.Count, MaxRelationships, "relationships");
 
         int holeCount = ReadCount(reader, MaxHoles, nameof(Holes));
         for (int i = 0; i < holeCount; i++)
@@ -160,6 +164,26 @@ public sealed class CustomizationStateData
         int count = reader.GetInt();
         ValidateCount(count, maximum, field);
         return count;
+    }
+
+    private static void WritePackets<T>(NetDataWriter writer, List<T> packets)
+        where T : INetSerializable
+    {
+        writer.Put(packets.Count);
+        foreach (var packet in packets)
+            packet.Serialize(writer);
+    }
+
+    private static void ReadPackets<T>(NetDataReader reader, List<T> packets)
+        where T : INetSerializable, new()
+    {
+        int count = ReadCount(reader, MaxRelationships, typeof(T).Name);
+        for (int i = 0; i < count; i++)
+        {
+            var packet = new T();
+            packet.Deserialize(reader);
+            packets.Add(packet);
+        }
     }
 
     private static void ValidateCount(int count, int maximum, string field)

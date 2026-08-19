@@ -32,6 +32,7 @@ using Multiplayer.Networking.Packets.Clientbound.SaveGame;
 using Multiplayer.Networking.Packets.Clientbound.Train;
 using Multiplayer.Networking.Packets.Clientbound.World;
 using Multiplayer.Networking.Packets.Common;
+using Multiplayer.Networking.Packets.Common.Customization;
 using Multiplayer.Networking.Packets.Common.Train;
 using Multiplayer.Networking.Packets.Serverbound;
 using Multiplayer.Networking.Packets.Serverbound.Jobs;
@@ -240,7 +241,7 @@ public class NetworkServer : NetworkManager
         // Items
         netPacketProcessor.SubscribeNetSerializable<CommonItemChangePacket, ITransportPeer>(OnCommonItemChangePacket);
         netPacketProcessor.SubscribeNetSerializable<ServerboundItemReconciliationPacket, ITransportPeer>(OnServerboundItemReconciliationPacket);
-        netPacketProcessor.SubscribeNetSerializable<CommonCustomizationPacket, ITransportPeer>(OnCommonCustomizationPacket);
+        SubscribeCustomizationActions();
     }
 
     //allow mods to register their own packets
@@ -2194,15 +2195,41 @@ public class NetworkServer : NetworkManager
         SendNetSerializablePacket(peer, response, DeliveryMethod.ReliableOrdered);
     }
 
-    public void SendCustomizationAction(CommonCustomizationPacket packet) =>
+    internal void SendCustomizationAction<T>(T packet)
+        where T : CustomizationActionPacket, INetSerializable, new() =>
         RelayCustomizationAction(packet);
 
-    private void OnCommonCustomizationPacket(CommonCustomizationPacket packet, ITransportPeer peer)
+    private void SubscribeCustomizationActions()
+    {
+        netPacketProcessor.SubscribeNetSerializable<PlaceGadgetPacket, ITransportPeer>(OnCustomizationPacket);
+        netPacketProcessor.SubscribeNetSerializable<RemoveGadgetPacket, ITransportPeer>(OnCustomizationPacket);
+        netPacketProcessor.SubscribeNetSerializable<AddHolePacket, ITransportPeer>(OnCustomizationPacket);
+        netPacketProcessor.SubscribeNetSerializable<MoveHolePacket, ITransportPeer>(OnCustomizationPacket);
+        netPacketProcessor.SubscribeNetSerializable<RemoveHolePacket, ITransportPeer>(OnCustomizationPacket);
+        netPacketProcessor.SubscribeNetSerializable<MountGadgetPacket, ITransportPeer>(OnCustomizationPacket);
+        netPacketProcessor.SubscribeNetSerializable<UnmountGadgetPacket, ITransportPeer>(OnCustomizationPacket);
+        netPacketProcessor.SubscribeNetSerializable<WireGadgetsPacket, ITransportPeer>(OnCustomizationPacket);
+        netPacketProcessor.SubscribeNetSerializable<UnwireGadgetsPacket, ITransportPeer>(OnCustomizationPacket);
+        netPacketProcessor.SubscribeNetSerializable<DropEmptySpoolPacket, ITransportPeer>(OnCustomizationPacket);
+        netPacketProcessor.SubscribeNetSerializable<LoadSpoolPacket, ITransportPeer>(OnCustomizationPacket);
+        netPacketProcessor.SubscribeNetSerializable<ReplaceSpoolPacket, ITransportPeer>(OnCustomizationPacket);
+        netPacketProcessor.SubscribeNetSerializable<ReplaceDuctTapePacket, ITransportPeer>(OnCustomizationPacket);
+        netPacketProcessor.SubscribeNetSerializable<SnapItemPacket, ITransportPeer>(OnCustomizationPacket);
+        netPacketProcessor.SubscribeNetSerializable<UnsnapItemPacket, ITransportPeer>(OnCustomizationPacket);
+    }
+
+    private void OnCustomizationPacket<T>(T packet, ITransportPeer peer)
+        where T : CustomizationActionPacket, INetSerializable, new()
     {
         if (packet == null || !TryGetServerPlayer(peer, out var player))
             return;
 
-        pendingHostCustomizationActions.Add(new PendingHostCustomizationAction(packet, player, peer));
+        // LiteNetLib reuses the INetSerializable instance registered for this
+        // subscription. Keep a value copy because the action can remain queued
+        // while later packets are deserialized into that same instance.
+        var copy = (T)packet.Copy();
+        pendingHostCustomizationActions.Add(new PendingHostCustomizationAction(copy, player, peer,
+            (action, origin, echoOrigin) => RelayCustomizationAction((T)action, origin, echoOrigin)));
         StartHostCustomizationDrain();
     }
 
@@ -2246,7 +2273,7 @@ public class NetworkServer : NetworkManager
                     }
                     catch (Exception exception)
                     {
-                        LogError($"Failed to apply customization action {pending.Packet.Action} from " +
+                        LogError($"Failed to apply customization action {pending.Packet.GetType().Name} from " +
                             $"{pending.Player.Username}: {exception}");
                     }
 
@@ -2255,9 +2282,8 @@ public class NetworkServer : NetworkManager
 
                     if (applied)
                     {
-                        bool echoSender = pending.Packet.Action is CustomizationAction.ReplaceSpool or
-                            CustomizationAction.ReplaceDuctTape;
-                        RelayCustomizationAction(pending.Packet, pending.Peer, echoSender);
+                        bool echoSender = pending.Packet is ReplaceSpoolPacket or ReplaceDuctTapePacket;
+                        pending.Relay(pending.Packet, pending.Peer, echoSender);
                     }
                     appliedAny = true;
                 }
@@ -2274,21 +2300,24 @@ public class NetworkServer : NetworkManager
 
     private sealed class PendingHostCustomizationAction
     {
-        public readonly CommonCustomizationPacket Packet;
+        public readonly ICustomizationActionPacket Packet;
         public readonly ServerPlayer Player;
         public readonly ITransportPeer Peer;
 
-        public PendingHostCustomizationAction(CommonCustomizationPacket packet, ServerPlayer player,
-            ITransportPeer peer)
+        public readonly Action<ICustomizationActionPacket, ITransportPeer, bool> Relay;
+
+        public PendingHostCustomizationAction(ICustomizationActionPacket packet, ServerPlayer player,
+            ITransportPeer peer, Action<ICustomizationActionPacket, ITransportPeer, bool> relay)
         {
             Packet = packet;
             Player = player;
             Peer = peer;
+            Relay = relay;
         }
     }
 
-    private void RelayCustomizationAction(CommonCustomizationPacket packet, ITransportPeer origin = null,
-        bool echoOrigin = false)
+    private void RelayCustomizationAction<T>(T packet, ITransportPeer origin = null, bool echoOrigin = false)
+        where T : CustomizationActionPacket, INetSerializable, new()
     {
         foreach (var player in CustomizationStateManager.GetCustomizationRecipients(packet).ToArray())
         {
@@ -2383,26 +2412,34 @@ public class NetworkServer : NetworkManager
         }
     }
 
-    private void EnsureCustomizationItemsKnown(CommonCustomizationPacket packet, ServerPlayer player)
+    private void EnsureCustomizationItemsKnown(ICustomizationActionPacket packet, ServerPlayer player)
     {
         // Replacement actions construct (or reuse) their replacement object locally
         // and assign OtherItemNetId while applying the action. Sending a separate
         // Create for that ID first represents the contained reel/tape as Dropped and
         // can pull it back out of its tool on the receiving peer.
-        bool createsReplacementLocally = packet.Action is
-            CustomizationAction.ReplaceSpool or CustomizationAction.ReplaceDuctTape;
+        bool createsReplacementLocally = packet is ReplaceSpoolPacket or ReplaceDuctTapePacket;
         IEnumerable<ushort> itemIds = createsReplacementLocally
-            ? [packet.ItemNetId]
+            ? packet is ReplaceSpoolPacket replacementSpool ? [replacementSpool.ToolItemNetId]
+              : [((ReplaceDuctTapePacket)packet).ConsumedItemNetId]
             : CustomizationStateManager.GetActionItemIds(packet);
-        HashSet<ushort> forceDropped = packet.Action is CustomizationAction.LoadSpool or CustomizationAction.SnapItem
-            ? [packet.OtherItemNetId]
-            : [];
+        HashSet<ushort> forceDropped = packet switch
+        {
+            LoadSpoolPacket load => [load.SpoolItemNetId],
+            SnapItemPacket snap => [snap.SnappedItemNetId],
+            _ => [],
+        };
         NetworkedItemManager.Instance.SendInitialItems(player, itemIds, forceDropped);
 
         // The action itself is the replacement's create message. Record that fact so
         // ordinary item discovery does not send a conflicting Create(Dropped) later.
-        if (createsReplacementLocally &&
-            NetworkedItem.TryGet(packet.OtherItemNetId, out NetworkedItem replacementItem))
+        ushort replacementId = packet switch
+        {
+            ReplaceSpoolPacket resolvedSpool => resolvedSpool.ReplacementSpoolItemNetId,
+            ReplaceDuctTapePacket tape => tape.ReplacementItemNetId,
+            _ => 0,
+        };
+        if (createsReplacementLocally && NetworkedItem.TryGet(replacementId, out NetworkedItem replacementItem))
             player.KnownItems[replacementItem] = NetworkLifecycle.Instance.Tick;
     }
 

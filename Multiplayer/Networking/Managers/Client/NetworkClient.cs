@@ -36,6 +36,7 @@ using Multiplayer.Networking.Packets.Clientbound.SaveGame;
 using Multiplayer.Networking.Packets.Clientbound.Train;
 using Multiplayer.Networking.Packets.Clientbound.World;
 using Multiplayer.Networking.Packets.Common;
+using Multiplayer.Networking.Packets.Common.Customization;
 using Multiplayer.Networking.Packets.Common.Train;
 using Multiplayer.Networking.Packets.Serverbound;
 using Multiplayer.Networking.Packets.Serverbound.Jobs;
@@ -85,10 +86,10 @@ public class NetworkClient : NetworkManager
     private bool customizationSnapshotTimedOut;
     private CustomizationStateData pendingCustomizationState;
     private readonly List<GadgetPlacementData> pendingCustomizationSnapshotPlacements = [];
-    private readonly List<CommonCustomizationPacket> pendingCustomizationSnapshotRelationships = [];
+    private readonly List<ICustomizationActionPacket> pendingCustomizationSnapshotRelationships = [];
     private readonly Dictionary<string, List<CustomizationHoleData>> pendingCustomizationSnapshotHoleStates = [];
-    private readonly List<CommonCustomizationPacket> pendingCustomizationActions = [];
-    private readonly List<CommonCustomizationPacket> appliedActionsSinceSnapshotTimeout = [];
+    private readonly List<ICustomizationActionPacket> pendingCustomizationActions = [];
+    private readonly List<ICustomizationActionPacket> appliedActionsSinceSnapshotTimeout = [];
     private bool itemReconciliationComplete;
     private uint nextCustomizationActionId = 1;
     private uint nextShopRequestId = 1;
@@ -273,7 +274,7 @@ public class NetworkClient : NetworkManager
         netPacketProcessor.SubscribeNetSerializable<CommonItemChangePacket>(OnCommonItemChangePacket);
         netPacketProcessor.SubscribeNetSerializable<ClientboundItemReconciliationPacket>(OnClientboundItemReconciliationPacket);
         netPacketProcessor.SubscribeNetSerializable<ClientboundCustomizationStatePacket>(OnClientboundCustomizationStatePacket);
-        netPacketProcessor.SubscribeNetSerializable<CommonCustomizationPacket>(OnCommonCustomizationPacket);
+        SubscribeCustomizationActions();
         netPacketProcessor.SubscribeReusable<CommonPitStopInteractionPacket>(OnCommonPitStopInteractionPacket);
         netPacketProcessor.SubscribeNetSerializable<CommonPitStopPlugInteractionPacket>(OnCommonPitStopPlugInteractionPacket);
         netPacketProcessor.SubscribeReusable<ClientboundPitStopBulkUpdatePacket>(OnClientboundPitStopBulkUpdatePacket);
@@ -1444,12 +1445,35 @@ public class NetworkClient : NetworkManager
             CoroutineManager.Instance.StartCoroutine(ApplyPendingCustomizationStates());
     }
 
-    private void OnCommonCustomizationPacket(CommonCustomizationPacket packet)
+    private void SubscribeCustomizationActions()
+    {
+        netPacketProcessor.SubscribeNetSerializable<PlaceGadgetPacket>(OnCustomizationPacket);
+        netPacketProcessor.SubscribeNetSerializable<RemoveGadgetPacket>(OnCustomizationPacket);
+        netPacketProcessor.SubscribeNetSerializable<AddHolePacket>(OnCustomizationPacket);
+        netPacketProcessor.SubscribeNetSerializable<MoveHolePacket>(OnCustomizationPacket);
+        netPacketProcessor.SubscribeNetSerializable<RemoveHolePacket>(OnCustomizationPacket);
+        netPacketProcessor.SubscribeNetSerializable<MountGadgetPacket>(OnCustomizationPacket);
+        netPacketProcessor.SubscribeNetSerializable<UnmountGadgetPacket>(OnCustomizationPacket);
+        netPacketProcessor.SubscribeNetSerializable<WireGadgetsPacket>(OnCustomizationPacket);
+        netPacketProcessor.SubscribeNetSerializable<UnwireGadgetsPacket>(OnCustomizationPacket);
+        netPacketProcessor.SubscribeNetSerializable<DropEmptySpoolPacket>(OnCustomizationPacket);
+        netPacketProcessor.SubscribeNetSerializable<LoadSpoolPacket>(OnCustomizationPacket);
+        netPacketProcessor.SubscribeNetSerializable<ReplaceSpoolPacket>(OnCustomizationPacket);
+        netPacketProcessor.SubscribeNetSerializable<ReplaceDuctTapePacket>(OnCustomizationPacket);
+        netPacketProcessor.SubscribeNetSerializable<SnapItemPacket>(OnCustomizationPacket);
+        netPacketProcessor.SubscribeNetSerializable<UnsnapItemPacket>(OnCustomizationPacket);
+    }
+
+    private void OnCustomizationPacket<T>(T packet)
+        where T : CustomizationActionPacket, INetSerializable, new()
     {
         if (packet == null)
             return;
 
-        pendingCustomizationActions.Add(packet);
+        // LiteNetLib reuses the INetSerializable instance registered for this
+        // subscription. Keep a value copy because the action can remain queued
+        // while later packets are deserialized into that same instance.
+        pendingCustomizationActions.Add(packet.Copy());
         StartCustomizationActionDrain();
     }
 
@@ -1566,7 +1590,7 @@ public class NetworkClient : NetworkManager
                     }
                     catch (Exception exception)
                     {
-                        LogError($"Failed to apply deferred snapshot relationship {action.Action}: {exception}");
+                        LogError($"Failed to apply deferred snapshot relationship {action.GetType().Name}: {exception}");
                     }
                     appliedAny = true;
                 }
@@ -1594,7 +1618,7 @@ public class NetworkClient : NetworkManager
                     }
                     catch (Exception exception)
                     {
-                        LogError($"Failed to apply deferred customization action {action.Action}: {exception}");
+                        LogError($"Failed to apply deferred customization action {action.GetType().Name}: {exception}");
                     }
                     appliedAny = true;
                 }
@@ -2192,7 +2216,8 @@ public class NetworkClient : NetworkManager
                 DeliveryMethod.ReliableOrdered);
     }
 
-    public void SendCustomizationAction(CommonCustomizationPacket packet)
+    internal void SendCustomizationAction<T>(T packet)
+        where T : CustomizationActionPacket, INetSerializable, new()
     {
         packet.OriginActionId = nextCustomizationActionId++;
         if (nextCustomizationActionId == 0)
@@ -2202,9 +2227,8 @@ public class NetworkClient : NetworkManager
         // originated mutations so a snapshot that arrives after the loading
         // timeout cannot erase them. Replacement actions are server-echoed after
         // their authoritative replacement item id has been assigned.
-        if (customizationSnapshotTimedOut && packet.Action is not
-            (CustomizationAction.ReplaceSpool or CustomizationAction.ReplaceDuctTape))
-            appliedActionsSinceSnapshotTimeout.Add(packet);
+        if (customizationSnapshotTimedOut && packet is not ReplaceSpoolPacket and not ReplaceDuctTapePacket)
+            appliedActionsSinceSnapshotTimeout.Add(packet.Copy());
 
         SendNetSerializablePacketToServer(packet, DeliveryMethod.ReliableOrdered);
     }

@@ -3,7 +3,7 @@ using DV.Customization.Gadgets.Implementations;
 using DV.CabControls;
 using HarmonyLib;
 using Multiplayer.Components.Networking.World;
-using Multiplayer.Networking.Packets.Common;
+using Multiplayer.Networking.Packets.Common.Customization;
 using System;
 using System.Linq;
 using DV.Items;
@@ -22,7 +22,8 @@ public static class GadgetRelationshipPatch
         if (CustomizationSyncScope.IsApplyingRemote || __instance.MountedGadget != gadget ||
             !Id(__instance.ThisGadget, out var a) || !Id(gadget, out var b)) return;
         int index = Array.IndexOf(__instance.ThisGadget.GetComponents<Mount>(), __instance);
-        if (index >= 0) Send(CustomizationAction.Mount, a, b, index);
+        if (index >= 0) CustomizationStateManager.SendAction(new MountGadgetPacket
+            { MountItemNetId = a, MountedItemNetId = b, MountIndex = index });
     }
 
     [HarmonyPatch(typeof(Mount), nameof(Mount.UnmountGadget)), HarmonyPrefix]
@@ -36,15 +37,16 @@ public static class GadgetRelationshipPatch
 
     [HarmonyPatch(typeof(Mount), nameof(Mount.UnmountGadget)), HarmonyPostfix]
     private static void Unmounted(Mount __instance, MountActionState __state)
-    { if (__state.ShouldSend && __instance.MountedGadget == null) Send(CustomizationAction.Unmount, __state.OwnerId, 0, __state.Index); }
+    { if (__state.ShouldSend && __instance.MountedGadget == null) CustomizationStateManager.SendAction(
+        new UnmountGadgetPacket { MountItemNetId = __state.OwnerId, MountIndex = __state.Index }); }
 
     [HarmonyPatch(typeof(GadgetWiringModule.WireLinkPort), nameof(GadgetWiringModule.WireLinkPort.Wire), new[] { typeof(GadgetWiringModule.WireLinkPort), typeof(GadgetWiringModule.WireLinkPort) }), HarmonyPostfix]
     private static void Wired(GadgetWiringModule.WireLinkPort a, GadgetWiringModule.WireLinkPort b, bool __result)
-    { if (__result) SendWire(CustomizationAction.Wire, a, b); }
+    { if (__result) SendWire(a, b, unwire: false); }
 
     [HarmonyPatch(typeof(GadgetWiringModule.WireLinkPort), nameof(GadgetWiringModule.WireLinkPort.Unwire), new[] { typeof(GadgetWiringModule.WireLinkPort), typeof(GadgetWiringModule.WireLinkPort) }), HarmonyPostfix]
     private static void Unwired(GadgetWiringModule.WireLinkPort a, GadgetWiringModule.WireLinkPort b, bool __result)
-    { if (__result) SendWire(CustomizationAction.Unwire, a, b); }
+    { if (__result) SendWire(a, b, unwire: true); }
 
     [HarmonyPatch(typeof(GadgetSolderingTool), nameof(GadgetSolderingTool.DropEmptySpool)), HarmonyPrefix]
     private static void BeforeDropSpool(GadgetSolderingTool __instance, out SpoolDropState __state)
@@ -95,14 +97,13 @@ public static class GadgetRelationshipPatch
         }
 
         Multiplayer.LogDebug(() => $"Sending empty-reel ejection for tool {__state.ToolItemNetId}, reel {__state.SpoolItemNetId}");
-        CustomizationStateManager.SendAction(new CommonCustomizationPacket
+        CustomizationStateManager.SendAction(new DropEmptySpoolPacket
         {
-            Action = CustomizationAction.DropEmptySpool,
-            ItemNetId = __state.ToolItemNetId,
-            OtherItemNetId = __state.SpoolItemNetId,
+            ToolItemNetId = __state.ToolItemNetId,
+            SpoolItemNetId = __state.SpoolItemNetId,
             Position = __state.Position,
             Rotation = __state.Rotation,
-            Flag = true,
+            HasWorldTransform = true,
         });
     }
 
@@ -130,11 +131,10 @@ public static class GadgetRelationshipPatch
         __state.OldSpool?.SuppressDestroySync();
         NetworkedItem.TryGetNetworkedItem(spentObject.GetComponent<ItemBase>(), out var spentSpool);
         spentSpool?.MarkAsSynchronized();
-        CustomizationStateManager.SendAction(new CommonCustomizationPacket
+        CustomizationStateManager.SendAction(new ReplaceSpoolPacket
         {
-            Action = CustomizationAction.ReplaceSpool,
-            ItemNetId = __state.ToolItemNetId,
-            OtherItemNetId = spentSpool?.NetId ?? 0,
+            ToolItemNetId = __state.ToolItemNetId,
+            ReplacementSpoolItemNetId = spentSpool?.NetId ?? 0,
             OwnerPlayerId = __state.OldSpool?.OwnerPlayerId ?? 0,
         });
     }
@@ -147,12 +147,13 @@ public static class GadgetRelationshipPatch
             !NetworkedItem.TryGetNetworkedItem(tool.GetComponent<ItemBase>(), out var toolNet) ||
             !NetworkedItem.TryGetNetworkedItem(item.GetComponent<ItemBase>(), out var spoolNet) ||
             spoolNet.NetId == 0) return;
-        Send(CustomizationAction.LoadSpool, toolNet.NetId, spoolNet.NetId, 0);
+        CustomizationStateManager.SendAction(new LoadSpoolPacket
+            { ToolItemNetId = toolNet.NetId, SpoolItemNetId = spoolNet.NetId });
     }
 
     [HarmonyPatch(typeof(ItemSnapPointBase), nameof(ItemSnapPointBase.SnapItem), new[] { typeof(ItemBase), typeof(bool) }), HarmonyPostfix]
     private static void Snapped(ItemSnapPointBase __instance, ItemBase itemToSnap, bool __result)
-    { if (__result) SendSnap(CustomizationAction.SnapItem, __instance, itemToSnap); }
+    { if (__result) SendSnap(__instance, itemToSnap, unsnap: false); }
 
     [HarmonyReversePatch]
     [HarmonyPatch(typeof(ItemSnapPointBase), nameof(ItemSnapPointBase.SnapItem), new[] { typeof(ItemBase), typeof(bool) })]
@@ -191,45 +192,45 @@ public static class GadgetRelationshipPatch
 
     [HarmonyPatch(typeof(ItemSnapPointBase), nameof(ItemSnapPointBase.UnsnapItem)), HarmonyPostfix]
     private static void Unsnapped(ItemSnapPointBase __instance, bool __result, ItemBase __state)
-    { if (__result && __state != null) SendSnap(CustomizationAction.UnsnapItem, __instance, __state); }
+    { if (__result && __state != null) SendSnap(__instance, __state, unsnap: true); }
 
-    private static void SendSnap(CustomizationAction action, ItemSnapPointBase point, ItemBase item)
+    private static void SendSnap(ItemSnapPointBase point, ItemBase item, bool unsnap)
     {
         if (CustomizationSyncScope.IsApplyingRemote) return;
         if (!CustomizationStateManager.TryGetSnapPointOwner(point, out var owner) ||
             !CustomizationStateManager.TryGetSnapPointIndex(owner, point, out var index) ||
             !Id(owner, out var ownerId) || !NetworkedItem.TryGetNetId(item, out var itemId)) return;
 
-        bool hasAnchorPosition = false;
-        UnityEngine.Vector3 anchorPosition = default;
-        if (action == CustomizationAction.SnapItem && item.SnappableItem != null)
+        if (unsnap)
         {
-            var anchor = item.SnappableItem.GetAnchor(point.SnapPointType);
-            if (anchor != null)
-            {
-                hasAnchorPosition = true;
-                anchorPosition = anchor.localPosition;
-            }
+            CustomizationStateManager.SendAction(new UnsnapItemPacket
+                { GadgetItemNetId = ownerId, SnappedItemNetId = itemId, SnapPointIndex = index });
+            return;
         }
 
-        CustomizationStateManager.SendAction(new CommonCustomizationPacket
+        var anchor = item.SnappableItem?.GetAnchor(point.SnapPointType);
+        CustomizationStateManager.SendAction(new SnapItemPacket
         {
-            Action = action,
-            ItemNetId = ownerId,
-            OtherItemNetId = itemId,
-            IndexA = index,
-            Flag = hasAnchorPosition,
-            Position = anchorPosition,
+            GadgetItemNetId = ownerId,
+            SnappedItemNetId = itemId,
+            SnapPointIndex = index,
+            HasAnchorPosition = anchor != null,
+            AnchorPosition = anchor?.localPosition ?? default,
         });
     }
 
-    private static void SendWire(CustomizationAction action, GadgetWiringModule.WireLinkPort a, GadgetWiringModule.WireLinkPort b)
+    private static void SendWire(GadgetWiringModule.WireLinkPort a, GadgetWiringModule.WireLinkPort b, bool unwire)
     {
         if (CustomizationSyncScope.IsApplyingRemote || !Id(a.owner, out var ai) || !Id(b.owner, out var bi)) return;
-        CustomizationStateManager.SendAction(new CommonCustomizationPacket { Action = action, ItemNetId = ai, OtherItemNetId = bi,
-            IndexA = a.owner.WireLinkPorts.IndexOf(a), IndexB = b.owner.WireLinkPorts.IndexOf(b) });
+        int indexA = a.owner.WireLinkPorts.IndexOf(a);
+        int indexB = b.owner.WireLinkPorts.IndexOf(b);
+        if (unwire)
+            CustomizationStateManager.SendAction(new UnwireGadgetsPacket { FirstItemNetId = ai, SecondItemNetId = bi,
+                FirstPortIndex = indexA, SecondPortIndex = indexB });
+        else
+            CustomizationStateManager.SendAction(new WireGadgetsPacket { FirstItemNetId = ai, SecondItemNetId = bi,
+                FirstPortIndex = indexA, SecondPortIndex = indexB });
     }
-    private static void Send(CustomizationAction action, ushort a, ushort b, int index) => CustomizationStateManager.SendAction(new CommonCustomizationPacket { Action = action, ItemNetId = a, OtherItemNetId = b, IndexA = index });
     private static bool Id(GadgetBase gadget, out ushort id) { id = 0; return gadget?.GadgetItem?.Item != null && NetworkedItem.TryGetNetId(gadget.GadgetItem.Item, out id); }
 
     private struct MountActionState
