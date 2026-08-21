@@ -1,5 +1,6 @@
 using LiteNetLib.Utils;
 using Newtonsoft.Json.Linq;
+using Newtonsoft.Json;
 using System;
 using System.Numerics;
 
@@ -39,6 +40,7 @@ public struct PlayerItemSaveData
     public bool IsDropped { get; set; }
 
     private Vector3 _position;
+    [JsonIgnore]
     public Vector3 Position
     {
         get
@@ -51,6 +53,7 @@ public struct PlayerItemSaveData
     }
 
     private Quaternion _rotation;
+    [JsonIgnore]
     public Quaternion Rotation
     {
         get

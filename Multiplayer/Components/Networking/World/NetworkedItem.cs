@@ -25,7 +25,8 @@ public enum ItemState : byte
     InInventory,    //in player's inventory
     Attached,       //attached to another object (e.g. EOT Lanterns)
     InstalledGadget, //backing item is hidden while its Gadget is linked to a customization target
-    InLostAndFound
+    InLostAndFound,
+    InContainer
 }
 
 public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
@@ -88,6 +89,11 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
     public uint LastDirtyTick { get; private set; }
     public bool IsReadyForSnapshots => registrationComplete && Item != null;
     public ItemState CurrentState => lastState;
+    public int InventorySlotIndex { get; private set; } = -1;
+    public int ContainerSlotIndex { get; private set; } = -1;
+    public string ContainerId { get; private set; }
+    public bool InLockedSlot { get; private set; }
+    public bool IsDroppedInInventory { get; private set; }
     public Vector3 WorldPosition => GetItemState() == ItemState.InstalledGadget &&
         trackedItem is GadgetItem gadgetItem && gadgetItem.Gadget != null
             ? gadgetItem.Gadget.transform.position
@@ -336,10 +342,19 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         ItemUpdateData snapshot;
         ItemUpdateData.ItemUpdateType updateType = ItemUpdateData.ItemUpdateType.None;
 
-        bool hasDirtyVals = HasDirtyValues();
-
         if (Item == null && Register() == false)
             return null;
+
+        ItemState currentState = GetItemState();
+        if (currentState != lastState)
+            stateDirty = true;
+        if (ShouldObserveLocalLayout() && CaptureCurrentLayout(currentState))
+        {
+            stateDirty = true;
+            forceStateSnapshot = true;
+        }
+
+        bool hasDirtyVals = HasDirtyValues();
 
         if (!stateDirty && !ownerDirty && !hasDirtyVals)
             return null;
@@ -355,7 +370,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
                 OwnerPlayerId != localPlayerId;
             bool locallyHeld = Item.IsGrabbed() || Inventory.Instance.Contains(gameObject, false);
             if (belongsToAnotherPlayer && !locallyHeld &&
-                lastState is ItemState.InHand or ItemState.InInventory)
+                IsCarriedState(lastState))
             {
                 stateDirty = false;
                 forceStateSnapshot = false;
@@ -365,15 +380,13 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
             }
         }
 
-        ItemState currentState = GetItemState();
-
         // A local pickup is observed rather than applied through ReceiveSnapshot.
         // It establishes ownership, while a later drop only ends possession: the
         // persistent owner must remain so lost and found can return the item.
         if (stateDirty && NetworkLifecycle.Instance.IsClientRunning)
         {
             byte localPlayerId = NetworkLifecycle.Instance.Client?.PlayerId ?? 0;
-            bool isHeldByLocalPlayer = currentState is ItemState.InHand or ItemState.InInventory;
+            bool isHeldByLocalPlayer = IsCarriedState(currentState);
             if (isHeldByLocalPlayer)
                 SetOwner(localPlayerId, markDirty: true);
 
@@ -454,6 +467,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
                 case ItemState.InHand:
                 case ItemState.InInventory:
+                case ItemState.InContainer:
                     HandleInventoryOrHandState(snapshot);
                     break;
 
@@ -481,6 +495,16 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         {
             // Ownership-only updates must not activate or relocate the item.
             SetOwner(snapshot.OwnerPlayerId);
+        }
+
+        if (snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.Create) ||
+            snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.ItemState))
+        {
+            InventorySlotIndex = snapshot.InventorySlotIndex;
+            ContainerSlotIndex = snapshot.ContainerSlotIndex;
+            ContainerId = snapshot.ContainerId;
+            InLockedSlot = snapshot.InLockedSlot;
+            IsDroppedInInventory = snapshot.IsDropped;
         }
 
         Multiplayer.Log($"NetworkedItem.ApplySnapshot() netID: {snapshot?.ItemNetId}, ItemUpdateType {snapshot?.UpdateType} About to process states");
@@ -573,9 +597,14 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
             ItemPosition = position,
             ItemRotation = rotation,
             ThrowDirection = throwDirection,
-            Player = lastState is ItemState.InHand or ItemState.InInventory
+            Player = IsCarriedState(lastState)
                 ? OwnerPlayerId
                 : (byte)0,
+            InventorySlotIndex = InventorySlotIndex,
+            ContainerSlotIndex = ContainerSlotIndex,
+            ContainerId = ContainerId,
+            InLockedSlot = InLockedSlot,
+            IsDropped = IsDroppedInInventory,
             CarNetId = carId,
             AttachedFront = frontCoupler,
             States = states,
@@ -607,9 +636,37 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         MarkValuesClean();
     }
 
+    internal void DeferInitialCreate()
+    {
+        createdDirty = false;
+        stateDirty = false;
+        forceStateSnapshot = false;
+        ownerDirty = false;
+        MarkValuesClean();
+    }
+
+    internal void PublishDeferredCreate()
+    {
+        lastState = GetItemState();
+        CaptureCurrentLayout(lastState);
+        createdDirty = true;
+    }
+
+    internal ItemState RefreshPersistenceState()
+    {
+        lastState = GetItemState();
+        // Remote carried objects are inactive host-side proxies. Their layout was
+        // supplied by the owning client and cannot be rediscovered through the
+        // host's Inventory; doing so replaces valid slots/container IDs with -1.
+        if (ShouldObserveLocalLayout())
+            CaptureCurrentLayout(lastState);
+        return lastState;
+    }
+
     public ItemUpdateData CreateCurrentUpdateData(ItemUpdateData.ItemUpdateType updateType)
     {
         lastState = GetItemState();
+        CaptureCurrentLayout(lastState);
         return CreateUpdateData(updateType);
     }
 
@@ -627,7 +684,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         // dropped and can echo a false drop back with an unrelated object-state
         // update (for example when ejecting a soldering reel). Their most recent
         // client-supplied state is authoritative instead.
-        if (OwnerPlayerId != 0 && lastState is ItemState.InHand or ItemState.InInventory)
+        if (OwnerPlayerId != 0 && IsCarriedState(lastState))
         {
             byte localPlayerId = NetworkLifecycle.Instance.IsHost()
                 ? NetworkLifecycle.Instance.Server?.SelfId ?? 0
@@ -637,17 +694,20 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
                 return ObserveState(lastState);
         }
 
-        if (Item.transform.parent == WorldMover.OriginShiftParent && !wasThrown)
-            return ObserveState(ItemState.Dropped);
-
-        if (wasThrown)
-            return ObserveState(ItemState.Thrown);
-
         if (Item.IsGrabbed())
             return ObserveState(ItemState.InHand);
 
         if (Inventory.Instance.Contains(this.gameObject, false))
             return ObserveState(ItemState.InInventory);
+
+        if (Item.InContainer != null)
+            return ObserveState(ItemState.InContainer);
+
+        if (Item.transform.parent == WorldMover.OriginShiftParent && !wasThrown)
+            return ObserveState(ItemState.Dropped);
+
+        if (wasThrown)
+            return ObserveState(ItemState.Thrown);
 
         if (snappableItem != null && snappableItem.IsSnapped)
             return ObserveState(ItemState.Attached);
@@ -795,6 +855,20 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
     private void HandleInventoryOrHandState(ItemUpdateData snapshot)
     {
+        // The owner already has the native inventory object that was bound during
+        // reconciliation. Authoritative echoes must not turn that object into an
+        // inactive remote proxy; packet timing can otherwise make an arbitrary
+        // subset of the owner's inventory disappear after a successful join.
+        byte localPlayerId = NetworkLifecycle.Instance.Client?.PlayerId ?? 0;
+        bool isLocallyCarried = NetworkLifecycle.Instance.IsClientRunning &&
+            localPlayerId != 0 && snapshot.Player == localPlayerId &&
+            (Item.IsGrabbed() || Inventory.Instance.Contains(gameObject, false));
+        if (isLocallyCarried)
+        {
+            gameObject.SetActive(true);
+            return;
+        }
+
         if (Item.IsSnapped)
         {
             Item.SnappableItem.SnappedTo.UnsnapItem(false);
@@ -820,6 +894,54 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
         //todo add to player model's hand
         this.gameObject.SetActive(false);
+    }
+
+    public static bool IsCarriedState(ItemState state) =>
+        state is ItemState.InHand or ItemState.InInventory or ItemState.InContainer;
+
+    private bool ShouldObserveLocalLayout()
+    {
+        if (!NetworkLifecycle.Instance.IsClientRunning)
+            return false;
+
+        byte localPlayerId = NetworkLifecycle.Instance.IsHost()
+            ? NetworkLifecycle.Instance.Server?.SelfId ?? 0
+            : NetworkLifecycle.Instance.Client?.PlayerId ?? 0;
+        return OwnerPlayerId == 0 || OwnerPlayerId == localPlayerId;
+    }
+
+    private bool CaptureCurrentLayout(ItemState state)
+    {
+        int inventorySlot = -1;
+        int containerSlot = -1;
+        string containerId = null;
+        bool locked = false;
+        bool dropped = false;
+        var inventory = Inventory.Instance;
+
+        if (state is ItemState.InHand or ItemState.InInventory)
+        {
+            inventorySlot = inventory?.IndexOf(gameObject) ?? -1;
+            if (inventorySlot >= 0)
+            {
+                locked = inventory.GetSlotLockState(inventorySlot);
+                dropped = inventory.GetSlotDroppedState(inventorySlot);
+            }
+        }
+        else if (state == ItemState.InContainer && inventory?.ItemContainerRegistry != null)
+        {
+            (containerId, containerSlot) = inventory.ItemContainerRegistry.GetItemContainerIdAndIndex(gameObject);
+        }
+
+        bool changed = InventorySlotIndex != inventorySlot || ContainerSlotIndex != containerSlot ||
+            !string.Equals(ContainerId, containerId, StringComparison.Ordinal) ||
+            InLockedSlot != locked || IsDroppedInInventory != dropped;
+        InventorySlotIndex = inventorySlot;
+        ContainerSlotIndex = containerSlot;
+        ContainerId = containerId;
+        InLockedSlot = locked;
+        IsDroppedInInventory = dropped;
+        return changed;
     }
 
     private void HandleLostAndFoundState(ItemUpdateData snapshot)

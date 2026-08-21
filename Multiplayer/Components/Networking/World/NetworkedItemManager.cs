@@ -16,6 +16,9 @@ using Multiplayer.Networking.Packets.Clientbound;
 using Multiplayer.Networking.Packets.Serverbound;
 using Multiplayer.Networking.Packets;
 using System.Collections;
+using Multiplayer.Components.SaveGame;
+using Newtonsoft.Json.Linq;
+using DV.Common;
 
 namespace Multiplayer.Components.Networking.World;
 
@@ -84,19 +87,270 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
         if (hostPlayerId == 0 || disconnectedPlayer.PlayerId == hostPlayerId)
             return;
 
+        HashSet<NetworkedItem> carriedItems = GetCarriedInventoryItems(disconnectedPlayer);
+        IReadOnlyList<PlayerItemSaveData> savedItems = [];
+        bool snapshotComplete = disconnectedPlayer.InventoryReconciliationComplete &&
+            TryCreateSaveData(carriedItems, out savedItems);
+        if (snapshotComplete)
+        {
+            NetworkedSaveGameManager.Instance.StorePlayerInventory(disconnectedPlayer, savedItems);
+        }
+        else
+        {
+            // Position and identity are independently authoritative. A partial
+            // reconciliation must preserve the previous inventory snapshot, but
+            // it must not also discard the player's latest position.
+            NetworkedSaveGameManager.Instance.StorePlayerMetadata(disconnectedPlayer);
+        }
+
+        int storedItems = snapshotComplete ? carriedItems.Count : 0;
+        int discardedPartialItems = snapshotComplete ? 0 : carriedItems.Count;
+        int preservedItems = 0;
         int transferredItems = 0;
-        foreach (var item in NetworkedItem.GetAll())
+        foreach (var item in NetworkedItem.GetAll().ToArray())
         {
             if (item == null || item.OwnerPlayerId != disconnectedPlayer.PlayerId)
                 continue;
 
+            if (carriedItems.Contains(item))
+            {
+                Destroy(item.gameObject);
+                continue;
+            }
+
+            preservedItems++;
             item.SetOwner(hostPlayerId, true);
             transferredItems++;
         }
 
         Multiplayer.LogDebug(() =>
-            $"Transferred {transferredItems} items from disconnected player " +
-            $"{disconnectedPlayer.PlayerId} to host player {hostPlayerId}");
+            $"Disconnect inventory storage for player {disconnectedPlayer.PlayerId}: " +
+            $"storedItems={storedItems}, discardedPartialItems={discardedPartialItems}, " +
+            $"preservedItems={preservedItems}, transferredItems={transferredItems}, " +
+            $"hostPlayer={hostPlayerId}");
+    }
+
+    public bool TryCaptureCarriedInventory(ServerPlayer player, out IReadOnlyList<PlayerItemSaveData> items) =>
+        TryCreateSaveData(GetCarriedInventoryItems(player), out items);
+
+    private static HashSet<NetworkedItem> GetCarriedInventoryItems(ServerPlayer player)
+    {
+        var ownedItems = NetworkedItem.GetAll()
+            .Where(item => item != null && item.OwnerPlayerId == player.PlayerId)
+            .ToArray();
+        foreach (var item in ownedItems)
+            item.RefreshPersistenceState();
+        var selected = ownedItems
+            .Where(item => item.CurrentState is ItemState.InHand or ItemState.InInventory)
+            .ToHashSet();
+
+        bool added;
+        do
+        {
+            var selectedContainerIds = selected
+                .Select(item => item.Item?.GetComponent<AItemContainer>()?.ContainerId)
+                .Where(id => !string.IsNullOrEmpty(id))
+                .ToHashSet(StringComparer.Ordinal);
+            added = false;
+            foreach (var item in ownedItems)
+            {
+                if (selected.Contains(item) || item.CurrentState != ItemState.InContainer ||
+                    string.IsNullOrEmpty(item.ContainerId) || !selectedContainerIds.Contains(item.ContainerId))
+                    continue;
+                selected.Add(item);
+                added = true;
+            }
+        } while (added);
+
+        return selected;
+    }
+
+    private static bool TryCreateSaveData(IEnumerable<NetworkedItem> items,
+        out IReadOnlyList<PlayerItemSaveData> saveData)
+    {
+        var result = new List<PlayerItemSaveData>();
+        foreach (var item in items)
+        {
+            if (item?.Item?.InventorySpecs == null)
+            {
+                Multiplayer.LogWarning("Could not save a carried item because its inventory specification is unavailable.");
+                saveData = [];
+                return false;
+            }
+
+            JObject state = null;
+            try
+            {
+                state = item.GetComponent<ItemSaveData>()?.SaveItemData()?.DeepClone() as JObject;
+            }
+            catch (Exception exception)
+            {
+                // Some inactive remote proxies (notably Flashlight) cannot run
+                // every native save listener. Preserve the item and its layout
+                // with default custom state instead of discarding the complete
+                // inventory snapshot.
+                Multiplayer.LogWarning($"Could not save custom item state for {item.NetId} ({item.name}); " +
+                    $"using default state: {exception.Message}");
+                state = [];
+            }
+
+            result.Add(new PlayerItemSaveData
+            {
+                NetId = 0,
+                ItemPrefabName = item.Item.InventorySpecs.ItemPrefabName,
+                BelongsToPlayer = item.Item.InventorySpecs.BelongsToPlayer,
+                IsGrabbed = item.CurrentState == ItemState.InHand,
+                State = state ?? [],
+                InventorySlotIndex = item.InventorySlotIndex,
+                ContainerSlotIndex = item.ContainerSlotIndex,
+                ContainerId = item.ContainerId,
+                InLockedSlot = item.InLockedSlot,
+                IsDropped = item.IsDroppedInInventory,
+            });
+        }
+        saveData = result;
+        return true;
+    }
+
+    public IEnumerator RecoverStoredInventory(SavedPlayerInventory stored,
+        Action<bool, int, int, string> completed)
+    {
+        if (stored == null || !NetworkLifecycle.Instance.IsHost())
+        {
+            completed?.Invoke(false, 0, 0, "Invalid stored inventory.");
+            yield break;
+        }
+
+        var recoverableRecords = new List<PlayerItemSaveData>();
+        var excludedContainerIds = new HashSet<string>(StringComparer.Ordinal);
+        int excludedEssentialCount = 0;
+        foreach (var record in stored.Items)
+        {
+            if (string.IsNullOrEmpty(record.ItemPrefabName) || !ItemPrefabs.ContainsKey(record.ItemPrefabName))
+            {
+                completed?.Invoke(false, 0, 0,
+                    $"Missing item prefab '{record.ItemPrefabName ?? "<null>"}'. Nothing was recovered.");
+                yield break;
+            }
+
+            if (ItemPrefabs[record.ItemPrefabName].IsEssential)
+            {
+                excludedEssentialCount++;
+                string containerId = record.State?["ContainerId"]?.Value<string>();
+                if (!string.IsNullOrEmpty(containerId))
+                    excludedContainerIds.Add(containerId);
+                continue;
+            }
+
+            recoverableRecords.Add(record);
+        }
+
+        // If an essential item is itself a container, promote any non-essential
+        // direct contents to Lost and Found instead of discarding them with it.
+        for (int i = 0; i < recoverableRecords.Count; i++)
+        {
+            PlayerItemSaveData record = recoverableRecords[i];
+            if (!string.IsNullOrEmpty(record.ContainerId) && excludedContainerIds.Contains(record.ContainerId))
+            {
+                record.ContainerId = null;
+                record.ContainerSlotIndex = -1;
+                recoverableRecords[i] = record;
+            }
+        }
+
+        var created = new List<(PlayerItemSaveData Record, NetworkedItem Item)>();
+        string failure = null;
+        try
+        {
+            foreach (var record in recoverableRecords)
+            {
+                GameObject gameObject = Instantiate(ItemPrefabs[record.ItemPrefabName].gameObject,
+                    Vector3.zero, Quaternion.identity);
+                var networkedItem = gameObject.GetOrAddComponent<NetworkedItem>();
+                networkedItem.DeferInitialCreate();
+                created.Add((record, networkedItem));
+            }
+        }
+        catch (Exception exception)
+        {
+            failure = $"Could not instantiate recovered inventory: {exception.Message}";
+        }
+
+        if (failure == null)
+        {
+            // Let Start register ItemSaveData listeners, then restore container IDs and item state.
+            yield return null;
+            foreach (var entry in created)
+            {
+                try
+                {
+                    entry.Item.gameObject.SetActive(false);
+                    var saveData = entry.Item.GetComponent<ItemSaveData>();
+                    saveData?.LoadItemData(entry.Record.State ?? []);
+                    saveData?.PostLoadItemData();
+                }
+                catch (Exception exception)
+                {
+                    failure = $"Could not restore {entry.Record.ItemPrefabName}: {exception.Message}";
+                    break;
+                }
+            }
+        }
+
+        if (failure == null)
+        {
+            foreach (var entry in created.Where(value => !string.IsNullOrEmpty(value.Record.ContainerId)))
+            {
+                AItemContainer container = Inventory.Instance.ItemContainerRegistry.GetContainer(entry.Record.ContainerId);
+                int slot = entry.Record.ContainerSlotIndex;
+                if (container == null || slot < 0 || slot >= container.Capacity ||
+                    container[slot] != null || !container.AddItem(entry.Item.gameObject, slot))
+                {
+                    failure = $"Could not restore {entry.Record.ItemPrefabName} to container " +
+                        $"'{entry.Record.ContainerId}' slot {slot}.";
+                    break;
+                }
+            }
+        }
+
+        if (failure != null)
+        {
+            foreach (var entry in created)
+            {
+                if (entry.Item == null)
+                    continue;
+                entry.Item.SuppressDestroySync();
+                Inventory.Instance.DestroyItem(entry.Item.gameObject);
+            }
+            completed?.Invoke(false, 0, 0, failure + " Nothing was recovered.");
+            yield break;
+        }
+
+        byte hostPlayerId = NetworkLifecycle.Instance.Server?.SelfId ?? 0;
+        int rootCount = 0;
+        int containerCount = created.Count(entry => entry.Item.GetComponent<AItemContainer>() != null);
+        foreach (var entry in created)
+        {
+            entry.Item.SetOwner(hostPlayerId);
+            if (!string.IsNullOrEmpty(entry.Record.ContainerId))
+                continue;
+
+            StorageController.Instance.AddItemToLostAndFound(entry.Item.Item, false);
+            rootCount++;
+        }
+
+        foreach (var entry in created)
+            entry.Item.GetComponent<ItemSaveData>()?.PostContainerLoadData();
+
+        foreach (var entry in created)
+            entry.Item.PublishDeferredCreate();
+
+        NetworkedSaveGameManager.Instance.ResetPlayerInventory(stored.Guid);
+        SaveGameManager.Instance.Save(SaveType.Auto, null, true);
+        Multiplayer.LogDebug(() => $"Recovered offline inventory for {stored.Guid}: " +
+            $"items={created.Count}, containers={containerCount}, lostAndFoundRoots={rootCount}, " +
+            $"excludedEssentials={excludedEssentialCount}, resetToFirstTime=true");
+        completed?.Invoke(true, created.Count, containerCount, null);
     }
 
     protected void Start()
@@ -362,7 +616,7 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
             // dropped/thrown state. This still permits ordinary world-item pickup
             // and the owning player's genuine drop.
             bool changesItemState = snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.ItemState);
-            bool dropsHeldItem = netItem.CurrentState is ItemState.InHand or ItemState.InInventory &&
+            bool dropsHeldItem = NetworkedItem.IsCarriedState(netItem.CurrentState) &&
                 snapshot.ItemState is ItemState.Dropped or ItemState.Thrown;
             bool belongsToAnotherPlayer = netItem.OwnerPlayerId != 0 &&
                 netItem.OwnerPlayerId != player.PlayerId;
@@ -379,7 +633,7 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
             // have the sender's area loaded, so its physical item position is not a
             // reliable basis for ownership or reach validation.
             snapshot.Player = player.PlayerId;
-            snapshot.OwnerPlayerId = snapshot.ItemState is ItemState.InHand or ItemState.InInventory
+            snapshot.OwnerPlayerId = NetworkedItem.IsCarriedState(snapshot.ItemState)
                 ? player.PlayerId
                 : netItem.OwnerPlayerId;
             NetworkLifecycle.Instance.Server.LogWarning($"NetworkedItemManager.ProcessReceivedAsHost() ItemNetId: {snapshot.ItemNetId}, snapshot type: {snapshot.UpdateType}");
@@ -644,7 +898,10 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
         {
             try
             {
-                if (item.Item != null && !IsLocalShopItem(item) && !item.Item.IsEssential() && !item.Item.IsGrabbed() && !StorageController.Instance.StorageInventory.ContainsItem(item.Item))
+                if (item.Item != null && !IsLocalShopItem(item) && !item.Item.IsEssential() &&
+                    !item.Item.IsGrabbed() &&
+                    !StorageController.Instance.StorageInventory.ContainsItem(item.Item) &&
+                    !StorageController.Instance.StorageItemContainers.ContainsItem(item.Item))
                 {
                     SendToCache(item);
                 }
@@ -821,14 +1078,18 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
             }
 
             response.Items.Add(new ItemReconciliationResult(request.LocalId, netId, authoritativeSnapshot));
+            if (netId == 0)
+                player.InventoryReconciliationFailed = true;
         }
 
         Multiplayer.LogDebug(() => $"Reconciled {response.Items.Count(item => item.NetId != 0)}/{packet.Items.Count} items for {player.Username}");
+        if (packet.IsFinalBatch)
+            player.InventoryReconciliationComplete = !player.InventoryReconciliationFailed;
         return response;
     }
 
     private static bool IsAllowedReconciliationState(ItemState state, InventoryItemSpec spec) =>
-        state is ItemState.InHand or ItemState.InInventory ||
+        NetworkedItem.IsCarriedState(state) ||
         state == ItemState.Dropped && spec.IsEssential;
 
     private static bool IsReconciliationCandidate(NetworkedItem item)
@@ -840,7 +1101,8 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
         var storage = StorageController.Instance;
         return item.Item.IsEssential() || item.Item.IsGrabbed() ||
             inventory != null && inventory.Contains(item.gameObject, true) ||
-            storage?.StorageInventory != null && storage.StorageInventory.ContainsItem(item.Item);
+            storage?.StorageInventory != null && storage.StorageInventory.ContainsItem(item.Item) ||
+            storage?.StorageItemContainers != null && storage.StorageItemContainers.ContainsItem(item.Item);
     }
 
     private NetworkedItem GetFromCache(string prefabName)
@@ -874,6 +1136,11 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
         }
 
         if (SingletonBehaviour<StorageController>.Instance.StorageLostAndFound.ContainsItem(netItem.Item))
+        {
+            SingletonBehaviour<StorageController>.Instance.RemoveItemFromStorageItemList(netItem.Item);
+        }
+
+        if (SingletonBehaviour<StorageController>.Instance.StorageItemContainers.ContainsItem(netItem.Item))
         {
             SingletonBehaviour<StorageController>.Instance.RemoveItemFromStorageItemList(netItem.Item);
         }

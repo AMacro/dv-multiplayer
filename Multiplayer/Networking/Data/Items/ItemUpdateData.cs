@@ -36,6 +36,11 @@ public class ItemUpdateData
     public Quaternion ItemRotation { get; set; }
     public Vector3 ThrowDirection { get; set; }
     public byte Player { get; set; }
+    public int InventorySlotIndex { get; set; } = -1;
+    public int ContainerSlotIndex { get; set; } = -1;
+    public string ContainerId { get; set; }
+    public bool InLockedSlot { get; set; }
+    public bool IsDropped { get; set; }
     public ushort CarNetId { get; set; }
     public bool AttachedFront  { get; set; }
     public Dictionary<string, object> States { get; set; }
@@ -78,9 +83,17 @@ public class ItemUpdateData
                 if (ItemState == ItemState.Thrown)
                     Vector3Serializer.Serialize(writer, ThrowDirection);
             }
-            else if (ItemState == ItemState.InInventory || ItemState == ItemState.InHand)
+            else if (IsCarriedState(ItemState))
             {
                 writer.Put(Player);
+                writer.Put(InventorySlotIndex);
+                writer.Put(InLockedSlot);
+                writer.Put(IsDropped);
+                if (ItemState == ItemState.InContainer)
+                {
+                    writer.Put(ContainerId ?? string.Empty);
+                    writer.Put(ContainerSlotIndex);
+                }
             }
             else if (ItemState == ItemState.Attached)
             {
@@ -149,9 +162,17 @@ public class ItemUpdateData
                     Multiplayer.LogDebug(() => $"ItemUpdateData.Deserialize() Item Thrown after: {ThrowDirection}");
                 }
             }
-            else if (ItemState == ItemState.InInventory || ItemState == ItemState.InHand)
+            else if (IsCarriedState(ItemState))
             {
                 Player = reader.GetByte();
+                InventorySlotIndex = reader.GetInt();
+                InLockedSlot = reader.GetBool();
+                IsDropped = reader.GetBool();
+                if (ItemState == ItemState.InContainer)
+                {
+                    ContainerId = reader.GetString();
+                    ContainerSlotIndex = reader.GetInt();
+                }
             }
             else if (ItemState == ItemState.Attached)
             {
@@ -184,5 +205,8 @@ public class ItemUpdateData
             }
         }
     }
+
+    private static bool IsCarriedState(ItemState state) =>
+        state is ItemState.InHand or ItemState.InInventory or ItemState.InContainer;
 
 }

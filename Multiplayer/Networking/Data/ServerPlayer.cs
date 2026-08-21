@@ -41,12 +41,15 @@ public class ServerPlayer : IDisposable
     public string Username { get; set; }
     public string OriginalUsername { get; set; }
     public Guid Guid { get; set; }
+    public ulong SteamId { get; }
     public string CharacterId { get; set; }
     public bool IsVR { get; }
     public uint LastHighPingTickLogged { get; set; }
     public uint LastTrackingTick { get; set; }
     public bool HasTrackingTick { get; set; }
     public bool CustomizationSnapshotSent { get; set; }
+    internal bool InventoryReconciliationComplete { get; set; }
+    internal bool InventoryReconciliationFailed { get; set; }
     public HashSet<uint> ProcessedCustomizationActionIds { get; } = [];
 
     public PlayerTrackingData TrackingData { get; set; }
@@ -104,12 +107,12 @@ public class ServerPlayer : IDisposable
     public IEnumerable<ushort> OwnedItems => NetworkedItem.GetAll()
         .Where(item => item != null && item.OwnerPlayerId == PlayerId)
         .Select(item => item.NetId);
-    public StorageBase Storage { get; set; } = new StorageBase();
 
     private Vector3 _lastWorldPos = Vector3.zero;
     private Vector3 _lastAbsoluteWorldPosition = Vector3.zero;
 
-    public ServerPlayer(ITransportPeer peer, string username, string originalUsername, Guid guid, string characterId, bool isVr)
+    public ServerPlayer(ITransportPeer peer, string username, string originalUsername, Guid guid, ulong steamId,
+        string characterId, bool isVr)
     {
         PlayerId = idPool.NextId;
 
@@ -119,6 +122,7 @@ public class ServerPlayer : IDisposable
         Username = username;
         OriginalUsername = originalUsername;
         Guid = guid;
+        SteamId = steamId;
         CharacterId = characterId;
 
         IsVR = isVr;

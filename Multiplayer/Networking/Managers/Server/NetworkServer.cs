@@ -1,4 +1,5 @@
 using DV;
+using DV.Common;
 using DV.Customization;
 using DV.Customization.Paint;
 using DV.Garages;
@@ -9,6 +10,8 @@ using DV.Scenarios.Common;
 using DV.ServicePenalty;
 using DV.ThingTypes;
 using DV.WeatherSystem;
+using DV.UserManagement;
+using DV.UserManagement.Data;
 using Humanizer;
 using LiteNetLib;
 using LiteNetLib.Utils;
@@ -19,6 +22,7 @@ using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.Jobs;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Components.Networking.World;
+using Multiplayer.Components.SaveGame;
 using Multiplayer.Networking.Data;
 using Multiplayer.Networking.Data.Items;
 using Multiplayer.Networking.Data.Jobs;
@@ -342,12 +346,12 @@ public class NetworkServer : NetworkManager
     {
         LogDebug(() => $"OnPeerDisconnected({peer.Id})");
         if (!peerToPlayer.TryGetValue(peer, out ServerPlayer player))
+        {
             LogWarning($"Peer {peer.GetType()}, peerId: {peer.Id} disconnected but no player found");
+            return;
+        }
         else
             Log($"Player {player?.Username} disconnected: {disconnectReason}");
-
-        if (WorldStreamingInit.isLoaded)
-            SaveGameManager.Instance.UpdateInternalData();
 
         serverPlayers.Remove(player.PlayerId);
         peers.Remove(player.PlayerId);
@@ -364,6 +368,13 @@ public class NetworkServer : NetworkManager
         );
 
         PlayerDisconnected?.Invoke(player);
+
+        var disconnectSave = SaveGameManager.Instance?.Save(SaveType.Auto, null, true);
+        if (disconnectSave == null)
+            LogError($"Immediate disconnect autosave failed for {player.Username}; " +
+                $"saveAllowed={SaveGameManager.Instance?.SaveAllowed()}, worldLoaded={WorldStreamingInit.IsLoaded}");
+        else
+            Log($"Immediate disconnect autosave completed for {player.Username}");
 
         player?.Dispose();
     }
@@ -1110,6 +1121,20 @@ public class NetworkServer : NetworkManager
 
         Log($"Processing login packet for {packet.Username} ({guid}){(Multiplayer.Settings.LogIps ? $" at {request.RemoteEndPoint.Address}" : "")}");
 
+        // GUID is the canonical identity for persisted remote inventories. Local
+        // multi-instance testing shares the host's settings (and therefore its
+        // GUID), but host inventory is not stored in this per-client namespace.
+        // Keep duplicate protection between remote clients only.
+        if (ServerPlayers.Any(player => player.Peer != SelfPeer && player.Guid == guid))
+        {
+            LogWarning($"Denied duplicate player identity for {packet.Username} ({guid}, Steam {packet.SteamId})");
+            request.Reject(WritePacket(new ClientboundLoginResponsePacket
+            {
+                ReasonKey = Locale.DISCONN_REASON__REJECTED_KEY
+            }));
+            return;
+        }
+
         if (Multiplayer.Settings.Password != packet.Password)
         {
             LogWarning("Denied login due to invalid password!");
@@ -1193,6 +1218,7 @@ public class NetworkServer : NetworkManager
             overrideUsername,
             packet.Username,
             guid,
+            packet.SteamId,
             packet.CharacterId,
             packet.IsVR
         );
@@ -1239,6 +1265,7 @@ public class NetworkServer : NetworkManager
                 Log($"Player {player.Username} is ready for game data");
 
                 PlayerConnected?.Invoke(player);
+                NetworkedSaveGameManager.Instance.RecordPlayerLogin(player);
 
                 var gameParamsPacket = ClientboundGameParamsPacket.FromGameParams(Globals.G.GameParams);
                 gameParamsPacket.FastTravelAdvancesTime = fastTravelAdvancesTime;

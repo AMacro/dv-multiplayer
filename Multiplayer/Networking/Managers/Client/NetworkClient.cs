@@ -133,6 +133,7 @@ public class NetworkClient : NetworkManager
         //netManager.Start();
         base.Start();
 
+        SteamworksUtils.GetSteamUser(out _, out ulong steamId);
         ServerboundClientLoginPacket serverboundClientLoginPacket = new()
         {
             Username = this.Username,
@@ -141,7 +142,8 @@ public class NetworkClient : NetworkManager
             BuildVersion = MainMenuControllerPatch.MenuProvider.BuildVersionString,
             Mods = ModCompatibilityManager.Instance.GetLocalMods(),
             CharacterId = Multiplayer.Settings.CharacterId,
-            IsVR = VRManager.IsVREnabled()
+            IsVR = VRManager.IsVREnabled(),
+            SteamId = steamId,
         };
 
         Log("Sending Login Packet");

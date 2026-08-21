@@ -1,5 +1,8 @@
 using Multiplayer.Components.Networking;
 using Multiplayer.Networking.Data;
+using Multiplayer.Components.SaveGame;
+using Multiplayer.Components.Networking.World;
+using DV.Utils;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -24,6 +27,7 @@ public class ChatManager
     public const string COMMAND_KICK = "kick";
     public const string COMMAND_SET_CREW_NAME = "crew";
     public const string COMMAND_SET_CREW_NAME_SHORT = "sc";
+    public const string COMMAND_RECOVER_ITEMS = "recoveritems";
 
 
     public const string MESSAGE_COLOUR_SERVER = "9CDCFE";
@@ -32,6 +36,7 @@ public class ChatManager
     private readonly Dictionary<string, ChatCommandCallbackInternal> _registeredCommands = [];
     private readonly Dictionary<string, Func<string>> _registeredHelpMessages = [];
     private readonly List<ChatFilterDelegateInternal> _chatFilters = [];
+    private readonly HashSet<Guid> recoveringInventories = [];
 
     public ChatManager()
     {
@@ -90,6 +95,15 @@ public class ChatManager
                     $"\r\n\t\t/{COMMAND_SET_CREW_NAME} <{Locale.CHAT_HELP_CREW_NAME}>" +
                     $"\r\n\t\t/{COMMAND_SET_CREW_NAME_SHORT} <{Locale.CHAT_HELP_CREW_NAME}>",
                 SetCrewNameMessage
+        );
+
+        RegisterChatCommand
+        (
+            COMMAND_RECOVER_ITEMS,
+            null,
+            () => "Recover an offline player's stored inventory to Lost and Found (host only)" +
+                $"\r\n\t\t/{COMMAND_RECOVER_ITEMS} <username|steamid|guid>",
+            RecoverItemsMessage
         );
 
 #if DEBUG
@@ -365,6 +379,97 @@ public class ChatManager
                         "</color>";
         */
         NetworkLifecycle.Instance.Server.SendWhisper(sb.ToString(), player);
+    }
+
+    private void RecoverItemsMessage(string message, ServerPlayer sender)
+    {
+        if (sender == null || !NetworkLifecycle.Instance.IsHost(sender))
+            return;
+
+        string target = message?.Trim();
+        if (string.IsNullOrEmpty(target))
+        {
+            SendCommandResponse(sender, $"Usage: /{COMMAND_RECOVER_ITEMS} <username|steamid|guid>");
+            return;
+        }
+
+        var savedPlayers = NetworkedSaveGameManager.Instance.GetSavedPlayerInventories();
+        List<SavedPlayerInventory> matches;
+        if (Guid.TryParse(target, out Guid guid))
+            matches = savedPlayers.Where(player => player.Guid == guid).ToList();
+        else if (ulong.TryParse(target, out ulong steamId) && steamId != 0)
+            matches = savedPlayers.Where(player => player.SteamId == steamId).ToList();
+        else
+            matches = savedPlayers.Where(player =>
+                string.Equals(player.Username, target, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        if (matches.Count == 0)
+        {
+            SendCommandResponse(sender, $"No stored offline inventory found for '{target}'.");
+            return;
+        }
+
+        if (matches.Count > 1)
+        {
+            bool duplicateSteamIds = matches
+                .Where(player => player.SteamId != 0)
+                .GroupBy(player => player.SteamId)
+                .Any(group => group.Count() > 1);
+            var lines = matches
+                .OrderByDescending(player => player.LastConnectedUtc)
+                .Select(player => $"{player.Username}: {FormatHostLocalTime(player.LastConnectedUtc)}, " +
+                    (player.SteamId != 0 && !duplicateSteamIds
+                        ? $"SteamID {player.SteamId}"
+                        : $"GUID {player.Guid}"));
+            SendCommandResponse(sender, "Multiple stored players matched; rerun using SteamID or GUID:\r\n" +
+                string.Join("\r\n", lines));
+            return;
+        }
+
+        SavedPlayerInventory stored = matches[0];
+        if (!recoveringInventories.Add(stored.Guid))
+        {
+            SendCommandResponse(sender, $"Inventory recovery for {stored.Username} is already in progress.");
+            return;
+        }
+        bool isOnline = NetworkLifecycle.Instance.Server.ServerPlayers.Any(player =>
+            player.Peer != NetworkLifecycle.Instance.Server.SelfPeer && player.Guid == stored.Guid);
+        if (isOnline)
+        {
+            recoveringInventories.Remove(stored.Guid);
+            SendCommandResponse(sender, $"{stored.Username} is currently connected; recovery was not started.");
+            return;
+        }
+
+        SendCommandResponse(sender, $"Recovering {stored.Items.Length} stored items for {stored.Username}...");
+        CoroutineManager.Instance.StartCoroutine(NetworkedItemManager.Instance.RecoverStoredInventory(stored,
+            (success, itemCount, containerCount, error) =>
+            {
+                recoveringInventories.Remove(stored.Guid);
+                if (success)
+                    SendCommandResponse(sender,
+                        $"Recovered {itemCount} items ({containerCount} containers) for {stored.Username}. " +
+                        "Starting essentials were excluded and will be supplied on their next connection.");
+                else
+                    SendCommandResponse(sender, error ?? "Inventory recovery failed.");
+            }));
+    }
+
+    private static string FormatHostLocalTime(DateTime utc)
+    {
+        if (utc == default)
+            return "last connection unknown";
+
+        DateTime local = utc.ToLocalTime();
+        TimeSpan offset = TimeZoneInfo.Local.GetUtcOffset(local);
+        string sign = offset < TimeSpan.Zero ? "-" : "+";
+        return $"{local:dd MMM yyyy HH:mm} UTC{sign}{offset.Duration():hh\\:mm}";
+    }
+
+    private static void SendCommandResponse(ServerPlayer recipient, string message)
+    {
+        NetworkLifecycle.Instance.Server.SendWhisper(
+            $"<color=#{MESSAGE_COLOUR_SERVER}>{message}</color>", recipient);
     }
 
 
