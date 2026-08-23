@@ -59,6 +59,16 @@ public abstract class IdMonoBehaviour<T, I> : MonoBehaviour where T : struct whe
         indexToObject[id] = this;
     }
 
+    /// <summary>
+    ///     Takes a fresh id from the pool. Used when an existing object becomes network
+    ///     relevant after its Awake has already run (e.g. an inventory item dropped back
+    ///     into the world by the host).
+    /// </summary>
+    public void AssignNewId()
+    {
+        Register(idPool.NextId);
+    }
+
     protected virtual void OnDestroy()
     {
         idPool.ReleaseId(NetId);
