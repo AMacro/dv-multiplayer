@@ -5,6 +5,7 @@ using DV.Damage;
 using DV.InventorySystem;
 using DV.LocoRestoration;
 using DV.Logic.Job;
+using DV.Shops;
 using DV.MultipleUnit;
 using DV.ServicePenalty.UI;
 using DV.ThingTypes;
@@ -148,6 +149,11 @@ public class NetworkClient : NetworkManager
 
         Settings.OnSettingsUpdated -= OnSettingsUpdated;
 
+        // Clear session state so a reconnect starts clean instead of inheriting entries
+        // and item copies that no longer refer to anything
+        if (SharedInventoryManager.Instance != null)
+            SharedInventoryManager.Instance.Reset();
+
         base.Stop();
     }
 
@@ -248,6 +254,9 @@ public class NetworkClient : NetworkManager
         netPacketProcessor.SubscribeNetSerializable<CommonPitStopPlugInteractionPacket>(OnCommonPitStopPlugInteractionPacket);
         netPacketProcessor.SubscribeReusable<ClientboundPitStopBulkUpdatePacket>(OnClientboundPitStopBulkUpdatePacket);
         netPacketProcessor.SubscribeReusable<CommonCashRegisterWithModulesActionPacket>(OnCommonCashRegisterWithModulesActionPacket);
+        netPacketProcessor.SubscribeReusable<ClientboundShopStockPacket>(OnClientboundShopStockPacket);
+        netPacketProcessor.SubscribeReusable<ClientboundSharedInventoryPacket>(OnClientboundSharedInventoryPacket);
+        netPacketProcessor.SubscribeReusable<ClientboundSharedInventoryChangePacket>(OnClientboundSharedInventoryChangePacket);
         netPacketProcessor.SubscribeReusable<CommonGenericSwitchStatePacket>(OnCommonGenericSwitchStatePacket);
 
         netPacketProcessor.SubscribeReusable<CommonChatPacket>(OnCommonChatPacket);
@@ -1330,7 +1339,7 @@ public class NetworkClient : NetworkManager
         //    return debug;
         //});
 
-        //NetworkedItemManager.Instance.ReceiveSnapshots(packet.Items, null);
+        NetworkedItemManager.Instance.ReceiveSnapshots(packet.Items, null);
     }
 
     private void OnCommonPaintThemePacket(CommonPaintThemePacket packet)
@@ -1435,7 +1444,63 @@ public class NetworkClient : NetworkManager
 
         Log($"Cash Register With Modules Action received for {netCashRegister.GetObjectPath()}, Action: {packet.Action}, Amount: {packet.Amount}");
 
-        netCashRegister.Client_ProcessCashRegisterAction(packet.Action, packet.Amount);
+        netCashRegister.Client_ProcessCashRegisterAction(packet);
+    }
+
+    private void OnClientboundSharedInventoryPacket(ClientboundSharedInventoryPacket packet)
+    {
+        if (NetworkLifecycle.Instance.IsHost())
+            return;
+
+        LogDebug(() => $"Received shared inventory with {packet.EntryIds?.Length ?? 0} items");
+        SharedInventoryManager.Instance.Client_ApplyFullInventory(packet.EntryIds, packet.PrefabNames, packet.States);
+    }
+
+    private void OnClientboundSharedInventoryChangePacket(ClientboundSharedInventoryChangePacket packet)
+    {
+        if (NetworkLifecycle.Instance.IsHost())
+            return;
+
+        if (packet.Added)
+            SharedInventoryManager.Instance.Client_AddEntry(packet.EntryId, packet.PrefabName, packet.State, packet.OriginItemNetId);
+        else
+            SharedInventoryManager.Instance.Client_RemoveEntry(packet.EntryId);
+    }
+
+    private void OnClientboundShopStockPacket(ClientboundShopStockPacket packet)
+    {
+        if (NetworkLifecycle.Instance.IsHost())
+            return;
+
+        GlobalShopController shopController = GlobalShopController.Instance;
+        if (shopController == null)
+        {
+            LogWarning("Shop stock packet received, but GlobalShopController does not exist!");
+            return;
+        }
+
+        if (packet.PrefabNames == null || packet.PrefabNames.Length != packet.PurchasedCounts?.Length || packet.PrefabNames.Length != packet.AllowedCounts?.Length)
+        {
+            LogWarning("Shop stock packet received with mismatched data lengths!");
+            return;
+        }
+
+        LogDebug(() => $"OnClientboundShopStockPacket() Updating stock for {packet.PrefabNames.Length} items");
+
+        for (int i = 0; i < packet.PrefabNames.Length; i++)
+        {
+            ShopItemData shopItemData = shopController.GetShopItemData(packet.PrefabNames[i]);
+            if (shopItemData == null)
+            {
+                LogWarning($"OnClientboundShopStockPacket() Shop item not found for prefab: {packet.PrefabNames[i]}");
+                continue;
+            }
+
+            shopItemData.purchasedItems = packet.PurchasedCounts[i];
+            shopItemData.allowedToHaveAmount = packet.AllowedCounts[i];
+        }
+
+        shopController.Fire_GlobalShopDataChanged();
     }
 
     private void OnCommonGenericSwitchStatePacket(CommonGenericSwitchStatePacket packet)
@@ -1899,14 +1964,42 @@ public class NetworkClient : NetworkManager
         SendPacketToServer(new CommonPaintThemePacket { NetId = netTraincar.NetId, TargetArea = targetArea, PaintThemeId = themeId }, DeliveryMethod.ReliableUnordered);
     }
 
-    public void SendCashRegisterAction(ushort netId, CashRegisterAction action, double amount = 0.0f)
+    public void SendInventoryStore(ushort itemNetId)
+    {
+        SendPacketToServer(new ServerboundInventoryStorePacket { ItemNetId = itemNetId }, DeliveryMethod.ReliableOrdered);
+    }
+
+    public void SendInventoryRemove(ushort entryId, bool dropped, Vector3 position, Quaternion rotation, string state)
+    {
+        SendPacketToServer(new ServerboundInventoryRemovePacket
+        {
+            EntryId = entryId,
+            Dropped = dropped,
+            Position = position,
+            Rotation = rotation,
+            State = state ?? string.Empty
+        }, DeliveryMethod.ReliableOrdered);
+    }
+
+    public void SendMoneyStash(ushort itemNetId)
+    {
+        SendPacketToServer(new ServerboundMoneyStashPacket { ItemNetId = itemNetId }, DeliveryMethod.ReliableOrdered);
+    }
+
+    public void SendPlayerInventory(PlayerItemSaveData[] items)
+    {
+        SendPacketToServer(new ServerboundPlayerInventoryPacket { Items = items }, DeliveryMethod.ReliableOrdered);
+    }
+
+    public void SendCashRegisterAction(ushort netId, CashRegisterAction action, double amount = 0.0f, byte moduleIndex = 0)
     {
         SendPacketToServer(
             new CommonCashRegisterWithModulesActionPacket
             {
                 NetId = netId,
                 Action = action,
-                Amount = amount
+                Amount = amount,
+                ModuleIndex = moduleIndex
             },
             DeliveryMethod.ReliableOrdered
         );
