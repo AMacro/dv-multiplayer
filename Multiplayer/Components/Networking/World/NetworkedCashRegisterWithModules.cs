@@ -2,6 +2,7 @@ using DV.CashRegister;
 using DV.Interaction;
 using DV.InventorySystem;
 using DV.Shops;
+using DV.Utils;
 using Multiplayer.Networking.Data;
 using Multiplayer.Networking.Managers.Server;
 using Multiplayer.Networking.Packets.Common;
@@ -140,12 +141,23 @@ public class NetworkedCashRegisterWithModules : IdMonoBehaviour<ushort, Networke
         }
     }
 
+    //Scan modules can be metres from the register itself (shelves spread around the shop),
+    //so scans are validated against the module position rather than the register position.
+    private const float MAX_SCAN_DISTANCE_SQR = 10f * 10f;
+
     public void Server_ProcessCashRegisterAction(ServerPlayer player, CommonCashRegisterWithModulesActionPacket packet)
     {
         bool success = false;
         CashRegisterAction response = CashRegisterAction.RejectGeneric;
 
         NetworkLifecycle.Instance.Server?.LogDebug(() => $"NetworkedCashRegisterWithModules.Server_ProcessAction({player.Username}, {packet.Action}, {packet.Amount})");
+
+        if (packet.Action == CashRegisterAction.ScanItem)
+        {
+            Server_ProcessScanItem(player, packet);
+            return;
+        }
+
         if (transform.PlayerCanReach(player, 1))
         {
             processingAction = true;
@@ -171,6 +183,8 @@ public class NetworkedCashRegisterWithModules : IdMonoBehaviour<ushort, Networke
                     }
                     else
                     {
+                        // Record the buyer so items spawned by the purchase can be stamped with their owner
+                        Patches.World.GlobalShopControllerPatch.PurchasingPlayerId = player.PlayerId;
                         success = CashRegister?.Buy() ?? false;
                     }
 
@@ -237,15 +251,92 @@ public class NetworkedCashRegisterWithModules : IdMonoBehaviour<ushort, Networke
         processingAction = false;
     }
 
+    private void Server_ProcessScanItem(ServerPlayer player, CommonCashRegisterWithModulesActionPacket packet)
+    {
+        if (!TryGetModule(packet.ModuleIndex, out ScanItemCashRegisterModule module))
+        {
+            NetworkLifecycle.Instance.Server?.LogWarning($"NetworkedCashRegisterWithModules.Server_ProcessScanItem() Module index {packet.ModuleIndex} not found on {CashRegister.GetObjectPath()}");
+            SendRejection(player, CashRegisterAction.RejectGeneric);
+            return;
+        }
+
+        if ((player.WorldPosition - module.transform.position).sqrMagnitude > MAX_SCAN_DISTANCE_SQR)
+        {
+            NetworkLifecycle.Instance.Server?.LogDebug(() => $"Player \"{player.Username}\" tried to scan an item, but they are too far away");
+            SendRejection(player, CashRegisterAction.RejectGeneric);
+            return;
+        }
+
+        processingAction = true;
+
+        //AddItemsToBuy validates stock and increments the basket; on success the
+        //ScanItemCashRegisterModulePatch postfix broadcasts the new basket state to all clients
+        if (!module.AddItemsToBuy())
+            SendRejection(player, CashRegisterAction.RejectGeneric);
+
+        processingAction = false;
+    }
+
+    private void SendRejection(ServerPlayer player, CashRegisterAction response)
+    {
+        NetworkLifecycle.Instance.Server.SendCashRegisterAction
+            (
+                new CommonCashRegisterWithModulesActionPacket
+                {
+                    NetId = NetId,
+                    Action = response,
+                    Amount = CashRegister.DepositedCash
+                },
+                [player]
+            );
+    }
+
+    public bool TryGetModule(byte moduleIndex, out ScanItemCashRegisterModule module)
+    {
+        module = null;
+
+        if (CashRegister == null || CashRegister.registerModules == null || moduleIndex >= CashRegister.registerModules.Length)
+            return false;
+
+        module = CashRegister.registerModules[moduleIndex] as ScanItemCashRegisterModule;
+        return module != null;
+    }
+
+    public bool TryGetModuleIndex(CashRegisterModule module, out byte moduleIndex)
+    {
+        moduleIndex = 0;
+
+        if (CashRegister == null || CashRegister.registerModules == null)
+            return false;
+
+        int index = Array.IndexOf(CashRegister.registerModules, module);
+        if (index < 0 || index > byte.MaxValue)
+            return false;
+
+        moduleIndex = (byte)index;
+        return true;
+    }
+
     #endregion
 
     #region Client
 
-    public void Client_ProcessCashRegisterAction(CashRegisterAction action, double amount)
+    public void Client_ProcessCashRegisterAction(CommonCashRegisterWithModulesActionPacket packet)
     {
+        CashRegisterAction action = packet.Action;
+        double amount = packet.Amount;
+
         NetworkLifecycle.Instance.Client?.LogDebug(() => $"NetworkedCashRegisterWithModules.Client_ProcessCashRegisterAction({action}, {amount}) isBuying: {isBuying}, isCancelling: {isCancelling}");
         switch (action)
         {
+            case CashRegisterAction.SetBasket:
+                if (TryGetModule(packet.ModuleIndex, out ScanItemCashRegisterModule scanModule))
+                    scanModule.SetUnitsToBuy((float)amount);
+                else
+                    Multiplayer.LogWarning($"NetworkedCashRegisterWithModules.Client_ProcessCashRegisterAction({action}) Module index {packet.ModuleIndex} not found on {CashRegister.GetObjectPath()}");
+
+                break;
+
             case CashRegisterAction.Cancel:
 
                 isCancelling = false;

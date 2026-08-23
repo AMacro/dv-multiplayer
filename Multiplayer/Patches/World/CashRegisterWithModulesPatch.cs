@@ -28,23 +28,27 @@ public class CashRegisterWithModulesPatch
 
     [HarmonyPrefix]
     [HarmonyPatch(nameof(CashRegisterWithModules.OnBuyPressed))]
-    private static bool OnBuyPressed(CashRegisterWithModules __instance)
+    private static bool OnBuyPressed(CashRegisterWithModules __instance, out bool __state)
     {
+        // Record whether there was anything in the basket so the postfix can tell if the buy succeeded
+        __state = NetworkLifecycle.Instance.IsHost() && __instance.TotalUnitsInBasket() > 0f;
+
         var player = PlayerManager.PlayerTransform.position;
         var reg = __instance.transform.position;
         var sqrMag = (player - reg).sqrMagnitude;
         Multiplayer.LogDebug(() => $"CashRegisterWithModules.OnBuyPressed() player pos: {player} register pos: {reg}, sqrMag: {sqrMag}");
         if (NetworkLifecycle.Instance.IsHost())
+        {
+            // Record the host player as buyer so spawned items can be stamped with their owner
+            GlobalShopControllerPatch.PurchasingPlayerId = NetworkLifecycle.Instance.Client?.PlayerId ?? 0;
             return true;
+        }
 
         if (!NetworkedCashRegisterWithModules.TryGet(__instance, out var netCashRegister))
         {
             Multiplayer.LogWarning($"CashRegisterWithModules.OnBuyPressed({__instance.GetObjectPath()}) NetworkedCashRegisterWithModules not found!");
             return false;
         }
-
-        if (netCashRegister.IsShopRegister)
-            return true;
 
         CoroutineManager.Instance.StartCoroutine(netCashRegister.Buy());
 
@@ -53,9 +57,14 @@ public class CashRegisterWithModulesPatch
 
     [HarmonyPostfix]
     [HarmonyPatch(nameof(CashRegisterWithModules.OnBuyPressed))]
-    private static void OnBuyPressed_Postfix(CashRegisterWithModules __instance)
+    private static void OnBuyPressed_Postfix(CashRegisterWithModules __instance, bool __state)
     {
         if (!NetworkLifecycle.Instance.IsHost())
+            return;
+
+        // Only broadcast if the buy succeeded (a successful Buy resets the basket to zero);
+        // broadcasting a failed buy would wrongly reset the clients' baskets
+        if (!__state || __instance.TotalUnitsInBasket() > 0f)
             return;
 
         if (!NetworkedCashRegisterWithModules.TryGet(__instance, out var netCashRegister))
@@ -89,9 +98,6 @@ public class CashRegisterWithModulesPatch
             return false;
         }
 
-        if (netCashRegister.IsShopRegister)
-            return true;
-
         CoroutineManager.Instance.StartCoroutine(netCashRegister.Cancel());
 
         return false;
@@ -110,9 +116,6 @@ public class CashRegisterWithModulesPatch
             Multiplayer.LogWarning($"CashRegisterWithModules.Cancel_Postfix({__instance.GetObjectPath()}) NetworkedCashRegisterWithModules not found!");
             return;
         }
-
-        if (netCashRegister.IsShopRegister)
-            return;
 
         // Send cancel action to all clients
         NetworkLifecycle.Instance.Server.SendCashRegisterAction(new CommonCashRegisterWithModulesActionPacket

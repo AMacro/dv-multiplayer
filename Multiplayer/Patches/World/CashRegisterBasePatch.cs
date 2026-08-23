@@ -31,9 +31,6 @@ public class CashRegisterBasePatch
             return true;
         }
 
-        if (netCashRegister.IsShopRegister)
-            return true;
-
         Inventory.Instance.AddMoney(amount);
 
         CoroutineManager.Instance.StartCoroutine(netCashRegister.AddCash(amount));
