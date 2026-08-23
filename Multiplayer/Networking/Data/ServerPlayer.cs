@@ -94,6 +94,8 @@ public class ServerPlayer : IDisposable
         }
     }
 
+    public Networking.Data.Items.PlayerItemSaveData[] SavedInventory { get; set; } //last inventory report from this player's client
+
     public Dictionary<NetworkedItem, uint> KnownItems { get; private set; } = new Dictionary<NetworkedItem, uint>(); //NetworkedItem, last updated tick
     public Dictionary<NetworkedItem, float> NearbyItems { get; private set; } = new Dictionary<NetworkedItem, float>(); //NetworkedItem, time since near the item
     public HashSet<ushort> OwnedItems { get; private set; } = new HashSet<ushort>();
