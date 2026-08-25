@@ -4,6 +4,7 @@ using Multiplayer.Components.Networking.Train;
 using Multiplayer.Editor.Components.Player;
 using Multiplayer.Networking.Data.Player;
 using System.Collections.Generic;
+using UnityChan;
 using UnityEngine;
 
 namespace Multiplayer.Components.Networking.Player;
@@ -125,6 +126,24 @@ public class NetworkedPlayer : MonoBehaviour
     private Vector3? itemHoldPos;
     private Quaternion? itemHoldRot;
 
+    WindPhysicsController windController;
+
+    private bool isCulled;
+    public bool IsCulled
+    {
+        get => isCulled;
+        set
+        {
+            if (isCulled == value)
+                return;
+
+            isCulled = value;
+
+            playerModel?.SetActive(!value);
+            nameTag?.gameObject.SetActive(!value);
+        }
+    }
+
     protected void Awake()
     {
         nameTag = GetComponentInChildren<NameTag>();
@@ -187,10 +206,15 @@ public class NetworkedPlayer : MonoBehaviour
             leftHandTransform = null;
             rightHandTransform = null;
             handTrackingInitialized = false;
+            windController = null;
         }
 
         playerModel = Instantiate(newModel, transform);
         animationHandler = playerModel.GetComponent<AnimationHandler>();
+
+        // If the model is using wind physics, e.g. for hair, add the WindPhysicsController to manage effects on and off the car
+        if (playerModel.GetComponentInChildren<SpringManager>(true) != null)
+            windController = playerModel.AddComponent<WindPhysicsController>();
 
         var animator = playerModel.GetComponentInChildren<Animator>(true);
         if (animator != null)
@@ -231,6 +255,9 @@ public class NetworkedPlayer : MonoBehaviour
             headBaseWorldRotation = Quaternion.Inverse(selfTransform.rotation) * headTransform.rotation;
 
         SetPosture(currentPosture);
+
+        if (IsCulled)
+            playerModel.SetActive(false);
     }
 
     public void SetPing(int ping)
@@ -246,6 +273,17 @@ public class NetworkedPlayer : MonoBehaviour
 
     protected void Update()
     {
+        if (IsCulled)
+        {
+            if (IsOnCar)
+                selfTransform.localPosition = targetPos;
+            else
+                selfTransform.position = targetPos + WorldMover.currentMove;
+
+            selfTransform.rotation = targetRotation;
+            return;
+        }
+
         // Consume packet age once so smoothing does not add its full delay on top
         // of the time this sample has already spent in transit.
         float interpolationDelta = Time.deltaTime + pendingTrackingAge;
@@ -313,6 +351,9 @@ public class NetworkedPlayer : MonoBehaviour
     /// </summary>
     protected void LateUpdate()
     {
+        if (IsCulled)
+            return;
+
         if (!IsVR)
         {
             float targetLeanAngle = 0f;
@@ -341,7 +382,7 @@ public class NetworkedPlayer : MonoBehaviour
             // Side lean is always spinning around the root's global FORWARD axis
             Quaternion leanOffset = Quaternion.AngleAxis(currentLeanAngle, selfTransform.forward);
 
-            // Directly assign the uniform world rotation 
+            // Directly assign the uniform world rotation
             spineTransform.rotation = leanOffset * currentModelSpineBase;
         }
 
@@ -465,7 +506,7 @@ public class NetworkedPlayer : MonoBehaviour
 
     public void UpdateCar(ushort netId)
     {
-       bool willBeOnCar = NetworkedTrainCar.TryGet(netId, out NetworkedTrainCar newTrainCar);
+        bool willBeOnCar = NetworkedTrainCar.TryGet(netId, out NetworkedTrainCar newTrainCar);
 
         if (OccupiedCar != null)
         {
@@ -473,6 +514,7 @@ public class NetworkedPlayer : MonoBehaviour
                 return;
 
             OccupiedCar.Client_RemovePlayer(this);
+            windController?.SetOnCar(null);
         }
 
         IsOnCar = willBeOnCar && newTrainCar != null;
@@ -482,6 +524,7 @@ public class NetworkedPlayer : MonoBehaviour
             OccupiedCar = newTrainCar;
             selfTransform.SetParent(OccupiedCar.transform, true);
             OccupiedCar.Client_PlayerOnCar(this);
+            windController?.SetOnCar(newTrainCar.TrainCar);
         }
         else
         {

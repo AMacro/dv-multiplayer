@@ -1941,26 +1941,29 @@ public class NetworkServer : NetworkManager
 
         trainCar = isGarageCar ? selectedGarageSpawner.GetCar(livery) : CarSpawner.Instance.AllCars.FirstOrDefault(tc => tc.carLivery == livery);
 
-        if (isGarageCar)
+        // Check if the car exists and is not in use - applies to both garage and non-garage cars
+        if (trainCar != null)
         {
-            // Check if the car exists and is not in use
-            if (trainCar != null)
+            if (NetworkedTrainCar.TryGetFromTrainCar(trainCar, out networkedTrainCar) && networkedTrainCar != null)
             {
-                if (NetworkedTrainCar.TryGetFromTrainCar(trainCar, out networkedTrainCar) && networkedTrainCar != null)
+                if (networkedTrainCar.InUse(out LocoInUseData.LocoInUseReason reason, out float timeout))
                 {
-                    if (networkedTrainCar.InUse())
-                    {
-                        SendRpcResponse(packet.TicketId, rpcResponse, peer);
-                        return;
-                    }
-                }
-                else
-                {
-                    LogWarning($"{player.Username} tried to request a work train of {livery.id} but NetworkedTrainCar not found");
+                    LogDebug(() => $"OnServerboundWorkTrainRequestPacket() {player.Username} tried to request a work train of {livery.id} but NetworkedTrainCar is in use, reason: {reason}, timeout: {timeout}");
+                    rpcResponse.Reason = reason;
+                    rpcResponse.Timeout = timeout;
+                    SendRpcResponse(packet.TicketId, rpcResponse, peer);
                     return;
                 }
             }
+            else
+            {
+                LogWarning($"{player.Username} tried to request a work train of {livery.id} but NetworkedTrainCar not found");
+                return;
+            }
+        }
 
+        if (isGarageCar)
+        {
             var price = Mathf.Min(selectedGarageSpawner.garageType.summonPrice, Globals.G.GameParams.WorkTrainSummonMaxPrice);
             if (!Inventory.Instance.RemoveMoney(price))
             {

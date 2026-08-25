@@ -28,7 +28,12 @@ public class NetworkedMapMarkersController : MonoBehaviour
     {
         if (UnloadWatcher.isQuitting)
             return;
+
         NetworkLifecycle.Instance.OnTick -= OnTick;
+
+        if (NetworkLifecycle.Instance.Client == null || NetworkLifecycle.Instance.Client.ClientPlayerManager == null)
+            return;
+
         NetworkLifecycle.Instance.Client.ClientPlayerManager.OnPlayerConnected -= OnPlayerConnected;
         NetworkLifecycle.Instance.Client.ClientPlayerManager.OnPlayerDisconnected -= OnPlayerDisconnected;
         NetworkLifecycle.Instance.Client.ClientPlayerManager.OnPlayerPrefsUpdated -= OnPlayerPrefsUpdated;

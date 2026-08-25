@@ -1,4 +1,5 @@
 using LiteNetLib.Utils;
+using Multiplayer.Networking.Data.Train;
 
 namespace Multiplayer.Networking.Data.RPCs;
 
@@ -13,14 +14,20 @@ public class SpawnResponse : IRpcResponse
     }
 
     public ResponseType Response { get; set; }
+    public LocoInUseData.LocoInUseReason Reason { get; set; }
+    public float Timeout { get; set; }
 
     public void Serialize(NetDataWriter writer)
     {
         writer.Put((byte)Response);
+        writer.Put((byte)Reason);
+        writer.Put(Timeout);
     }
 
     public void Deserialize(NetDataReader reader)
     {
         Response = (ResponseType)reader.GetByte();
+        Reason = (LocoInUseData.LocoInUseReason)reader.GetByte();
+        Timeout = reader.GetFloat();
     }
 }

@@ -82,6 +82,9 @@ public class CullingManager : IDisposable
         {
             yield return new WaitForSeconds(_checkInterval);
 
+            if (UnloadWatcher.isUnloading)
+                yield break;
+
             //if not active then there is no one close by
             if (_referenceObject != null && _referenceObject.activeInHierarchy)
             {

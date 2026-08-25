@@ -1,9 +1,9 @@
+using I2.Loc;
+using Multiplayer.Utils;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
-using I2.Loc;
-using Multiplayer.Utils;
 
 
 namespace Multiplayer;
@@ -331,6 +331,7 @@ public static class Locale
     #region Comms Radio
     public static string COMMS_RADIO_WORK_TRAIN_IN_USE => Get(COMMS_RADIO_WORK_TRAIN_IN_USE_KEY);
     public const string COMMS_RADIO_WORK_TRAIN_IN_USE_KEY = $"{PREFIX_COMMS_RADIO}/in_use";
+    public static string COMMS_RADIO_WORK_TRAIN_IN_USE_REASON(string param) => Get($"{PREFIX_COMMS_RADIO}/in_use/{param}");
     #endregion
 
     private static bool initializeAttempted;
