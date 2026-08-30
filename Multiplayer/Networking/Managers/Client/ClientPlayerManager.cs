@@ -104,10 +104,14 @@ public class ClientPlayerManager : IDisposable
         player.SetPing(ping);
     }
 
-    public void UpdatePosition(byte playerId, PlayerTrackingData trackingData, PlayerPostureFlags posture, bool isOnCar, ushort carId)
+    public void UpdatePosition(byte playerId, PlayerTrackingData trackingData, PlayerPostureFlags posture, bool isOnCar, ushort carId, uint tick)
     {
         if (!TryGetPlayer(playerId, out NetworkedPlayer player))
             return;
+
+        if (!player.TryAcceptTrackingTick(tick))
+            return;
+
         player.UpdateCar(carId);
         player.UpdatePosition(trackingData, posture, isOnCar);
     }

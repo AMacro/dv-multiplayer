@@ -60,7 +60,8 @@ public class StartGameData_ServerSave : AStartGameData
         });
 
         // Load player inventory
-        List<StorageItemData> items = [];
+        List<StorageItemData> inventoryItems = [];
+        List<StorageItemData> containerItems = [];
 
         foreach (var item in packet.PlayerItems)
         {
@@ -80,10 +81,16 @@ public class StartGameData_ServerSave : AStartGameData
                 item.ContainerId
             );
 
-            items.Add(itemData);
+            if (string.IsNullOrEmpty(item.ContainerId))
+                inventoryItems.Add(itemData);
+            else
+                containerItems.Add(itemData);
         }
-        Multiplayer.LogDebug(() => $"StartGameData_ServerSave.SetFromPacket() PlayerItems count: {packet.PlayerItems.Length}, items string count: {items.Count()}");
-        saveGameData.SetObject(SaveGameKeys.Storage_Inventory, items);
+        Multiplayer.LogDebug(() => $"StartGameData_ServerSave.SetFromPacket() PlayerItems count: {packet.PlayerItems.Length}, inventory: {inventoryItems.Count}, containers: {containerItems.Count}");
+        saveGameData.SetObject(SaveGameKeys.Storage_Inventory, inventoryItems);
+        saveGameData.SetObject(SaveGameKeys.Storage_ItemContainers, containerItems);
+        saveGameData.SetBool("Multiplayer_AuthoritativeInventory", true);
+        saveGameData.SetBool("Multiplayer_HasSavedInventory", packet.HasSavedInventory);
 
         //For clients we need to have a session - new users may not have a session and this may also be causing problems with licenses syncing
         if (NetworkLifecycle.Instance.IsHost())

@@ -35,6 +35,7 @@ public class ClientboundSaveGameDataPacket
     // public string Debt_insurance { get; set; }
 
     public PlayerItemSaveData[] PlayerItems { get; set; }
+    public bool HasSavedInventory { get; set; }
 
     public float JobManagerTime { get; set; }
 
@@ -62,6 +63,33 @@ public class ClientboundSaveGameDataPacket
             return $"ClientboundSaveGameDataPacket.CreatePacket() UnlockedGen: {{{unlockedGen}}}, PacketGen: {{{packetGen}}},  UnlockedJob: {{{unlockedJob}}}, PacketJob: {{{packetJob}}}";
         });
 
+        bool hasSavedInventory = NetworkedSaveGameManager.Instance.TryGetPlayerInventory(
+            data, player.Guid, out PlayerItemSaveData[] savedItems);
+        List<PlayerItemSaveData> playerItems = hasSavedInventory
+            ? new List<PlayerItemSaveData>(savedItems)
+            : CreateDefaultInventory();
+        if (hasSavedInventory)
+            RepairInvalidRootInventorySlots(playerItems, player.Guid);
+
+        return new ClientboundSaveGameDataPacket
+        {
+            GameMode = data.GetString(SaveGameKeys.Game_mode),
+            SerializedDifficulty = difficulty.ToString(Formatting.None),
+            Money = StartingItemsController.Instance == null || !StartingItemsController.Instance.itemsLoaded ? data.GetFloat(SaveGameKeys.Player_money).GetValueOrDefault(0) : (float)Inventory.Instance.PlayerMoney,
+            AcquiredGeneralLicenses = data.GetStringArray(SaveGameKeys.Licenses_General),
+            AcquiredJobLicenses = data.GetStringArray(SaveGameKeys.Licenses_Jobs),
+            UnlockedGarages = data.GetStringArray(SaveGameKeys.Garages),
+            Position = playerData?.GetVector3(SaveGameKeys.Player_position) ?? LevelInfo.DefaultSpawnPosition,
+            Rotation = playerData?.GetFloat(SaveGameKeys.Player_rotation) ?? LevelInfo.DefaultSpawnRotation.y,
+            HasDebt = data.GetFloat(SaveGameKeys.Debt_total).GetValueOrDefault(CareerManagerDebtController.Instance != null ? CareerManagerDebtController.Instance.NumberOfNonZeroPricedDebts : 0) > 0,
+            JobManagerTime = JobsManager.Instance.Time,
+            PlayerItems = playerItems.ToArray(),
+            HasSavedInventory = hasSavedInventory,
+        };
+    }
+
+    private static List<PlayerItemSaveData> CreateDefaultInventory()
+    {
         List<PlayerItemSaveData> playerItems = [];
         string[] items = ["shovel", "lighter", "Oiler", "Lantern", "Flashlight", "Hanger", "DuctTape"];
         string[] states = ["", "", "", "", "{\"Restock\": true,\"Battery_power\": 100}", "", ""];
@@ -85,29 +113,43 @@ public class ClientboundSaveGameDataPacket
             playerItems.Add(testItem);
         }
 
-        return new ClientboundSaveGameDataPacket
+        return playerItems;
+    }
+
+    private static void RepairInvalidRootInventorySlots(List<PlayerItemSaveData> items, System.Guid playerGuid)
+    {
+        const int inventoryCapacity = 36;
+        var usedSlots = new HashSet<int>();
+        int repaired = 0;
+
+        for (int i = 0; i < items.Count; i++)
         {
-            GameMode = data.GetString(SaveGameKeys.Game_mode),
-            SerializedDifficulty = difficulty.ToString(Formatting.None),
-            Money = StartingItemsController.Instance == null || !StartingItemsController.Instance.itemsLoaded ? data.GetFloat(SaveGameKeys.Player_money).GetValueOrDefault(0) : (float)Inventory.Instance.PlayerMoney,
-            AcquiredGeneralLicenses = data.GetStringArray(SaveGameKeys.Licenses_General),
-            AcquiredJobLicenses = data.GetStringArray(SaveGameKeys.Licenses_Jobs),
-            UnlockedGarages = data.GetStringArray(SaveGameKeys.Garages),
-            Position = playerData?.GetVector3(SaveGameKeys.Player_position) ?? LevelInfo.DefaultSpawnPosition,
-            Rotation = playerData?.GetFloat(SaveGameKeys.Player_rotation) ?? LevelInfo.DefaultSpawnRotation.y,
-            HasDebt = data.GetFloat(SaveGameKeys.Debt_total).GetValueOrDefault(CareerManagerDebtController.Instance != null ? CareerManagerDebtController.Instance.NumberOfNonZeroPricedDebts : 0) > 0,
-            // Debt_existing_locos = data.GetJObjectArray(SaveGameKeys.Debt_existing_locos)?.NotNull().Select(j => j.ToString()).ToArray(),
-            // Debt_deleted_locos = data.GetJObjectArray(SaveGameKeys.Debt_deleted_locos)?.NotNull().Select(j => j.ToString()).ToArray(),
-            // Debt_existing_jobs = data.GetJObjectArray(SaveGameKeys.Debt_existing_jobs)?.NotNull().Select(j => j.ToString()).ToArray(),
-            // Debt_staged_jobs = data.GetJObjectArray(SaveGameKeys.Debt_staged_jobs)?.NotNull().Select(j => j.ToString()).ToArray(),
-            // Debt_existing_jobless_cars = data.GetJObject(SaveGameKeys.Debt_existing_jobless_cars)?.ToString(),
-            // Debt_deleted_jobless_cars = data.GetJObject(SaveGameKeys.Debt_deleted_jobless_cars)?.ToString(),
-            // Debt_insurance = data.GetJObject(SaveGameKeys.Debt_insurance)?.ToString()
+            PlayerItemSaveData item = items[i];
+            if (item.IsGrabbed || !string.IsNullOrEmpty(item.ContainerId))
+                continue;
 
-            JobManagerTime = JobsManager.Instance.Time,
+            bool slotIsValidAndFree = item.InventorySlotIndex >= 0 &&
+                item.InventorySlotIndex < inventoryCapacity && usedSlots.Add(item.InventorySlotIndex);
+            if (slotIsValidAndFree)
+                continue;
 
-            PlayerItems = playerItems.ToArray()
-        };
+            int freeSlot = -1;
+            for (int slot = 0; slot < inventoryCapacity; slot++)
+            {
+                if (usedSlots.Add(slot))
+                {
+                    freeSlot = slot;
+                    break;
+                }
+            }
+
+            item.InventorySlotIndex = freeSlot;
+            items[i] = item;
+            repaired++;
+        }
+
+        if (repaired > 0)
+            Multiplayer.LogWarning($"Repaired {repaired} invalid persisted inventory slots for {playerGuid}");
     }
 
     public ClientboundSaveGameDataPacket Clone()

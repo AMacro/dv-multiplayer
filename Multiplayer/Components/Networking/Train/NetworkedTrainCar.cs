@@ -46,6 +46,8 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         return b;
     }
 
+    public static IEnumerable<NetworkedTrainCar> GetAll() => trainCarsToNetworkedTrainCars.Values;
+
     public static bool TryGet(ushort netId, out TrainCar trainCar)
     {
         bool b = TryGet(netId, out NetworkedTrainCar networkedTrainCar);
@@ -161,6 +163,9 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
     public string CurrentID { get; private set; }
     public TrainCar TrainCar;
+    public bool HasAttachedCustomizations => TrainCar?.Customization != null &&
+        ((TrainCar.Customization.Customizers?.Count ?? 0) > 0 || TrainCar.Customization.HoleCount > 0);
+    public bool IsInteriorPinnedForNetworkSync => interiorSyncLeaseCount > 0;
     public uint TicksSinceSync = uint.MaxValue;
 
     public uint lastTickProcessed = 0;
@@ -183,6 +188,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     private readonly Dictionary<string, float> lastSentTrainDamages = [];
 
     private InteriorControlsManager interiorControlsManager;
+    private int interiorSyncLeaseCount;
     private readonly Dictionary<ControlImplBase, Action<ValueChangedEventArgs>> scrollableControlDelegates = [];
     private Dictionary<InteriorControlsManager.ControlType, OverridableBaseControl> controlTypeToControl = [];
     private readonly Dictionary<uint, OverridableBaseControl> portToBaseControl = [];
@@ -1166,6 +1172,25 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
         serverPlayersInCar.Add(player);
         TrainCar?.visitChecker?.OnPlayerCarChanged(TrainCar);
+
+        // The vanilla ECS interior streamer is based on the host's local camera and
+        // can ignore CarVisitChecker's remote-player state. Customization components
+        // live in the instantiated interior, so explicitly load it for remote users.
+        if (TrainCar != null && !TrainCar.IsInteriorLoaded)
+            TrainCar.LoadInterior();
+    }
+
+    public void BeginInteriorNetworkSync()
+    {
+        interiorSyncLeaseCount++;
+        if (TrainCar != null && !TrainCar.IsInteriorLoaded)
+            TrainCar.LoadInterior();
+    }
+
+    public void EndInteriorNetworkSync()
+    {
+        if (interiorSyncLeaseCount > 0)
+            interiorSyncLeaseCount--;
     }
 
     public void Server_RemovePlayer(ServerPlayer player)

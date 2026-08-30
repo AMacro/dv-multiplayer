@@ -5,6 +5,7 @@ namespace Multiplayer.Networking.Packets.Serverbound;
 
 public class ServerboundPlayerPositionPacket
 {
+    public uint Tick { get; set; }
     public PlayerTrackingData TrackingData { get; set; }
     public PlayerPostureFlags Posture { get; set; }
     public bool IsOnCar { get; set; }
