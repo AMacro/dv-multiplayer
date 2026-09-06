@@ -115,7 +115,6 @@ public class NetworkedCashRegisterWithModules : IdMonoBehaviour<ushort, Networke
         if (!NetworkLifecycle.Instance.IsHost() || cullingManager == null)
             return;
 
-        Multiplayer.LogDebug(() => $"NetworkedCashRegisterWithModules.Server_InitCashRegister({CashRegister.GetObjectPath()})");
         _cullingManager = cullingManager;
 
         if (_cullingManager != null)
@@ -124,7 +123,6 @@ public class NetworkedCashRegisterWithModules : IdMonoBehaviour<ushort, Networke
 
     private void CullingManager_PlayerEnteredActivationRegion(ServerPlayer serverPlayer)
     {
-        Multiplayer.LogDebug(() => $"NetworkedCashRegisterWithModules.CullingManager_PlayerEnteredActivationRegion({serverPlayer.Username}) deposited cash: {CashRegister.DepositedCash}");
         if (CashRegister.DepositedCash > 0f)
         {
             NetworkLifecycle.Instance.Server.SendCashRegisterAction

@@ -173,6 +173,9 @@ public class ServerBrowserPane : MonoBehaviour
             //For invites/requests
             Multiplayer.Log($"Player invite initiated/request");
 
+            if (!SteamworksUtils.IsDVMP((Lobby)lobbyToJoin))
+                return;
+
             if (lobbyToJoin.Value.Id.IsValid)
             {
                 direct = false;
@@ -808,6 +811,7 @@ public class ServerBrowserPane : MonoBehaviour
         {
             if (result.closedBy == PopupClosedByAction.Abortion)
             {
+                ResetConnectionState();
                 buttonDirectIP.ToggleInteractable(true);
                 return;
             }
@@ -847,6 +851,7 @@ public class ServerBrowserPane : MonoBehaviour
             if (result.closedBy == PopupClosedByAction.Abortion)
             {
                 AttemptFail();
+                buttonDirectIP.ToggleInteractable(true);
                 return;
             }
 

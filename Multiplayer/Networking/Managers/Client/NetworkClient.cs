@@ -416,6 +416,9 @@ public class NetworkClient : NetworkManager
         SendLoadStateUpdate(PlayerLoadingState.Complete);
         displayLoadingInfo.OnLoadingStatusChanged("Complete", false, ((float)LoadingState / (float)PlayerLoadingState.Complete) * 100);
         yield return new WaitForSeconds(0.25f);
+
+        // Start culling player models
+        ClientPlayerManager.StartCulling();
     }
 
     public ClientPlayerWrapper GetWrapper(NetworkedPlayer networkedPlayer)

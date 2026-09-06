@@ -24,7 +24,7 @@ public abstract class NetworkManager
     protected readonly NetDataWriter cachedWriter = new();
 
     private readonly ITransport transport;
-    protected readonly NetManager netManager;
+    //protected readonly NetManager netManager;
 
     protected abstract string LogPrefix { get; }
 

@@ -2,14 +2,19 @@ using DV;
 using Multiplayer.Components.Networking.Player;
 using Multiplayer.Networking.Data.Player;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using Object = UnityEngine.Object;
 
 namespace Multiplayer.Networking.Managers.Client;
 
-public class ClientPlayerManager
+public class ClientPlayerManager : IDisposable
 {
+    private const float CULLING_CHECK_INTERVAL = 2f;
+    private const float CULL_SQR_DISTANCE = 150f * 150f;
+    private const float ACTIVATE_SQR_DISTANCE = 145f * 145f;
+
     private readonly Dictionary<byte, NetworkedPlayer> playerMap = new();
 
     public Action<NetworkedPlayer> OnPlayerConnected;
@@ -17,11 +22,33 @@ public class ClientPlayerManager
     public Action<NetworkedPlayer> OnPlayerPrefsUpdated;
     public IReadOnlyCollection<NetworkedPlayer> Players => playerMap.Values;
 
-    private readonly GameObject playerTagPrefab;
+    private GameObject playerTagPrefab => Multiplayer.AssetIndex.PlayerTag;
+
+    private Coroutine cullingRoutine;
 
     public ClientPlayerManager()
     {
-        playerTagPrefab = Multiplayer.AssetIndex.PlayerTag;
+        cullingRoutine = CoroutineManager.Instance.StartCoroutine(CullingCoro());
+    }
+
+    public void StartCulling()
+    {
+        if (cullingRoutine != null)
+        {
+            CoroutineManager.Instance.Stop(cullingRoutine);
+            cullingRoutine = null;
+        }
+
+        cullingRoutine = CoroutineManager.Instance.StartCoroutine(CullingCoro());
+    }
+
+    void IDisposable.Dispose()
+    {
+        if (UnloadWatcher.isQuitting)
+            return;
+
+        if (cullingRoutine != null)
+            CoroutineManager.Instance?.Stop(cullingRoutine);
     }
 
     public bool TryGetPlayer(byte playerid, out NetworkedPlayer player)
@@ -102,5 +129,31 @@ public class ClientPlayerManager
         }
 
         OnPlayerPrefsUpdated?.Invoke(player);
+    }
+
+    private IEnumerator CullingCoro()
+    {
+        while (true)
+        {
+            yield return new WaitForSeconds(CULLING_CHECK_INTERVAL);
+
+            Vector3 localPos = PlayerManager.PlayerTransform?.position ?? Vector3.zero;
+
+            if (Players == null || Players.Count == 0)
+                continue;
+
+            foreach (var player in Players)
+            {
+                if (player == null)
+                    continue;
+
+                float sqrDist = (player.transform.position - localPos).sqrMagnitude;
+
+                if (player.IsCulled && sqrDist < ACTIVATE_SQR_DISTANCE)
+                    player.IsCulled = false;
+                else if (!player.IsCulled && sqrDist > CULL_SQR_DISTANCE)
+                    player.IsCulled = true;
+            }
+        }
     }
 }

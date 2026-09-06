@@ -1,4 +1,4 @@
-﻿//
+//
 //SpingManager.cs for unity-chan!
 //
 //Original Script is here:
@@ -20,17 +20,23 @@ namespace UnityChan
 		// DynamicRatio is paramater for activated level of dynamic animation 
 		public float dynamicRatio = 1.0f;
 
-		//Ebata
-		public float			stiffnessForce;
+        public bool CompensateForRootMotion = true;
+
+        //Ebata
+        public float			stiffnessForce;
 		public AnimationCurve	stiffnessCurve;
 		public float			dragForce;
 		public AnimationCurve	dragCurve;
 		public SpringBone[] springBones;
 
-		void Start ()
+        private Vector3 lastManagerPosition;
+
+        void Start ()
 		{
 			UpdateParameters ();
-		}
+
+            lastManagerPosition = transform.position;
+        }
 	
 		void Update ()
 		{
@@ -47,11 +53,17 @@ namespace UnityChan
 	
 		private void LateUpdate ()
 		{
-			//Kobayashi
-			if (dynamicRatio != 0.0f) {
+            // calculate the delta of the manager's position since the last frame
+            Vector3 rootDelta = transform.position - lastManagerPosition;
+            lastManagerPosition = transform.position;
+
+            //Kobayashi
+            if (dynamicRatio != 0.0f) {
 				for (int i = 0; i < springBones.Length; i++) {
 					if (dynamicRatio > springBones [i].threshold) {
-						springBones [i].UpdateSpring ();
+                        if (CompensateForRootMotion)
+                            springBones[i].CompensateForRootMovement(rootDelta);
+                        springBones [i].UpdateSpring ();
 					}
 				}
 			}

@@ -625,8 +625,15 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
     protected override void OnDestroy()
     {
-        if (UnloadWatcher.isQuitting || UnloadWatcher.isUnloading)
+        if (UnloadWatcher.isQuitting)
             return;
+
+        if (UnloadWatcher.isUnloading)
+        {
+            itemBaseToNetworkedItem.Clear();
+            base.OnDestroy();
+            return;
+        }
 
         if (NetworkLifecycle.Instance.IsHost())
         {
