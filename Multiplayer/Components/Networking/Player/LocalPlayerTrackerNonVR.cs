@@ -15,10 +15,11 @@ internal class LocalPlayerTrackerNonVR : LocalPlayerTrackerBase
         if (UnloadWatcher.isQuitting)
             return;
 
-        if (fps.Locomotion != null)
+        if (fps?.Locomotion != null)
             fps.Locomotion.LeanDirectionChanged -= LeanDirectionChanged;
 
-        fps.provider.OnPlayerHeightAdjusted -= OnPlayerHeightAdjusted;
+        if (fps?.provider != null)
+            fps.provider.OnPlayerHeightAdjusted -= OnPlayerHeightAdjusted;
     }
 
     protected override void Initialize()

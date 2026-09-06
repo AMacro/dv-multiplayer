@@ -38,6 +38,9 @@ public static class StationLocoSpawner_Start_Patch
         {
             yield return CHECK_DELAY;
 
+            if (UnloadWatcher.isUnloading)
+                yield break;
+
             bool anyoneWithinRange = __instance.spawnTrackMiddleAnchor.transform.position.AnyPlayerSqrMag() < __instance.spawnLocoPlayerSqrDistanceFromTrack;
 
             switch (__instance.playerEnteredLocoSpawnRange)

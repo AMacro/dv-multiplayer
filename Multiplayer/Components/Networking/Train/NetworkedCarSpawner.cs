@@ -4,6 +4,7 @@ using DV.LocoRestoration;
 using DV.Simulation.Brake;
 using DV.ThingTypes;
 using Multiplayer.Components.Networking.World;
+using Multiplayer.ModCompatibility;
 using Multiplayer.Networking.Data.Train;
 using Multiplayer.Patches.CommsRadio;
 using Multiplayer.Utils;
@@ -83,6 +84,10 @@ public static class NetworkedCarSpawner
         trainCar.uniqueCar = false;
         trainCar.InitializeExistingLogicCar(spawnPart.CarId, spawnPart.CarGuid);
 
+        // We have bypassed CarSpawner.BaseSpawn(), which causes issues with Skin Manager for non-loco rolling stock.
+        // If Skin Manager is loaded, we will call the patch method to get things initalised correctly.
+        SkinManager.PrepareThemes(trainCar);
+
         //set health data
         if (spawnPart.Exploded)
         {
@@ -108,10 +113,14 @@ public static class NetworkedCarSpawner
         }
 
         if (trainCar.PaintExterior != null && spawnPart.PaintExterior != null)
-            trainCar.PaintExterior.currentTheme = spawnPart.PaintExterior;
+            trainCar.PaintExterior.currentTheme = spawnPart.PaintExterior; 
+        else
+            Multiplayer.LogDebug(() => $"SpawnCar({spawnPart.CarId}) PaintExterior is null: {trainCar.PaintExterior == null}, spawnPart.PaintExterior is null: {spawnPart.PaintExterior == null}");
 
         if (trainCar.PaintInterior != null && spawnPart.PaintInterior != null)
             trainCar.PaintInterior.currentTheme = spawnPart.PaintInterior;
+        else
+            Multiplayer.LogDebug(() => $"SpawnCar({spawnPart.CarId}) PaintInterior is null: {trainCar.PaintInterior == null}, spawnPart.PaintInterior is null: {spawnPart.PaintInterior == null}");
 
         //Add networked components
         NetworkedTrainCar networkedTrainCar = trainCar.gameObject.GetOrAddComponent<NetworkedTrainCar>();

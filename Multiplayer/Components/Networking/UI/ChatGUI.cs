@@ -653,34 +653,14 @@ public class ChatGUI : MonoBehaviour
     {
         if (block)
         {
-            denied = GameFeatureFlags.DeniedFlags;
-
-            GameFeatureFlags.Deny(GameFeatureFlags.Flag.Movement);
-            GameFeatureFlags.Deny(GameFeatureFlags.Flag.Look);
-            GameFeatureFlags.Deny(GameFeatureFlags.Flag.Hotbar);
-            GameFeatureFlags.Deny(GameFeatureFlags.Flag.Inventory);
-            GameFeatureFlags.Deny(GameFeatureFlags.Flag.ItemGrab);
-            GameFeatureFlags.Deny(GameFeatureFlags.Flag.WorldInteraction);
-            GameFeatureFlags.Deny(GameFeatureFlags.Flag.MouseMode);
-            GameFeatureFlags.Deny(GameFeatureFlags.Flag.KeyboardDriving);
-
             CursorManager.Instance.RequestCursor(this, true);
-
-            //InputFocusManager.Instance.TakeKeyboardFocus();
+            InputManager.SetKeyboardAndMouseEnabled(this, false);
         }
         else
         {
-            GameFeatureFlags.Allow(GameFeatureFlags.Flag.ALL);
-            GameFeatureFlags.Deny(denied);
-
             CursorManager.Instance.RequestCursor(this, false);
-
-            //InputFocusManager.Instance.ReleaseKeyboardFocus(); 
+            InputManager.SetKeyboardAndMouseEnabled(this, true);
         }
-
-        // Block Teleport input and Pause Menu input. Blocking pause menu allows us to use Escape to close the chat.
-        InputManager.Actions.SetActionDisabled(InputManager.RewiredActionConsts.Teleport, block);
-        InputManager.Actions.SetActionDisabled(InputManager.RewiredActionConsts.Escape, block);
     }
     #endregion
 }

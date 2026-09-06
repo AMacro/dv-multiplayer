@@ -11,7 +11,7 @@ public class NetworkedMapMarkersController : MonoBehaviour
     private GameObject textPrefab;
     private readonly Dictionary<NetworkedPlayer, WorldMapIndicatorRefs> playerIndicators = [];
 
-    private void Awake()
+    protected void Awake()
     {
         markersController = GetComponent<MapMarkersController>();
         textPrefab = markersController.GetComponentInChildren<TMP_Text>().gameObject;
@@ -24,13 +24,16 @@ public class NetworkedMapMarkersController : MonoBehaviour
         NetworkLifecycle.Instance.OnTick += OnTick;
     }
 
-    private void OnDestroy()
+    protected void OnDestroy()
     {
         if (UnloadWatcher.isQuitting)
             return;
+
         NetworkLifecycle.Instance.OnTick -= OnTick;
-        if (UnloadWatcher.isUnloading)
+
+        if (NetworkLifecycle.Instance.Client == null || NetworkLifecycle.Instance.Client.ClientPlayerManager == null)
             return;
+
         NetworkLifecycle.Instance.Client.ClientPlayerManager.OnPlayerConnected -= OnPlayerConnected;
         NetworkLifecycle.Instance.Client.ClientPlayerManager.OnPlayerDisconnected -= OnPlayerDisconnected;
         NetworkLifecycle.Instance.Client.ClientPlayerManager.OnPlayerPrefsUpdated -= OnPlayerPrefsUpdated;

@@ -652,8 +652,15 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
     protected override void OnDestroy()
     {
-        if (UnloadWatcher.isQuitting || UnloadWatcher.isUnloading)
+        if (UnloadWatcher.isQuitting)
             return;
+
+        if (UnloadWatcher.isUnloading)
+        {
+            itemBaseToNetworkedItem.Clear();
+            base.OnDestroy();
+            return;
+        }
 
         // NetId 0 means this was a per-player inventory copy, never a world item. Announcing
         // its destruction would make other clients discard whatever they have under id 0.

@@ -1,4 +1,4 @@
-﻿//
+//
 //SpringBone.cs for unity-chan!
 //
 //Original Script is here:
@@ -75,7 +75,21 @@ namespace UnityChan
 			prevTipPos = child.position;
 		}
 
-		public void UpdateSpring ()
+        /// <summary>
+		/// Shifts the tracked tip positions by the rig root's translation delta since last frame,
+		/// so that UpdateSpring()'s drag term measures only relative swing motion.
+		/// </summary>
+		/// <param name="rootDelta">World-space translation of the rig's root since the last frame.</param>
+		public void CompensateForRootMovement(Vector3 rootDelta)
+        {
+            if (rootDelta == Vector3.zero)
+                return;
+
+            currTipPos += rootDelta;
+            prevTipPos += rootDelta;
+        }
+
+        public void UpdateSpring ()
 		{
 			//Kobayashi
 			org = trs;

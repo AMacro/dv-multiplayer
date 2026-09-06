@@ -52,6 +52,9 @@ public class CullingManager : IDisposable
 
     public void Dispose()
     {
+        if (UnloadWatcher.isUnloading)
+            return;
+
         if (checkCoro != null)
             CoroutineManager.Instance.Stop(checkCoro);
 
@@ -78,6 +81,9 @@ public class CullingManager : IDisposable
         while (true)
         {
             yield return new WaitForSeconds(_checkInterval);
+
+            if (UnloadWatcher.isUnloading)
+                yield break;
 
             //if not active then there is no one close by
             if (_referenceObject != null && _referenceObject.activeInHierarchy)

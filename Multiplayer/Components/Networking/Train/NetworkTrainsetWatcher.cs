@@ -1,10 +1,12 @@
-using System.Linq;
 using DV.Utils;
-using UnityEngine;
 using JetBrains.Annotations;
+using Multiplayer.Networking.Data.Train;
 using Multiplayer.Networking.Packets.Clientbound.Train;
 using Multiplayer.Utils;
-using Multiplayer.Networking.Data.Train;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using UnityEngine;
 
 namespace Multiplayer.Components.Networking.Train;
 
@@ -15,6 +17,7 @@ public class NetworkTrainsetWatcher : SingletonBehaviour<NetworkTrainsetWatcher>
     const float DESIRED_FULL_SYNC_INTERVAL = 2f; // in seconds
     const int MAX_UNSYNC_TICKS = (int)(NetworkLifecycle.TICK_RATE * DESIRED_FULL_SYNC_INTERVAL);
     public const float VELOCITY_THRESHOLD = 0.01f;
+    public const float MAX_POSITION_DELTA = 2f; //if the delta is greater than this we will do a hard correction
 
     protected override void Awake()
     {
@@ -112,7 +115,7 @@ public class NetworkTrainsetWatcher : SingletonBehaviour<NetworkTrainsetWatcher>
                 Multiplayer.LogError($"NetworkedTrainCar not found for TrainCar {trainCar?.ID} in set {set?.id} ({set.firstCar?.GetNetId()})");
                 return;
             }
-            
+
             if (trainCar.derailed)
             {
                 if (trainCar?.rb == null)
@@ -148,7 +151,7 @@ public class NetworkTrainsetWatcher : SingletonBehaviour<NetworkTrainsetWatcher>
             return;
 
         TrainsetMovementPart[] trainsetParts = new TrainsetMovementPart[set.cars.Count];
-        
+
         for (int i = 0; i < set.cars.Count; i++)
         {
             TrainCar trainCar = set.cars[i];
@@ -200,8 +203,14 @@ public class NetworkTrainsetWatcher : SingletonBehaviour<NetworkTrainsetWatcher>
 
     public void Client_HandleTrainsetPhysicsUpdate(ClientboundTrainsetPhysicsPacket packet)
     {
-        Trainset set = Trainset.allSets.Find(set => set.firstCar.GetNetId() == packet.FirstNetId || set.lastCar.GetNetId() == packet.FirstNetId ||
-                                                    set.firstCar.GetNetId() == packet.LastNetId || set.lastCar.GetNetId() == packet.LastNetId);
+        Trainset set = Trainset.allSets.Find
+        (
+            set =>
+            set.firstCar.GetNetId() == packet.FirstNetId ||
+            set.lastCar.GetNetId() == packet.FirstNetId ||
+            set.firstCar.GetNetId() == packet.LastNetId ||
+            set.lastCar.GetNetId() == packet.LastNetId
+        );
 
         if (set == null)
         {
@@ -209,6 +218,7 @@ public class NetworkTrainsetWatcher : SingletonBehaviour<NetworkTrainsetWatcher>
             return;
         }
 
+        // We have missing cars - TODO: resolve
         if (set.cars.Count != packet.TrainsetParts.Length)
         {
             //log the discrepancies
@@ -217,7 +227,7 @@ public class NetworkTrainsetWatcher : SingletonBehaviour<NetworkTrainsetWatcher>
 
             for (int i = 0; i < packet.TrainsetParts.Length; i++)
             {
-                if (NetworkedTrainCar.TryGet(packet.TrainsetParts[i].NetId ,out NetworkedTrainCar networkedTrainCar))
+                if (NetworkedTrainCar.TryGet(packet.TrainsetParts[i].NetId, out NetworkedTrainCar networkedTrainCar))
                 {
                     //Multiplayer.LogDebug(()=>$"Applying TrainPhysicsUpdate to {packet.TrainsetParts[i].NetId}");
                     networkedTrainCar.Client_ReceiveTrainPhysicsUpdate(in packet.TrainsetParts[i], packet.Tick);
@@ -231,20 +241,63 @@ public class NetworkTrainsetWatcher : SingletonBehaviour<NetworkTrainsetWatcher>
         }
 
         //Check direction of trainset vs packet
-        if(set.firstCar.GetNetId() == packet.LastNetId)
+        if (set.firstCar.GetNetId() == packet.LastNetId)
             packet.TrainsetParts = packet.TrainsetParts.Reverse().ToArray();
 
-        //Multiplayer.Log($"Client_HandleTrainsetPhysicsUpdate({set.firstCar.ID}):, tick: {packet.Tick}");
+        // Check if any of the cars have exceeded the threshold for a hard sync
+        Dictionary<NetworkedTrainCar, TrainsetMovementPart> networkedCars = new(set.cars.Count);
+        bool hardSyncRequired = false;
+        bool missingCars = false;
+        for (int i = 0; i < packet.TrainsetParts.Length; i++)
+        {
+            if (NetworkedTrainCar.TryGet(packet.TrainsetParts[i].NetId, out NetworkedTrainCar networkedTrainCar))
+            {
+                networkedCars.Add(networkedTrainCar, packet.TrainsetParts[i]);
+
+                bool thresholdExceeded = networkedTrainCar.Client_CheckThreshold(in packet.TrainsetParts[i], packet.Tick);
+
+                hardSyncRequired |= thresholdExceeded;
+
+                //if (thresholdExceeded)
+                //    Multiplayer.LogDebug(() => $"Client_ReceiveTrainPhysicsUpdate() First: {packet.FirstNetId}, Last: {packet.LastNetId}, Count: {packet.TrainsetParts.Length}");
+            }
+            else
+            {
+                Multiplayer.LogWarning($"Unable to apply TrainPhysicsUpdate to {packet.TrainsetParts[i].NetId}, NetworkedTrainCar not found!");
+                missingCars = true;
+            }
+        }
+
+        if (hardSyncRequired)
+        {
+            //Multiplayer.LogDebug(() => $"Client_ReceiveTrainPhysicsUpdate() Hard sync required for trainset with FirstNetId: {packet.FirstNetId}, LastNetId: {packet.LastNetId}");
+
+            CoroutineManager.Instance.StartCoroutine(Client_HardCorrect(networkedCars, packet.Tick));
+            return;
+        }
 
         for (int i = 0; i < packet.TrainsetParts.Length; i++)
         {
-            if(set.cars[i].TryNetworked(out NetworkedTrainCar networkedTrainCar))
+            if (set.cars[i].TryNetworked(out NetworkedTrainCar networkedTrainCar))
                 networkedTrainCar.Client_ReceiveTrainPhysicsUpdate(in packet.TrainsetParts[i], packet.Tick);
             else
                 Multiplayer.LogWarning($"Unable to apply TrainPhysicsUpdate to TrainSet with FirstNetId: {packet.FirstNetId}, NetworkedTrainCar not found!");
         }
     }
-     
+
+    private IEnumerator Client_HardCorrect(Dictionary<NetworkedTrainCar, TrainsetMovementPart> networkedCars, uint tick)
+    {
+        foreach (var kvp in networkedCars)
+            kvp.Key.Client_BeginHardCorrection(kvp.Value, tick);
+
+        Physics.SyncTransforms();
+
+        yield return new WaitForFixedUpdate();
+
+        foreach (var kvp in networkedCars)
+            kvp.Key.Client_EndHardCorrection(kvp.Value, tick);
+    }
+
     #endregion
 
     [UsedImplicitly]
