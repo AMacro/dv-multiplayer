@@ -52,7 +52,6 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using Unity.Jobs;
 using UnityEngine;
 using Object = UnityEngine.Object;
 
@@ -1248,7 +1247,7 @@ public class NetworkClient : NetworkManager
         if (!jobUpdateProcessing)
         {
             jobUpdateProcessing = true;
-            SingletonBehaviour<CoroutineManager>.Instance.Run(ProcessClientboundJobUpdatePackets());
+            CoroutineManager.Instance.Run(ProcessClientboundJobUpdatePackets());
         }
 
     }
@@ -1294,7 +1293,7 @@ public class NetworkClient : NetworkManager
         if (!taskUpdateProcessing)
         {
             taskUpdateProcessing = true;
-            SingletonBehaviour<CoroutineManager>.Instance.Run(ProcessClientboundTaskUpdatePackets());
+            CoroutineManager.Instance.Run(ProcessClientboundTaskUpdatePackets());
         }
     }
 
@@ -1310,14 +1309,25 @@ public class NetworkClient : NetworkManager
                 if ((NetworkedStationController.WaitingNSCs.Any()) || (NetworkedStationController.DelayedJobs.Contains(packet.JobNetId)))
                 { 
                     var st = Stopwatch.StartNew();
-                    if (NetworkedStationController.WaitingNSCs.Any()) LogDebug(() => $"NetworkClient.ProcessClientboundTaskUpdatePackets: Stations are waiting for new jobs, task updates will be processed later");
+                    if (NetworkedStationController.WaitingNSCs.Any())
+                        LogDebug(() => $"NetworkClient.ProcessClientboundTaskUpdatePackets: Stations are waiting for new jobs, task updates will be processed later");
+
                     yield return new WaitUntil(() => !NetworkedStationController.WaitingNSCs.Any() || st.Elapsed.Seconds >= 10);
-                    if (st.Elapsed.Seconds >= 10) LogWarning("NetworkClient.ProcessClientboundTaskUpdatePackets timed out waiting for waitingNSCs");
+
+                    if (st.Elapsed.Seconds >= 10)
+                        LogWarning("NetworkClient.ProcessClientboundTaskUpdatePackets timed out waiting for waitingNSCs");
+
                     yield return null;
-                    if (NetworkedStationController.DelayedJobs.Contains(packet.JobNetId)) Multiplayer.LogDebug(() => $"NetworkClient.ProcessClientboundTaskUpdatePackets: Job with netId {packet.JobNetId} is delayed in its creation, will wait with task updating");
+
+                    if (NetworkedStationController.DelayedJobs.Contains(packet.JobNetId))
+                        Multiplayer.LogDebug(() => $"NetworkClient.ProcessClientboundTaskUpdatePackets: Job with netId {packet.JobNetId} is delayed in its creation, will wait with task updating");
                     yield return new WaitUntil(() => !NetworkedStationController.DelayedJobs.Contains(packet.JobNetId) || st.Elapsed.Seconds >= 20);
-                    if (st.Elapsed.Seconds >= 20) LogWarning($"NetworkClient.ProcessClientboundTaskUpdatePackets timed out waiting for delayed job with netId {packet.JobNetId}");
+
+                    if (st.Elapsed.Seconds >= 20)
+                        LogWarning($"NetworkClient.ProcessClientboundTaskUpdatePackets timed out waiting for delayed job with netId {packet.JobNetId}");
+
                     yield return null;
+
                     st.Reset();
                 }
 
@@ -1366,7 +1376,7 @@ public class NetworkClient : NetworkManager
                         if (cars != null && cars.Contains(carToReplace))
                         {
                             var job = task.Job;
-                            var jobToCarsDict = SingletonBehaviour<JobsManager>.Instance.jobToJobCars;
+                            var jobToCarsDict = JobsManager.Instance.jobToJobCars;
                             if (jobToCarsDict.TryGetValue(job, out var dictCars)) jobToCarsDict[job] = (dictCars?.Replace(carToReplace, car).ToHashSet());
                             if (NetworkedJob.TryGetFromJob(job, out var netJob) && netJob.Station != null)
                             {

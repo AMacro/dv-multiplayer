@@ -2,18 +2,15 @@ using DV.Booklets;
 using DV.Logic.Job;
 using DV.ServicePenalty;
 using DV.ThingTypes;
-using DV.Utils;
 using Multiplayer.Components.Networking.Jobs;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Networking.Data.Items;
 using Multiplayer.Networking.Data.Jobs;
-using Multiplayer.Networking.Managers;
 using Multiplayer.Utils;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using System.Security.Cryptography;
 using UnityEngine;
 
 namespace Multiplayer.Components.Networking.World;
@@ -21,7 +18,7 @@ namespace Multiplayer.Components.Networking.World;
 public class NetworkedStationController : IdMonoBehaviour<uint, NetworkedStationController>
 {
     #region Lookup Cache
-    public static readonly Dictionary<StationController, NetworkedStationController> stationControllerToNetworkedStationController = [];
+    private static readonly Dictionary<StationController, NetworkedStationController> stationControllerToNetworkedStationController = [];
     private static readonly Dictionary<string, NetworkedStationController> stationIdToNetworkedStationController = [];
     private static readonly Dictionary<string, StationController> stationIdToStationController = [];
     private static readonly Dictionary<Station, NetworkedStationController> stationToNetworkedStationController = [];
@@ -188,7 +185,7 @@ public class NetworkedStationController : IdMonoBehaviour<uint, NetworkedStation
     public HashSet<NetworkedJob> NetworkedJobs { get; } = [];
     private readonly List<NetworkedJob> NewJobs = [];
     private readonly List<NetworkedJob> DirtyJobs = [];
-    public readonly HashSet<ushort> TimeoutJobs = [];
+    private readonly HashSet<ushort> TimeoutJobs = [];
 
     private List<Job> availableJobs;
     private List<Job> takenJobs;
@@ -201,7 +198,8 @@ public class NetworkedStationController : IdMonoBehaviour<uint, NetworkedStation
         base.Awake();
         StationController = GetComponent<StationController>();
         StartCoroutine(WaitForLogicStation());
-        if (!NetworkLifecycle.Instance.IsHost()) UpdateCarPlatesRoutine = StartCoroutine(UpdateCarPlatesCoro());
+        if (!NetworkLifecycle.Instance.IsHost())
+            UpdateCarPlatesRoutine = StartCoroutine(UpdateCarPlatesCoro());
     }
 
     protected void Start()
@@ -468,7 +466,7 @@ public class NetworkedStationController : IdMonoBehaviour<uint, NetworkedStation
         return networkedJob;
     }
 
-    public void AskServerForAdditionalJobs(bool generateJobs)
+    public void RequestAdditionalJobs(bool generateJobs)
     {
         var present = NetworkedJobs.Select(nj => nj.NetId).ToArray();
         NetworkLifecycle.Instance.Client.SendJobsRequest(this, present, generateJobs, []);
@@ -477,7 +475,8 @@ public class NetworkedStationController : IdMonoBehaviour<uint, NetworkedStation
     public IEnumerator UpdateJobs(uint stationNetId, JobUpdateStruct[] jobs)
     {
         Coroutine[] coroutines = jobs.Select(j => StartCoroutine(UpdateJob(stationNetId, j))).ToArray();
-        foreach (var coroutine in coroutines) yield return coroutine;
+        foreach (var coroutine in coroutines)
+            yield return coroutine;
     }
 
     public IEnumerator UpdateJob(uint stationNetId, JobUpdateStruct job)
@@ -496,7 +495,7 @@ public class NetworkedStationController : IdMonoBehaviour<uint, NetworkedStation
         if (!NetworkedJob.Get(job.JobNetID, out NetworkedJob netJob))
         {
             NetworkLifecycle.Instance.Client.LogWarning($"Unknown or invalid jobNetId {job.JobNetID}, aksing server to re-send jobs and skipping update!");
-            AskServerForAdditionalJobs(false);
+            RequestAdditionalJobs(false);
             yield break;
         }
 
@@ -569,7 +568,7 @@ public class NetworkedStationController : IdMonoBehaviour<uint, NetworkedStation
                 takenJobs.Add(netJob.Job);
 
                 netJob.Job.TakeJob(true); //take job as if loaded from save to prevent debt controller kicking in
-                SingletonBehaviour<JobsManager>.Instance.currentJobs.Add(netJob.Job);
+                JobsManager.Instance.currentJobs.Add(netJob.Job);
 
                 if (canPrint)
                 {
@@ -587,11 +586,11 @@ public class NetworkedStationController : IdMonoBehaviour<uint, NetworkedStation
             case JobState.Completed:
                 takenJobs.Remove(netJob.Job);
                 completedJobs.Add(netJob.Job);
-                SingletonBehaviour<JobsManager>.Instance.CompleteTheJob(netJob.Job);
+                JobsManager.Instance.CompleteTheJob(netJob.Job);
 
                 if (canPrint)
                 {
-                    DisplayableDebt displayableDebt = SingletonBehaviour<JobDebtController>.Instance.LastStagedJobDebt;
+                    DisplayableDebt displayableDebt = JobDebtController.Instance.LastStagedJobDebt;
                     JobReport jobReport = BookletCreator.CreateJobReport(netJob.Job, displayableDebt, validator.bookletPrinter.spawnAnchor.position, validator.bookletPrinter.spawnAnchor.rotation, WorldMover.OriginShiftParent);
                     netItem = jobReport.GetOrAddComponent<NetworkedItem>();
                     netItem.Initialize(jobReport, updateData.ItemNetID, false);
@@ -608,13 +607,13 @@ public class NetworkedStationController : IdMonoBehaviour<uint, NetworkedStation
             case JobState.Abandoned:
                 takenJobs.Remove(netJob.Job);
                 abandonedJobs.Add(netJob.Job);
-                SingletonBehaviour<JobsManager>.Instance.AbandonJob(netJob.Job);
+                JobsManager.Instance.AbandonJob(netJob.Job);
                 UpdateCarPlates(netJob.JobCars, string.Empty);
                 break;
 
             case JobState.Expired:
                 netJob.Job.ExpireJob();
-                SingletonBehaviour<JobsManager>.Instance.currentJobs.Remove(netJob.Job);
+                JobsManager.Instance.currentJobs.Remove(netJob.Job);
                 netJob.DestroyJobOverview();
 
                 UpdateCarPlates(netJob.JobCars, string.Empty);
@@ -659,7 +658,8 @@ public class NetworkedStationController : IdMonoBehaviour<uint, NetworkedStation
 
     public void UpdateCarPlates(List<ushort> carNetIds, string jobId)
     {
-        if (!CarPlateUpdates.Enqueue(new(carNetIds, jobId))) Multiplayer.LogDebug(() => $"Car plate update to {jobId} for cars with netIds {string.Join(", ", carNetIds)} alredy scheduled!");
+        if (!CarPlateUpdates.Enqueue(new(carNetIds, jobId)))
+            Multiplayer.LogDebug(() => $"Car plate update to {jobId} for cars with netIds {string.Join(", ", carNetIds)} alredy scheduled!");
     }
 
     public IEnumerator UpdateCarPlatesCoro()

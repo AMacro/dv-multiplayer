@@ -27,10 +27,16 @@ public static class CarsSaveManager_Patch
     [HarmonyPostfix]
     private static void RestoreCarConnections_Postfix(JObject carData)
     {
-        TrainCar trainCarByCarGuid = SingletonBehaviour<TrainCarRegistry>.Instance.GetTrainCarByCarGuid(carData.GetString("carGuid"));
+        TrainCar trainCarByCarGuid = TrainCarRegistry.Instance.GetTrainCarByCarGuid(carData.GetString(CarsSaveManager.CAR_GUID_SAVE_KEY));
         if (WorldStreamingInit.IsLoaded && trainCarByCarGuid != null && NetworkedTrainCar.TryGetFromTrainCar(trainCarByCarGuid, out var networkedTrainCar))
         {
-            NetworkLifecycle.Instance.Server.SendAbsoluteCouplingStatus(trainCarByCarGuid);
+            if (networkedTrainCar == null)
+            {
+                Multiplayer.LogWarning($"TrainCar {trainCarByCarGuid.ID} doesn´t have a valid networked counterpart");
+                return;
+            }
+
+            NetworkLifecycle.Instance.Server.SendAbsoluteCouplingStatus(trainCarByCarGuid, networkedTrainCar.NetId);
         }
     }
 }

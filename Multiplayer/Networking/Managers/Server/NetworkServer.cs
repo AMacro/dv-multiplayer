@@ -917,14 +917,8 @@ public class NetworkServer : NetworkManager
         );
     }
 
-    public void SendAbsoluteCouplingStatus(TrainCar trainCar)
+    public void SendAbsoluteCouplingStatus(TrainCar trainCar, ushort netId)
     {
-        if (!NetworkedTrainCar.TryGetNetId(trainCar, out ushort netId))
-        {
-            LogWarning($"TrainCar {trainCar.ID} doesn´t have a walid networked counterpart");
-            return;
-        }
-
         LogDebug(() => $"SendAbsoluteCouplingStatus({trainCar.ID})");
 
         bool frontMu = false;
@@ -2104,15 +2098,18 @@ public class NetworkServer : NetworkManager
             return;
         }
 
-        SingletonBehaviour<CoroutineManager>.Instance.Run(SendJobsToClientsOnRequest(packet, networkedStationController));
+        CoroutineManager.Instance.Run(SendJobsToClientsOnRequest(packet, networkedStationController));
     }
 
     private IEnumerator SendJobsToClientsOnRequest(ServerboundJobsRequestPacket packet, NetworkedStationController networkedStationController)
     {
         if (PersistentJobs.Active)
         {
-            if (PersistentJobs.ResumeCoroRunning) LogDebug(() => $"ServerboundJobsRequestPacket station {packet.StationNetId} is probably resuming cars, waiting");
-            while (PersistentJobs.ResumeCoroRunning) yield return null;
+            if (PersistentJobs.ResumeCoroRunning)
+                LogDebug(() => $"ServerboundJobsRequestPacket station {packet.StationNetId} is probably resuming cars, waiting");
+
+            while (PersistentJobs.ResumeCoroRunning)
+                yield return null;
         }
 
         if (packet.GenerateJobs)
@@ -2132,14 +2129,23 @@ public class NetworkServer : NetworkManager
 
         if (PersistentJobs.Active)
         {
-            if (PersistentJobs.ResumeCoroRunning) LogDebug(() => $"ServerboundJobsRequestPacket station {packet.StationNetId} is probably resuming cars, waiting");
-            while (PersistentJobs.ResumeCoroRunning) yield return null;
+            if (PersistentJobs.ResumeCoroRunning)
+                LogDebug(() => $"ServerboundJobsRequestPacket station {packet.StationNetId} is probably resuming cars, waiting");
+
+            while (PersistentJobs.ResumeCoroRunning)
+                yield return null;
         }
 
-        if (networkedStationController.StationController.ProceduralJobsController.IsJobGenerationActive) LogDebug(() => $"Station {networkedStationController.StationController.stationInfo.YardID} is still generating jobs, will wait with sending");
-        while (networkedStationController.StationController.ProceduralJobsController.IsJobGenerationActive) yield return null;
+        if (networkedStationController.StationController.ProceduralJobsController.IsJobGenerationActive)
+            LogDebug(() => $"Station {networkedStationController.StationController.stationInfo.YardID} is still generating jobs, will wait with sending");
 
-        NetworkedJob[] send = (packet.SpecificJobsNetIds.Any()) ? networkedStationController.NetworkedJobs.Where(nj => packet.SpecificJobsNetIds.Contains(nj.NetId)).ToArray() : networkedStationController.NetworkedJobs.Where(nj => !packet.ExcludeJobNetId.Contains(nj.NetId)).ToArray();
+        while (networkedStationController.StationController.ProceduralJobsController.IsJobGenerationActive)
+            yield return null;
+
+        NetworkedJob[] send = (packet.SpecificJobsNetIds.Any())
+            ? networkedStationController.NetworkedJobs.Where(nj => packet.SpecificJobsNetIds.Contains(nj.NetId)).ToArray()
+            : networkedStationController.NetworkedJobs.Where(nj => !packet.ExcludeJobNetId.Contains(nj.NetId)).ToArray();
+
         NetworkLifecycle.Instance.Server.SendJobsCreatePacket(networkedStationController, send);
     }
 

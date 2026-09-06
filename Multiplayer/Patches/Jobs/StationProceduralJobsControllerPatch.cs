@@ -24,8 +24,10 @@ public static class StationProceduralJobsController_TryToGenerateJobs_Patch
             else
             {
                 bool generate = !networkedStationController.NetworkedJobs.Any();
-                if (generate) Multiplayer.LogDebug(() => $"StationProceduralJobsController_TryToGenerateJobs_Patch: Station {__instance.stationController.stationInfo.YardID} requesting job generation on server");
-                networkedStationController.AskServerForAdditionalJobs(generate);
+                if (generate)
+                    Multiplayer.LogDebug(() => $"StationProceduralJobsController_TryToGenerateJobs_Patch: Station {__instance.stationController.stationInfo.YardID} requesting job generation on server");
+
+                networkedStationController.RequestAdditionalJobs(generate);
             }
         }
         return NetworkLifecycle.Instance.IsHost();

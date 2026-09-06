@@ -198,8 +198,8 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     private bool cargoIsLoading;
     public byte CargoModelIndex = byte.MaxValue;
     private bool carHealthDirty;
-    public bool sendCouplers;
-    public bool sendCables;
+    private bool sendCouplers;
+    private bool sendCables;
 
     public bool IsDestroying;
 
@@ -217,8 +217,8 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     // Control authority tracking
     private readonly Dictionary<uint, ServerPlayer> portAuthority = [];
 
-    public bool doNotUpdate = true;
-    public uint? startTick = null;
+    public bool DoNotUpdate = true;
+    private uint? startTick = null;
 
     #endregion
 
@@ -879,7 +879,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             Server_SendCarHealthState();
         }
 
-        if (!doNotUpdate)
+        if (!DoNotUpdate)
         {
             Server_SendBrakeStates();
             Server_SendCouplers();
@@ -892,7 +892,8 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         }
         else
         {
-            if ((tick - startTick > 120) && !PersistentJobs.ResumeCoroRunning) doNotUpdate = false;
+            if ((tick - startTick > 120) && !PersistentJobs.ResumeCoroRunning)
+                DoNotUpdate = false;
         }
     }
 
@@ -911,7 +912,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         );
     }
 
-    public void Server_SendCouplers()
+    private void Server_SendCouplers()
     {
         if (!sendCouplers)
             return;
@@ -942,7 +943,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         NetworkLifecycle.Instance.Server.SendCockState(NetId, TrainCar.rearCoupler, TrainCar.rearCoupler.IsCockOpen);
     }
 
-    public void Server_SendCables()
+    private void Server_SendCables()
     {
         if (!sendCables)
             return;

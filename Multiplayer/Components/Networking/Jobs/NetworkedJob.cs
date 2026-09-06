@@ -1,7 +1,6 @@
 using DV.CabControls;
 using DV.InventorySystem;
 using DV.Logic.Job;
-using DV.Utils;
 using Multiplayer.Components.Networking.World;
 using Multiplayer.ModCompatibility;
 using Multiplayer.Networking.Data.Jobs;
@@ -304,7 +303,7 @@ public class NetworkedJob : IdMonoBehaviour<ushort, NetworkedJob>
     private void OnJobCarChanged((Job, Car) jct)
     {
         Multiplayer.LogDebug(() => $"OnJobCarChanged() fired for {jct.Item2.ID} in {jct.Item1.ID}");
-        SingletonBehaviour<CoroutineManager>.Instance.Run(OnJobCarChangedDelayed(jct));
+        CoroutineManager.Instance.Run(OnJobCarChangedDelayed(jct));
     }
 
     private IEnumerator OnJobCarChangedDelayed((Job, Car) jct)
@@ -316,8 +315,17 @@ public class NetworkedJob : IdMonoBehaviour<ushort, NetworkedJob>
             yield return new WaitUntil(() => PersistentJobs.ResumeCoroRunning == false);
         }
         yield return null;
+
         var (job, car) = jct;
-        if (job.ID == Job.ID) foreach (var task in job.tasks) NetworkedTask.DoOnActualTask(task, t => { if (((t.GetType() != typeof(ParallelTasks)) && (t.GetType() != typeof(SequentialTasks))) && (NetworkedTask.TryGet(t, out var netTask))) netTask.UpdateCar(car); });
+
+        if (job.ID == Job.ID)
+            foreach (var task in job.tasks)
+                NetworkedTask.DoOnActualTask(task, t =>
+                {
+                    if (((t.GetType() != typeof(ParallelTasks)) && (t.GetType() != typeof(SequentialTasks))) && (NetworkedTask.TryGet(t, out var netTask)))
+                        netTask.UpdateCar(car);
+                });
+
         yield break;
     }
 

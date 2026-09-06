@@ -98,8 +98,13 @@ public class JobData
         };
 
         HashSet<Car> cars = [];
-        jobData.GetCars().Do(cid => { if (NetworkedTrainCar.TryGet(cid, out Car car)) cars.Add(car); });
-        SingletonBehaviour<JobsManager>.Instance.RegisterGeneratedJob(newJob, cars);
+        jobData.GetCars().Do(cid =>
+        {
+            if (NetworkedTrainCar.TryGet(cid, out Car car))
+                cars.Add(car);
+        });
+
+        JobsManager.Instance.RegisterGeneratedJob(newJob, cars);
 
         return new(newJob, netIdToTask);
     }

@@ -1,5 +1,3 @@
-using DV.UIFramework;
-using DV.Utils;
 using HarmonyLib;
 using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.Train;
@@ -15,7 +13,7 @@ namespace Multiplayer.Patches.Train;
 public static class CarSpawner_Patch
 {
     private static readonly HashSet<string> carIdsWithNoUpdates = [];
-    private static bool allowingCrasUpdatesCoroRunning = false;
+    private static bool allowingCarsUpdatesCoroRunning = false;
 
     [HarmonyPatch(nameof(CarSpawner.PrepareTrainCarForDeleting))]
     [HarmonyPrefix]
@@ -108,22 +106,22 @@ public static class CarSpawner_Patch
         if (__result.TryNetworked(out var netTC))
         {
             TrainStress.globalIgnoreStressCalculation = true;
-            netTC.doNotUpdate = true;
+            netTC.DoNotUpdate = true;
             carIdsWithNoUpdates.Add(__result.ID);
             NetworkLifecycle.Instance.Server.SendSpawnTrainset([__result], false, true);
 
-            if (!allowingCrasUpdatesCoroRunning)
+            if (!allowingCarsUpdatesCoroRunning)
             {
-                SingletonBehaviour<CoroutineManager>.Instance.Run(AllowingCrasUpdatesCoro());
+                CoroutineManager.Instance.Run(AllowingCarsUpdatesCoro());
             }
         }
     }
 
-    private static IEnumerator AllowingCrasUpdatesCoro()
+    private static IEnumerator AllowingCarsUpdatesCoro()
     {
         try
         {
-            allowingCrasUpdatesCoroRunning = true;
+            allowingCarsUpdatesCoroRunning = true;
             yield return null;
 
             Multiplayer.LogDebug(() => $"CarSpawnerPatch: waiting with newly resumed car physics updates for all cars to resume");
@@ -131,12 +129,14 @@ public static class CarSpawner_Patch
             yield return WaitFor.SecondsRealtime(3f);
             Multiplayer.LogDebug(() => $"CarSpawnerPatch: car resuming finished, will allow physics updates for cars {(string.Join(", ", carIdsWithNoUpdates))}");
 
-            foreach (var tcId in carIdsWithNoUpdates) if (NetworkedTrainCar.GetFromTrainId(tcId, out var ntc)) ntc.doNotUpdate = false;
+            foreach (var tcId in carIdsWithNoUpdates)
+                if (NetworkedTrainCar.GetFromTrainId(tcId, out var ntc))
+                    ntc.DoNotUpdate = false;
         }
         finally
         {
             TrainStress.globalIgnoreStressCalculation = false;
-            allowingCrasUpdatesCoroRunning = false;
+            allowingCarsUpdatesCoroRunning = false;
         }
     }
 }

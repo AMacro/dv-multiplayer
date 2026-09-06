@@ -48,18 +48,6 @@ public class NetworkedTask : IdMonoBehaviour<ushort, NetworkedTask>
     }
     #endregion
 
-    public static void DoOnActualTask(Task task, Action<Task> action)
-    {
-        if (task is ParallelTasks || task is SequentialTasks)
-        {
-            Traverse.Create(task)
-                .Field("tasks")
-                .GetValue<IEnumerable<Task>>()
-                .Do(t => DoOnActualTask(t, action));
-        }
-        else action(task);
-    }
-
     protected override bool IsIdServerAuthoritative => true;
 
     public Task Task { get; private set; }
@@ -95,6 +83,21 @@ public class NetworkedTask : IdMonoBehaviour<ushort, NetworkedTask>
 
         if (Task != null)
             taskToNetworkedTask.Remove(Task);
+    }
+
+    public static void DoOnActualTask(Task task, Action<Task> action)
+    {
+        if (task is ParallelTasks || task is SequentialTasks)
+        {
+            Traverse.Create(task)
+                .Field("tasks")
+                .GetValue<IEnumerable<Task>>()
+                .Do(t => DoOnActualTask(t, action));
+        }
+        else
+        {
+            action(task);
+        }
     }
 
     public void SetState(TaskState newState)

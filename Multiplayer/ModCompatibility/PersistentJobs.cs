@@ -35,7 +35,7 @@ internal class PersistentJobs
         if (persistentJobs?.Enabled == true)
         {
             Multiplayer.Log("Persistent Jobs mod found...");
-            SingletonBehaviour<CoroutineManager>.Instance.Run(WaitForPersistentJobsAndLoad(persistentJobs));
+            CoroutineManager.Instance.Run(WaitForPersistentJobsAndLoad(persistentJobs));
         }
     }
 
