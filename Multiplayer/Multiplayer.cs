@@ -10,7 +10,6 @@ using Multiplayer.Components.Networking;
 using Multiplayer.Editor;
 using Multiplayer.ModCompatibility;
 using Multiplayer.Models;
-using Multiplayer.Patches.Mods;
 using Multiplayer.Patches.World;
 using System;
 using System.IO;
@@ -100,13 +99,7 @@ public static class Multiplayer
             SimComponent_Tick_Patch.Patch(harmony);
 
             // Third Party Integrations
-            UnityModManager.ModEntry remoteDispatch = UnityModManager.FindMod("RemoteDispatch");
-            if (remoteDispatch?.Enabled == true)
-            {
-                Log("Found RemoteDispatch, patching...");
-                RemoteDispatchPatch.Patch(harmony, remoteDispatch.Assembly);
-            }
-
+            RemoteDispatch.TryLoad(harmony);
             PersistentJobs.TryLoadPersistentJobs();
             SkinManager.Initialize();
 
