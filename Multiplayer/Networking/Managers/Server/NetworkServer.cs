@@ -5,6 +5,7 @@ using DV.Garages;
 using DV.InventorySystem;
 using DV.LocoRestoration;
 using DV.Logic.Job;
+using DV.Shops;
 using DV.Scenarios.Common;
 using DV.ServicePenalty;
 using DV.ThingTypes;
@@ -148,6 +149,9 @@ public class NetworkServer : NetworkManager
         Log($"Stopping server...");
         WorldStreamingInit.LoadingFinished -= OnLoaded;
 
+        if (GlobalShopController.Instance != null)
+            GlobalShopController.Instance.GlobalShopDataChanged -= OnGlobalShopDataChanged;
+
         if (lobbyServerManager != null)
         {
             lobbyServerManager.RemoveFromLobbyServer();
@@ -190,6 +194,10 @@ public class NetworkServer : NetworkManager
         netPacketProcessor.SubscribeNetSerializable<CommonPitStopPlugInteractionPacket, ITransportPeer>(OnCommonPitStopPlugInteractionPacket);
 
         netPacketProcessor.SubscribeReusable<CommonCashRegisterWithModulesActionPacket, ITransportPeer>(OnCommonCashRegisterWithModulesActionPacket);
+        netPacketProcessor.SubscribeReusable<ServerboundPlayerInventoryPacket, ITransportPeer>(OnServerboundPlayerInventoryPacket);
+        netPacketProcessor.SubscribeReusable<ServerboundMoneyStashPacket, ITransportPeer>(OnServerboundMoneyStashPacket);
+        netPacketProcessor.SubscribeReusable<ServerboundInventoryStorePacket, ITransportPeer>(OnServerboundInventoryStorePacket);
+        netPacketProcessor.SubscribeReusable<ServerboundInventoryRemovePacket, ITransportPeer>(OnServerboundInventoryRemovePacket);
 
         netPacketProcessor.SubscribeReusable<CommonGenericSwitchStatePacket, ITransportPeer>(OnCommonGenericSwitchStatePacket);
 
@@ -270,6 +278,9 @@ public class NetworkServer : NetworkManager
         NetworkedPitStopStation.InitialisePitStops();
         NetworkedCashRegisterWithModules.InitialiseCashRegisters();
 
+        if (GlobalShopController.Instance != null)
+            GlobalShopController.Instance.GlobalShopDataChanged += OnGlobalShopDataChanged;
+
         while (joinQueue.Count > 0)
         {
             ITransportPeer peer = joinQueue.Dequeue();
@@ -300,6 +311,20 @@ public class NetworkServer : NetworkManager
             SendWeatherState();
             lastTick = NetworkLifecycle.Instance.Tick;
         }
+
+        if (shopStockDirty)
+        {
+            shopStockDirty = false;
+            SendShopStock();
+        }
+    }
+
+    private bool shopStockDirty;
+
+    private void OnGlobalShopDataChanged()
+    {
+        //Coalesce multi-item purchases into a single stock broadcast on the next tick
+        shopStockDirty = true;
     }
 
     public bool TryGetServerPlayer(ITransportPeer peer, out ServerPlayer player)
@@ -336,6 +361,9 @@ public class NetworkServer : NetworkManager
             LogWarning($"Peer {peer.GetType()}, peerId: {peer.Id} disconnected but no player found");
         else
             Log($"Player {player?.Username} disconnected: {disconnectReason}");
+
+        // Record where they left off before they stop being a known player
+        Components.SaveGame.NetworkedSaveGameManager.Instance.Server_RememberPlacement(player);
 
         if (WorldStreamingInit.isLoaded)
             SaveGameManager.Instance.UpdateInternalData();
@@ -1009,6 +1037,28 @@ public class NetworkServer : NetworkManager
         SendNetSerializablePacket(player.Peer, packet, DeliveryMethod.ReliableOrdered);
     }
 
+    public void SendSharedInventory(ushort[] entryIds, string[] prefabNames, string[] states, ServerPlayer player)
+    {
+        SendPacket(player.Peer, new ClientboundSharedInventoryPacket
+        {
+            EntryIds = entryIds,
+            PrefabNames = prefabNames,
+            States = states
+        }, DeliveryMethod.ReliableOrdered);
+    }
+
+    public void SendSharedInventoryChange(ushort entryId, string prefabName, bool added, string state, ushort originItemNetId = 0)
+    {
+        SendPacketToAll(new ClientboundSharedInventoryChangePacket
+        {
+            EntryId = entryId,
+            PrefabName = prefabName,
+            Added = added,
+            State = state ?? string.Empty,
+            OriginItemNetId = originItemNetId
+        }, DeliveryMethod.ReliableOrdered, PlayerLoadingState.ReadyForItems, true);
+    }
+
     public void SendCashRegisterAction(CommonCashRegisterWithModulesActionPacket packet, ServerPlayer[] players = null)
     {
         if (players == null)
@@ -1016,6 +1066,25 @@ public class NetworkServer : NetworkManager
         else
             foreach (var player in players)
                 SendPacket(player.Peer, packet, DeliveryMethod.ReliableOrdered);
+    }
+
+    public void SendShopStock(ITransportPeer peer = null)
+    {
+        if (GlobalShopController.Instance == null)
+            return;
+
+        var shopItems = GlobalShopController.Instance.shopItemsData;
+        var packet = new ClientboundShopStockPacket
+        {
+            PrefabNames = shopItems.Select(item => item.item.ItemPrefabName).ToArray(),
+            PurchasedCounts = shopItems.Select(item => item.purchasedItems).ToArray(),
+            AllowedCounts = shopItems.Select(item => item.allowedToHaveAmount).ToArray()
+        };
+
+        if (peer == null)
+            SendPacketToAll(packet, DeliveryMethod.ReliableOrdered, PlayerLoadingState.ReadyForItems, true);
+        else
+            SendPacket(peer, packet, DeliveryMethod.ReliableOrdered);
     }
 
     public void SendGenericSwitchState(uint netId, bool isOn, ServerPlayer player = null)
@@ -1311,6 +1380,12 @@ public class NetworkServer : NetworkManager
 
             case PlayerLoadingState.ReadyForItems:
                 // Send Inventory and world items
+                SendShopStock(peer);
+
+                // Co-op: hand the joining player the shared inventory
+                SharedInventoryManager.Instance.Server_SeedFromHostInventory();
+                if (TryGetServerPlayer(peer, out var itemsPlayer))
+                    SharedInventoryManager.Instance.Server_SendFullInventory(itemsPlayer);
 
                 break;
 
@@ -2098,10 +2173,10 @@ public class NetworkServer : NetworkManager
 
     private void OnCommonItemChangePacket(CommonItemChangePacket packet, ITransportPeer peer)
     {
-        //if(!TryGetServerPlayer(peer, out var player))
-        //    return;
+        if (!TryGetServerPlayer(peer, out var player))
+            return;
 
-        //LogDebug(()=>$"OnCommonItemChangePacket({packet?.Items?.Count}, {peer.Id} (\"{player.Username}\"))");
+        LogDebug(() => $"OnCommonItemChangePacket({packet?.Items?.Count}, {peer.Id} (\"{player.Username}\"))");
 
         //LogDebug(() =>
         //{
@@ -2132,7 +2207,70 @@ public class NetworkServer : NetworkManager
 
         //);
 
-        //NetworkedItemManager.Instance.ReceiveSnapshots(packet.Items, player);
+        NetworkedItemManager.Instance.ReceiveSnapshots(packet.Items, player);
+    }
+
+    private void OnServerboundPlayerInventoryPacket(ServerboundPlayerInventoryPacket packet, ITransportPeer peer)
+    {
+        if (!TryGetServerPlayer(peer, out var player))
+            return;
+
+        player.SavedInventory = packet.Items;
+
+        // Co-op: the most recent report becomes the shared inventory that every player
+        // receives on join. (Per-player inventories are still recorded on ServerPlayer
+        // for the future non-co-op mode.)
+        Components.SaveGame.NetworkedSaveGameManager.Instance.Server_SetSharedInventory(packet.Items);
+
+        LogDebug(() => $"Received inventory report from {player.Username} with {packet.Items?.Length ?? 0} items");
+    }
+
+    private void OnServerboundInventoryStorePacket(ServerboundInventoryStorePacket packet, ITransportPeer peer)
+    {
+        if (!TryGetServerPlayer(peer, out var player))
+            return;
+
+        SharedInventoryManager.Instance.Server_StoreWorldItem(packet.ItemNetId, player);
+    }
+
+    private void OnServerboundInventoryRemovePacket(ServerboundInventoryRemovePacket packet, ITransportPeer peer)
+    {
+        if (!TryGetServerPlayer(peer, out var player))
+            return;
+
+        SharedInventoryManager.Instance.Server_RemoveFromInventory(packet.EntryId, packet.Dropped, packet.Position, packet.Rotation, player, packet.State);
+    }
+
+    private void OnServerboundMoneyStashPacket(ServerboundMoneyStashPacket packet, ITransportPeer peer)
+    {
+        if (!TryGetServerPlayer(peer, out var player))
+            return;
+
+        if (!NetworkedItem.TryGet(packet.ItemNetId, out NetworkedItem netItem) || netItem.Item == null)
+        {
+            LogWarning($"Money stash requested by {player.Username} for netId {packet.ItemNetId}, but the item does not exist");
+            return;
+        }
+
+        if (!netItem.TryGetComponent(out IMoney money) || !money.ShouldDestroyOnUse)
+        {
+            LogWarning($"Money stash requested by {player.Username} for netId {packet.ItemNetId}, but it is not a money item");
+            return;
+        }
+
+        if (!netItem.transform.PlayerCanReach(player, 1))
+        {
+            LogWarning($"Money stash requested by {player.Username} for netId {packet.ItemNetId}, but they are too far away");
+            return;
+        }
+
+        double amount = money.TrySpend(money.Amount);
+        Inventory.Instance.AddMoney(amount);
+
+        Log($"{player.Username} stashed ${amount} (item {packet.ItemNetId}); crediting shared wallet");
+
+        // Destroying the item propagates to all clients through the normal item destroy path
+        UnityEngine.Object.Destroy(netItem.gameObject);
     }
 
     private void OnCommonCashRegisterWithModulesActionPacket(CommonCashRegisterWithModulesActionPacket packet, ITransportPeer peer)

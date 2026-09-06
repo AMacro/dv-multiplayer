@@ -51,6 +51,10 @@ public class ClientboundSaveGameDataPacket
 
         JObject playerData = NetworkedSaveGameManager.Instance.Server_GetPlayerData(data, player.Guid);
 
+        // Put a returning player back where they left off, falling back to the default spawn
+        bool hasPlacement = NetworkedSaveGameManager.Instance.Server_TryGetPlacement(data, player.Guid, out Vector3 placement, out float placementRotation);
+        Multiplayer.Log($"Spawning {player.Username} at {(hasPlacement ? placement.ToString() : "the default spawn")}");
+
         Multiplayer.LogDebug(() =>
         {
             string unlockedGen = string.Join(", ", UnlockablesManager.Instance.UnlockedGeneralLicenses);
@@ -62,28 +66,10 @@ public class ClientboundSaveGameDataPacket
             return $"ClientboundSaveGameDataPacket.CreatePacket() UnlockedGen: {{{unlockedGen}}}, PacketGen: {{{packetGen}}},  UnlockedJob: {{{unlockedJob}}}, PacketJob: {{{packetJob}}}";
         });
 
-        List<PlayerItemSaveData> playerItems = [];
-        string[] items = ["shovel", "lighter", "Oiler", "Lantern", "Flashlight", "Hanger", "DuctTape"];
-        string[] states = ["", "", "", "", "{\"Restock\": true,\"Battery_power\": 100}", "", ""];
-
-        for (int i = 0; i < items.Length; i++)
-        {
-            JObject state;
-
-            if (!string.IsNullOrEmpty(states[i]))
-                state = JObject.Parse(states[i]);
-            else
-                state = [];
-
-            var testItem = new PlayerItemSaveData()
-            {
-                ItemPrefabName = items[i],
-                BelongsToPlayer = true,
-                InventorySlotIndex = 14 + i,
-                State = state
-            };
-            playerItems.Add(testItem);
-        }
+        // The player's inventory: the latest report from their client this session,
+        // or the one persisted in the save from a previous session. New players get an
+        // empty list; StartingItemsController then provides the default starting items.
+        PlayerItemSaveData[] playerItems = NetworkedSaveGameManager.Instance.Server_GetPlayerInventory(player, data);
 
         return new ClientboundSaveGameDataPacket
         {
@@ -93,8 +79,8 @@ public class ClientboundSaveGameDataPacket
             AcquiredGeneralLicenses = data.GetStringArray(SaveGameKeys.Licenses_General),
             AcquiredJobLicenses = data.GetStringArray(SaveGameKeys.Licenses_Jobs),
             UnlockedGarages = data.GetStringArray(SaveGameKeys.Garages),
-            Position = playerData?.GetVector3(SaveGameKeys.Player_position) ?? LevelInfo.DefaultSpawnPosition,
-            Rotation = playerData?.GetFloat(SaveGameKeys.Player_rotation) ?? LevelInfo.DefaultSpawnRotation.y,
+            Position = hasPlacement ? placement : LevelInfo.DefaultSpawnPosition,
+            Rotation = hasPlacement ? placementRotation : LevelInfo.DefaultSpawnRotation.y,
             HasDebt = data.GetFloat(SaveGameKeys.Debt_total).GetValueOrDefault(CareerManagerDebtController.Instance != null ? CareerManagerDebtController.Instance.NumberOfNonZeroPricedDebts : 0) > 0,
             // Debt_existing_locos = data.GetJObjectArray(SaveGameKeys.Debt_existing_locos)?.NotNull().Select(j => j.ToString()).ToArray(),
             // Debt_deleted_locos = data.GetJObjectArray(SaveGameKeys.Debt_deleted_locos)?.NotNull().Select(j => j.ToString()).ToArray(),
@@ -106,7 +92,7 @@ public class ClientboundSaveGameDataPacket
 
             JobManagerTime = JobsManager.Instance.Time,
 
-            PlayerItems = playerItems.ToArray()
+            PlayerItems = playerItems
         };
     }
 

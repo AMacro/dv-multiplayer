@@ -8,8 +8,11 @@ using Multiplayer.Components.Networking.World;
 using System;
 using Multiplayer.Utils;
 using DV;
+using DV.CabControls;
 using DV.Interaction;
+using DV.InventorySystem;
 using Multiplayer.Networking.Data.Items;
+using Newtonsoft.Json.Linq;
 
 namespace Multiplayer.Components.Networking.World;
 
@@ -130,6 +133,10 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
         {
             ProcessClientChanges(tick);
         }
+
+        // The host is a player with an inventory too, so both sides poll for local
+        // inventory changes (pickups, drops, items used up)
+        SharedInventoryManager.Instance.Client_PollLocalChanges();
     }
 
     private void ProcessReceived()
@@ -148,6 +155,14 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
                     continue;
                 }
 
+                // Id 0 is not a valid world item; acting on it would hit an arbitrary
+                // per-player inventory copy
+                if (snapshot.ItemNetId == 0)
+                {
+                    Multiplayer.LogWarning($"NetworkedItemManager.ProcessReceived() Ignoring snapshot with no item id. Update Type: {snapshot.UpdateType}, prefabName: {snapshot.PrefabName}");
+                    continue;
+                }
+
                 if (NetworkLifecycle.Instance.IsHost())
                 {
                     ProcessReceivedAsHost(snapshot, snapshotInfo.Item2);
@@ -159,7 +174,7 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
             }
             catch (Exception ex)
             {
-                Multiplayer.LogError($"NetworkedItemManager.ProcessReceived() Error! {ex.Message}\r\n{ex.StackTrace}");
+                Multiplayer.LogError($"NetworkedItemManager.ProcessReceived() Error! {ex.GetType().Name}: {ex.Message}\r\n{ex.StackTrace}\r\nUpdate Type: {snapshot?.UpdateType}, ItemNetId: {snapshot?.ItemNetId}, prefabName: {snapshot?.PrefabName}, ItemState: {snapshot?.ItemState}");
             }
         }
     }
@@ -186,6 +201,10 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
                     NetworkLifecycle.Instance.Server.LogDebug(() => $"UpdatePlayerItemLists() Null item found in allItems!");
                     continue;
                 }
+
+                // The host's own shared-inventory copies are not world items
+                if (item.NetId == 0)
+                    continue;
 
                 float sqrDistance = (player.WorldPosition - item.transform.position).sqrMagnitude;
 
@@ -217,6 +236,11 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
 
         foreach (var item in NetworkedItem.GetAll())
         {
+            // NetId 0 means this is one of the host's own shared-inventory copies, not a
+            // world item; those are per-player and must not be replicated
+            if (item.NetId == 0)
+                continue;
+
             ItemUpdateData snapshot = item.GetSnapshot();
             if (snapshot != null)
                 dirtyItems.Add(snapshot);
@@ -287,6 +311,12 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
 
     private void ProcessReceivedAsHost(ItemUpdateData snapshot, ServerPlayer player)
     {
+        if (snapshot.ItemNetId == 0)
+        {
+            NetworkLifecycle.Instance.Server.LogDebug(() => $"NetworkedItemManager.ProcessReceivedAsHost() Ignoring snapshot for un-networked item. Update Type: {snapshot.UpdateType}, prefabName: {snapshot.PrefabName}, player: {player?.Username}");
+            return;
+        }
+
         if (snapshot.UpdateType == ItemUpdateData.ItemUpdateType.Create)
         {
             NetworkLifecycle.Instance.Server.LogError($"NetworkedItemManager.ProcessReceivedAsHost() Host received Create snapshot! ItemNetId: {snapshot.ItemNetId}, prefabName: {snapshot.PrefabName}");
@@ -298,6 +328,9 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
             if (ValidatePlayerAction(snapshot, player)) //Ensure the player can do this
             {
                 NetworkLifecycle.Instance.Server.LogWarning($"NetworkedItemManager.ProcessReceivedAsHost() ItemNetId: {snapshot.ItemNetId}, snapshot type: {snapshot.UpdateType}");
+
+                // Stamp the sender so ownership can be tracked; clients never fill this in
+                snapshot.Player = player.PlayerId;
                 netItem.ReceiveSnapshot(snapshot);
             }
             else
@@ -356,9 +389,68 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
         owner = NetworkLifecycle.Instance.Server.ServerPlayers.FirstOrDefault(p => p.OwnsItem(itemNetId));
         return owner != null;
     }
+
+    /// <summary>
+    ///     Turns an object the host just dropped from their inventory into the authoritative
+    ///     world item, instead of destroying it and spawning a fresh copy in its place.
+    /// </summary>
+    public void Server_AdoptDroppedItem(GameObject itemGO)
+    {
+        if (itemGO == null || !itemGO.TryGetComponent(out ItemBase itemBase))
+            return;
+
+        // It belongs to the world now, so release the slot it came from; leaving the
+        // association behind shows up as a ghost in the inventory or in the player's hand
+        int equipSlot = Inventory.Instance.GetEquipSlotForItem(itemGO);
+        if (equipSlot >= 0)
+            Inventory.Instance.UnequipItem(false, equipSlot);
+
+        Inventory.Instance.PurgeFromInventory(itemGO);
+
+        NetworkedItem netItem = itemGO.GetOrAddComponent<NetworkedItem>();
+        if (netItem.NetId == 0)
+            netItem.AssignNewId();
+
+        StorageController.Instance.AddItemToWorldStorage(itemBase);
+
+        Multiplayer.Log($"Adopted host-dropped item \"{itemBase.InventorySpecs?.ItemPrefabName}\" as world item {netItem.NetId}");
+    }
+
+    public void Server_SpawnRequestedItem(string prefabName, Vector3 position, Quaternion rotation, ServerPlayer requester, string state = null)
+    {
+        // Uses the same lookup as item creation, which also covers prefabs that are only
+        // reachable through Resources (Banknotes and similar)
+        GameObject prefab = GetItemPrefab(prefabName);
+        if (prefab == null)
+        {
+            NetworkLifecycle.Instance.Server.LogWarning($"Server_SpawnRequestedItem() Unknown prefab \"{prefabName}\" requested by {requester?.Username}");
+            return;
+        }
+
+        GameObject gameObject = Instantiate(prefab, position + WorldMover.currentMove, rotation);
+        SharedInventoryManager.ApplyItemState(gameObject, state);
+
+        InventoryItemSpec itemSpec = gameObject.GetComponent<InventoryItemSpec>();
+        if (itemSpec != null)
+            itemSpec.BelongsToPlayer = true;
+
+        ItemBase itemBase = gameObject.GetComponent<ItemBase>();
+        if (itemBase != null)
+        {
+            if (NetworkedItem.TryGetNetworkedItem(itemBase, out NetworkedItem netItem))
+                netItem.SetLastOwner(requester.PlayerId);
+
+            StorageController.Instance.AddItemToWorldStorage(itemBase);
+        }
+
+        NetworkLifecycle.Instance.Server.LogDebug(() => $"Server_SpawnRequestedItem() Spawned \"{prefabName}\" for {requester?.Username} at {position}");
+    }
     #endregion
 
     #region Client
+
+    private const float INVENTORY_REPORT_INTERVAL = 15f;
+    private float lastInventoryReport;
 
     private void ProcessClientChanges(uint tick)
     {
@@ -369,6 +461,11 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
 
         foreach (var item in NetworkedItem.GetAll())
         {
+            // Items without a NetId are this player's local inventory copies; the shared
+            // inventory owns them and handles drops (see SharedInventoryManager)
+            if (item.NetId == 0)
+                continue;
+
             ItemUpdateData snapshot = item.GetSnapshot();
             if (snapshot != null)
             {
@@ -380,6 +477,57 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
         {
             NetworkLifecycle.Instance.Client.SendItemsChangePacket(changedItems);
         }
+
+        if (Time.time - lastInventoryReport >= INVENTORY_REPORT_INTERVAL)
+        {
+            lastInventoryReport = Time.time;
+            Client_SendInventoryReport();
+        }
+    }
+
+    private void Client_SendInventoryReport()
+    {
+        List<PlayerItemSaveData> items = new List<PlayerItemSaveData>();
+
+        GameObject[] inventoryItems = Inventory.Instance.GetItemsArray(includingDropped: false);
+        for (int slot = 0; slot < inventoryItems.Length; slot++)
+        {
+            GameObject itemGO = inventoryItems[slot];
+            if (itemGO == null)
+                continue;
+
+            ItemBase itemBase = itemGO.GetComponent<ItemBase>();
+            if (itemBase == null || itemBase.InventorySpecs == null)
+                continue;
+
+            JObject state = null;
+            ItemSaveData saveData = itemGO.GetComponent<ItemSaveData>();
+            if (saveData != null)
+            {
+                try
+                {
+                    state = saveData.SaveItemData();
+                }
+                catch (Exception ex)
+                {
+                    Multiplayer.LogWarning($"Client_SendInventoryReport() Failed to save item state for {itemBase.InventorySpecs.ItemPrefabName}: {ex.Message}");
+                }
+            }
+
+            items.Add(new PlayerItemSaveData
+            {
+                ItemPrefabName = itemBase.InventorySpecs.ItemPrefabName,
+                BelongsToPlayer = true,
+                IsGrabbed = itemBase.IsGrabbed(),
+                InventorySlotIndex = slot,
+                ContainerSlotIndex = -1,
+                InLockedSlot = Inventory.Instance.GetSlotLockState(slot),
+                IsDropped = Inventory.Instance.GetSlotDroppedState(slot),
+                State = state,
+            });
+        }
+
+        NetworkLifecycle.Instance.Client.SendPlayerInventory(items.ToArray());
     }
 
     private void ProcessReceivedAsClient(ItemUpdateData snapshot)
@@ -421,18 +569,32 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
 
         NetworkedItem newItem = GetFromCache(snapshot.PrefabName);
 
+        if (newItem == null)
+            newItem = FindLocalInstance(snapshot);
+
         if(newItem == null)
         {
-            //GameObject prefabObj = Resources.Load(snapshot.PrefabName) as GameObject;
-            
-            if (!ItemPrefabs.TryGetValue(snapshot.PrefabName, out InventoryItemSpec spec))
+            GameObject prefab = null;
+
+            if (ItemPrefabs.TryGetValue(snapshot.PrefabName, out InventoryItemSpec spec))
+            {
+                prefab = spec.gameObject;
+            }
+            else
+            {
+                //Some items (e.g. Banknotes) are not in the shop item catalogue and are only
+                //reachable through Resources, which is how the game itself spawns them
+                prefab = Resources.Load(snapshot.PrefabName) as GameObject;
+            }
+
+            if (prefab == null)
             {
                 Multiplayer.LogError($"NetworkedItemManager.CreateItem() Unable to load prefab for ItemNetId: {snapshot.ItemNetId}, prefabName: {snapshot.PrefabName}");
                 return;
             }
 
             //create a new item
-            GameObject gameObject = Instantiate(spec.gameObject, snapshot.ItemPosition + WorldMover.currentMove, snapshot.ItemRotation);
+            GameObject gameObject = Instantiate(prefab, snapshot.ItemPosition + WorldMover.currentMove, snapshot.ItemRotation);
 
             //Make sure we have a NetworkedItem
             newItem = gameObject.GetOrAddComponent<NetworkedItem>();
@@ -441,7 +603,27 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
         newItem.gameObject.SetActive(true);
         newItem.NetId = snapshot.ItemNetId;
 
+        // Restore normal respawn behaviour for items coming back out of the cache
+        RespawnOnDrop respawn = newItem.Item != null ? newItem.Item.GetComponent<RespawnOnDrop>() : null;
+        if (respawn != null)
+            respawn.StartChecking();
+
         newItem.ReceiveSnapshot(snapshot);
+    }
+
+    /// <summary>
+    ///     Resolves an item prefab by name. Some items (e.g. Banknotes) are not in the item
+    ///     catalogue and are only reachable through Resources, which is how the game spawns them.
+    /// </summary>
+    public GameObject GetItemPrefab(string prefabName)
+    {
+        if (string.IsNullOrEmpty(prefabName))
+            return null;
+
+        if (ItemPrefabs.TryGetValue(prefabName, out InventoryItemSpec spec))
+            return spec.gameObject;
+
+        return Resources.Load(prefabName) as GameObject;
     }
 
     private void BuildPrefabLookup()
@@ -484,6 +666,37 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
         ClientInitialised = true;
     }
 
+    private NetworkedItem FindLocalInstance(ItemUpdateData snapshot)
+    {
+        // Scene-placed items that were not cached at join (e.g. essential items like shop
+        // scanners) still exist locally; adopt the local instance instead of spawning a duplicate.
+        // Only match world-resting states so a player's own personal items can never be adopted.
+        if (snapshot.ItemState != ItemState.Dropped && snapshot.ItemState != ItemState.Attached)
+            return null;
+
+        Vector3 targetPosition = snapshot.ItemPosition + WorldMover.currentMove;
+
+        foreach (var item in NetworkedItem.GetAll())
+        {
+            if (item == null || item.NetId != 0 || item.Item == null)
+                continue;
+
+            if (!item.gameObject.activeInHierarchy || item.Item.IsGrabbed())
+                continue;
+
+            if (item.Item.InventorySpecs?.ItemPrefabName != snapshot.PrefabName)
+                continue;
+
+            if ((item.transform.position - targetPosition).sqrMagnitude <= 9f)
+            {
+                NetworkLifecycle.Instance.Client.LogDebug(() => $"FindLocalInstance() Adopting local {snapshot.PrefabName} for ItemNetId: {snapshot.ItemNetId}");
+                return item;
+            }
+        }
+
+        return null;
+    }
+
     private NetworkedItem GetFromCache(string prefabName)
     {
         if (CachedItems.TryGetValue(prefabName, out var items) && items.Count > 0)
@@ -504,15 +717,14 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
         //NetworkLifecycle.Instance.Client.LogDebug(() => $"Caching Spawned Item: {prefabName ?? ""}");
 
         netItem.gameObject.SetActive(false);
+
+        // Neutralise the respawn/destroy checker while the item sits in the cache.
+        // It must NOT be destroyed: StorageController.AddItemToStorageItemList calls
+        // RespawnOnDrop.UpdateSpawnParams() unguarded, so a missing component throws and
+        // aborts the game's inventory handling mid-way (leaving unusable "ghost" items).
         RespawnOnDrop respawn = netItem.Item.GetComponent<RespawnOnDrop>();
-
-        Destroy(respawn);
-
-        //NetworkLifecycle.Instance.Client.LogDebug(() => $"Caching Spawned Item: {prefabName ?? ""}: checkWhileDisabled {respawn.checkWhileDisabled}, ignoreDistanceFromSpawnPosition {respawn.ignoreDistanceFromSpawnPosition}, respawnOnDropThroughFloor {respawn.respawnOnDropThroughFloor}");
-
-        //respawn.checkWhileDisabled = false;
-        //respawn.ignoreDistanceFromSpawnPosition = true;
-        //respawn.respawnOnDropThroughFloor = false;
+        if (respawn != null)
+            respawn.SetMaxDistance(float.MaxValue);
 
         if (SingletonBehaviour<StorageController>.Instance.StorageWorld.ContainsItem(netItem.Item))
         {
