@@ -37,8 +37,13 @@ internal static class GlobalShopControllerPatch
 
     [HarmonyPrefix]
     [HarmonyPatch(nameof(GlobalShopController.Restock))]
-    private static void Restock_Prefix(GlobalShopController __instance, string itemPrefabName, out int __state) =>
+    private static bool Restock_Prefix(GlobalShopController __instance, string itemPrefabName, out int __state)
+    {
         __state = __instance.GetShopItemData(itemPrefabName)?.purchasedItems ?? 0;
+        // The host relays native restocks. A client's proxy destruction must not
+        // also decrement that client's copy of the authoritative stock count.
+        return NetworkLifecycle.Instance?.IsClientRunning != true || NetworkLifecycle.Instance.IsHost();
+    }
 
     [HarmonyPostfix]
     [HarmonyPatch(nameof(GlobalShopController.Restock))]

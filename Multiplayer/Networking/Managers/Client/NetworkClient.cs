@@ -79,17 +79,8 @@ public class NetworkClient : NetworkManager
     internal uint trainSetsToSpawn = uint.MaxValue;
     internal uint trainSetsSpawned = 0;
     internal bool railwayStateLoaded = false;
-    private bool customizerStateLoaded;
-    private bool customizationSnapshotApplied;
-    private bool applyingCustomizationSnapshot;
-    private bool customizationActionDrainRunning;
-    private bool customizationSnapshotTimedOut;
-    private CustomizationStateData pendingCustomizationState;
-    private readonly List<GadgetPlacementData> pendingCustomizationSnapshotPlacements = [];
-    private readonly List<ICustomizationActionPacket> pendingCustomizationSnapshotRelationships = [];
-    private readonly Dictionary<string, List<CustomizationHoleData>> pendingCustomizationSnapshotHoleStates = [];
-    private readonly List<ICustomizationActionPacket> pendingCustomizationActions = [];
-    private readonly List<ICustomizationActionPacket> appliedActionsSinceSnapshotTimeout = [];
+    private ClientCustomizationSynchronization clientCustomizationSynchronization;
+    private ClientCustomizationSynchronization CustomizationSynchronization => clientCustomizationSynchronization ??= new(this);
     private bool itemReconciliationComplete;
     private uint nextCustomizationActionId = 1;
     private uint nextShopRequestId = 1;
@@ -159,16 +150,7 @@ public class NetworkClient : NetworkManager
     public override void Stop()
     {
         Log("Stopping client");
-        pendingCustomizationState = null;
-        pendingCustomizationSnapshotPlacements.Clear();
-        pendingCustomizationSnapshotRelationships.Clear();
-        pendingCustomizationSnapshotHoleStates.Clear();
-        pendingCustomizationActions.Clear();
-        appliedActionsSinceSnapshotTimeout.Clear();
-        customizationSnapshotApplied = false;
-        customizationSnapshotTimedOut = false;
-        customizerStateLoaded = false;
-        CustomizationStateManager.ClearPendingLocalState();
+        CustomizationSynchronization.Reset();
 
         if (!isAlsoHost && originalSession != null)
         {
@@ -209,7 +191,6 @@ public class NetworkClient : NetworkManager
         netPacketProcessor.SubscribeReusable<ClientboundSaveGameDataPacket>(OnClientboundSaveGameDataPacket);
         netPacketProcessor.SubscribeReusable<ClientboundRailwayStatePacket>(OnClientboundRailwayStatePacket);
 
-
         // General Sync
         netPacketProcessor.SubscribeNetSerializable<ClientboundRpcResponsePacket>(OnClientboundRpcResponsePacket);
         netPacketProcessor.SubscribeReusable<ClientboundTickSyncPacket>(OnClientboundTickSyncPacket);
@@ -218,14 +199,12 @@ public class NetworkClient : NetworkManager
         netPacketProcessor.SubscribeReusable<CommonChangeJunctionPacket>(OnCommonChangeJunctionPacket);
         netPacketProcessor.SubscribeReusable<CommonRotateTurntablePacket>(OnCommonRotateTurntablePacket);
 
-
         // Player Management
         netPacketProcessor.SubscribeReusable<ClientboundPlayerJoinedPacket>(OnClientboundPlayerJoinedPacket);
         netPacketProcessor.SubscribeReusable<ClientboundPlayerDisconnectPacket>(OnClientboundPlayerDisconnectPacket);
 
         netPacketProcessor.SubscribeReusable<ClientboundPlayerPositionPacket>(OnClientboundPlayerPositionPacket);
         netPacketProcessor.SubscribeReusable<ClientboundPlayerPreferencesUpdatePacket>(OnClientboundPlayerPreferencesUpdatePacket);
-
 
         // Train Sync
         netPacketProcessor.SubscribeReusable<ClientboundSpawnTrainSetPacket>(OnClientboundSpawnTrainSetPacket);
@@ -275,7 +254,7 @@ public class NetworkClient : NetworkManager
         // World Sync
         netPacketProcessor.SubscribeNetSerializable<CommonItemChangePacket>(OnCommonItemChangePacket);
         netPacketProcessor.SubscribeNetSerializable<ClientboundItemReconciliationPacket>(OnClientboundItemReconciliationPacket);
-        netPacketProcessor.SubscribeNetSerializable<ClientboundCustomizationStatePacket>(OnClientboundCustomizationStatePacket);
+        netPacketProcessor.SubscribeNetSerializable<ClientboundCustomizationStatePacket>(CustomizationSynchronization.ReceiveSnapshot);
         SubscribeCustomizationActions();
         netPacketProcessor.SubscribeReusable<CommonPitStopInteractionPacket>(OnCommonPitStopInteractionPacket);
         netPacketProcessor.SubscribeNetSerializable<CommonPitStopPlugInteractionPacket>(OnCommonPitStopPlugInteractionPacket);
@@ -405,46 +384,12 @@ public class NetworkClient : NetworkManager
          * ReadyForCustomizers
          */
 
-        customizerStateLoaded = false;
-        customizationSnapshotApplied = false;
-        applyingCustomizationSnapshot = false;
-        customizationActionDrainRunning = false;
-        customizationSnapshotTimedOut = false;
-        pendingCustomizationState = null;
-        pendingCustomizationSnapshotPlacements.Clear();
-        pendingCustomizationSnapshotRelationships.Clear();
-        pendingCustomizationSnapshotHoleStates.Clear();
-        pendingCustomizationActions.Clear();
-        appliedActionsSinceSnapshotTimeout.Clear();
-        CustomizationStateManager.ClearPendingLocalState();
+        CustomizationSynchronization.Reset(forLoading: true);
         Log("Requesting customization state");
         SendLoadStateUpdate(PlayerLoadingState.ReadyForCustomizers);
         displayLoadingInfo.OnLoadingStatusChanged("Syncing customizations", false, ((float)LoadingState / (float)PlayerLoadingState.Complete) * 100);
 
-        // The host may need to stream customized train-car interiors before taking
-        // the complete world snapshot. Do not mistake that preparation for a lost
-        // packet on low-latency connections where RPC_Timeout is very small.
-        float customizationDeadline = Time.time + Mathf.Max(RPC_Timeout, 5f);
-        while (!customizerStateLoaded)
-        {
-            if (pendingCustomizationState == null)
-            {
-                if (Time.time >= customizationDeadline)
-                {
-                    LogWarning("Timed out waiting for customization state; continuing while retaining the late-snapshot path");
-                    customizationSnapshotTimedOut = true;
-                    customizationSnapshotApplied = true;
-                    customizerStateLoaded = true;
-                    StartCustomizationActionDrain();
-                    break;
-                }
-                yield return null;
-                continue;
-            }
-
-            yield return ApplyPendingCustomizationStates();
-            customizerStateLoaded = true;
-        }
+        yield return CustomizationSynchronization.LoadInitialState(RPC_Timeout);
 
         /* 
          * ReadyForItems
@@ -475,7 +420,6 @@ public class NetworkClient : NetworkManager
         SendLoadStateUpdate(PlayerLoadingState.ReadyForJobs);
 
         yield return new WaitForSeconds(0.25f);
-
 
         /* 
          * ReadyForTiles
@@ -1384,11 +1328,9 @@ public class NetworkClient : NetworkManager
         netPitStop.ProcessBulkUpdate(packet);
     }
 
-
     private void OnCommonItemChangePacket(CommonItemChangePacket packet)
     {
         //LogDebug(() => $"OnCommonItemChangePacket({packet?.Items?.Count})");
-
 
         //LogDebug(() =>
         //{
@@ -1434,208 +1376,23 @@ public class NetworkClient : NetworkManager
         }
     }
 
-    private void OnClientboundCustomizationStatePacket(ClientboundCustomizationStatePacket packet)
-    {
-        if (packet?.State == null)
-        {
-            LogWarning("Received an invalid customization state packet");
-            return;
-        }
-
-        pendingCustomizationState = packet.State;
-        // Pause live mutation application immediately. If the timeout path already
-        // released actions, they are replayed after this older baseline is applied.
-        customizationSnapshotApplied = false;
-        if (customizerStateLoaded && !applyingCustomizationSnapshot)
-            CoroutineManager.Instance.StartCoroutine(ApplyPendingCustomizationStates());
-    }
-
     private void SubscribeCustomizationActions()
     {
-        netPacketProcessor.SubscribeNetSerializable<PlaceGadgetPacket>(OnCustomizationPacket);
-        netPacketProcessor.SubscribeNetSerializable<RemoveGadgetPacket>(OnCustomizationPacket);
-        netPacketProcessor.SubscribeNetSerializable<AddHolePacket>(OnCustomizationPacket);
-        netPacketProcessor.SubscribeNetSerializable<MoveHolePacket>(OnCustomizationPacket);
-        netPacketProcessor.SubscribeNetSerializable<RemoveHolePacket>(OnCustomizationPacket);
-        netPacketProcessor.SubscribeNetSerializable<MountGadgetPacket>(OnCustomizationPacket);
-        netPacketProcessor.SubscribeNetSerializable<UnmountGadgetPacket>(OnCustomizationPacket);
-        netPacketProcessor.SubscribeNetSerializable<WireGadgetsPacket>(OnCustomizationPacket);
-        netPacketProcessor.SubscribeNetSerializable<UnwireGadgetsPacket>(OnCustomizationPacket);
-        netPacketProcessor.SubscribeNetSerializable<DropEmptySpoolPacket>(OnCustomizationPacket);
-        netPacketProcessor.SubscribeNetSerializable<LoadSpoolPacket>(OnCustomizationPacket);
-        netPacketProcessor.SubscribeNetSerializable<ReplaceSpoolPacket>(OnCustomizationPacket);
-        netPacketProcessor.SubscribeNetSerializable<ReplaceDuctTapePacket>(OnCustomizationPacket);
-        netPacketProcessor.SubscribeNetSerializable<SnapItemPacket>(OnCustomizationPacket);
-        netPacketProcessor.SubscribeNetSerializable<UnsnapItemPacket>(OnCustomizationPacket);
-    }
-
-    private void OnCustomizationPacket<T>(T packet)
-        where T : CustomizationActionPacket, INetSerializable, new()
-    {
-        if (packet == null)
-            return;
-
-        // LiteNetLib reuses the INetSerializable instance registered for this
-        // subscription. Keep a value copy because the action can remain queued
-        // while later packets are deserialized into that same instance.
-        pendingCustomizationActions.Add(packet.Copy());
-        StartCustomizationActionDrain();
-    }
-
-    private IEnumerator ApplyPendingCustomizationStates()
-    {
-        if (applyingCustomizationSnapshot)
-            yield break;
-
-        applyingCustomizationSnapshot = true;
-        try
-        {
-            while (pendingCustomizationState != null)
-            {
-                CustomizationStateData state = pendingCustomizationState;
-                pendingCustomizationState = null;
-                pendingCustomizationSnapshotPlacements.Clear();
-                pendingCustomizationSnapshotRelationships.Clear();
-                pendingCustomizationSnapshotHoleStates.Clear();
-                yield return CustomizationStateManager.ApplyCurrentStateWhenReady(state,
-                    pendingCustomizationSnapshotPlacements, pendingCustomizationSnapshotRelationships,
-                    pendingCustomizationSnapshotHoleStates);
-
-                if (customizationSnapshotTimedOut)
-                {
-                    var capturedLocalActions = state.ProcessedOriginActionIds.ToHashSet();
-                    pendingCustomizationActions.InsertRange(0, appliedActionsSinceSnapshotTimeout.Where(
-                        action => !capturedLocalActions.Contains(action.OriginActionId)));
-                    appliedActionsSinceSnapshotTimeout.Clear();
-                    customizationSnapshotTimedOut = false;
-                }
-
-                customizationSnapshotApplied = true;
-                Log($"Customization state loaded ({state.Gadgets.Count} gadgets, {state.Holes.Count} holes)");
-            }
-        }
-        finally
-        {
-            applyingCustomizationSnapshot = false;
-        }
-
-        StartCustomizationActionDrain();
-    }
-
-    private void StartCustomizationActionDrain()
-    {
-        if (customizationActionDrainRunning ||
-            pendingCustomizationSnapshotPlacements.Count == 0 &&
-            pendingCustomizationSnapshotRelationships.Count == 0 &&
-            pendingCustomizationSnapshotHoleStates.Count == 0 &&
-            pendingCustomizationActions.Count == 0)
-            return;
-
-        CoroutineManager.Instance.StartCoroutine(DrainPendingCustomizationActions());
-    }
-
-    private IEnumerator DrainPendingCustomizationActions()
-    {
-        customizationActionDrainRunning = true;
-        try
-        {
-            while (IsRunning && (pendingCustomizationSnapshotPlacements.Count > 0 ||
-                pendingCustomizationSnapshotRelationships.Count > 0 ||
-                pendingCustomizationSnapshotHoleStates.Count > 0 || pendingCustomizationActions.Count > 0))
-            {
-                if (!customizationSnapshotApplied || applyingCustomizationSnapshot)
-                {
-                    yield return null;
-                    continue;
-                }
-
-                bool appliedAny = false;
-                for (int index = 0; index < pendingCustomizationSnapshotPlacements.Count; index++)
-                {
-                    var placement = pendingCustomizationSnapshotPlacements[index];
-                    if (!CustomizationStateManager.IsSnapshotPlacementReady(placement, out _))
-                        continue;
-
-                    pendingCustomizationSnapshotPlacements.RemoveAt(index--);
-                    // The initial object-state pass already applied or queued these
-                    // values. If the item did not exist, its reliable Create carries
-                    // a newer full state. Reapplying this older baseline here could
-                    // roll back changes received while the target was unavailable.
-                    CustomizationStateManager.ApplySnapshotPlacement(placement, applyTrackedValues: false);
-                    appliedAny = true;
-                }
-
-                foreach (string targetKey in pendingCustomizationSnapshotHoleStates.Keys.ToArray())
-                {
-                    if (!CustomizationStateManager.ApplySnapshotHoleState(targetKey,
-                        pendingCustomizationSnapshotHoleStates[targetKey]))
-                        continue;
-
-                    pendingCustomizationSnapshotHoleStates.Remove(targetKey);
-                    appliedAny = true;
-                }
-
-                for (int index = 0; index < pendingCustomizationSnapshotRelationships.Count; index++)
-                {
-                    var action = pendingCustomizationSnapshotRelationships[index];
-                    bool blockedByEarlierDependency = pendingCustomizationSnapshotRelationships.Take(index)
-                        .Any(earlier => CustomizationStateManager.ActionsConflict(earlier, action));
-                    bool blockedByPlacement = pendingCustomizationSnapshotPlacements
-                        .Any(placement => CustomizationStateManager.SnapshotPlacementConflicts(placement, action));
-                    bool blockedByHoleState = pendingCustomizationSnapshotHoleStates.Keys
-                        .Any(targetKey => CustomizationStateManager.SnapshotHoleStateConflicts(targetKey, action));
-                    if (blockedByEarlierDependency || blockedByPlacement || blockedByHoleState ||
-                        !CustomizationStateManager.IsActionReady(action, out _))
-                        continue;
-
-                    pendingCustomizationSnapshotRelationships.RemoveAt(index--);
-                    try
-                    {
-                        CustomizationStateManager.ApplyAction(action);
-                    }
-                    catch (Exception exception)
-                    {
-                        LogError($"Failed to apply deferred snapshot relationship {action.GetType().Name}: {exception}");
-                    }
-                    appliedAny = true;
-                }
-
-                for (int index = 0; index < pendingCustomizationActions.Count; index++)
-                {
-                    var action = pendingCustomizationActions[index];
-                    bool blockedByEarlierDependency = pendingCustomizationActions.Take(index)
-                        .Any(earlier => CustomizationStateManager.ActionsConflict(earlier, action));
-                    bool blockedBySnapshotPlacement = pendingCustomizationSnapshotPlacements
-                        .Any(placement => CustomizationStateManager.SnapshotPlacementConflicts(placement, action));
-                    bool blockedBySnapshotRelationship = pendingCustomizationSnapshotRelationships
-                        .Any(relationship => CustomizationStateManager.ActionsConflict(relationship, action));
-                    bool blockedBySnapshotHoleState = pendingCustomizationSnapshotHoleStates.Keys
-                        .Any(targetKey => CustomizationStateManager.SnapshotHoleStateConflicts(targetKey, action));
-                    if (blockedByEarlierDependency || blockedBySnapshotPlacement ||
-                        blockedBySnapshotRelationship || blockedBySnapshotHoleState ||
-                        !CustomizationStateManager.IsActionReady(action, out _))
-                        continue;
-
-                    pendingCustomizationActions.RemoveAt(index--);
-                    try
-                    {
-                        CustomizationStateManager.ApplyAction(action);
-                    }
-                    catch (Exception exception)
-                    {
-                        LogError($"Failed to apply deferred customization action {action.GetType().Name}: {exception}");
-                    }
-                    appliedAny = true;
-                }
-
-                if (!appliedAny)
-                    yield return null;
-            }
-        }
-        finally
-        {
-            customizationActionDrainRunning = false;
-        }
+        netPacketProcessor.SubscribeNetSerializable<PlaceGadgetPacket>(CustomizationSynchronization.ReceiveAction);
+        netPacketProcessor.SubscribeNetSerializable<RemoveGadgetPacket>(CustomizationSynchronization.ReceiveAction);
+        netPacketProcessor.SubscribeNetSerializable<AddHolePacket>(CustomizationSynchronization.ReceiveAction);
+        netPacketProcessor.SubscribeNetSerializable<MoveHolePacket>(CustomizationSynchronization.ReceiveAction);
+        netPacketProcessor.SubscribeNetSerializable<RemoveHolePacket>(CustomizationSynchronization.ReceiveAction);
+        netPacketProcessor.SubscribeNetSerializable<MountGadgetPacket>(CustomizationSynchronization.ReceiveAction);
+        netPacketProcessor.SubscribeNetSerializable<UnmountGadgetPacket>(CustomizationSynchronization.ReceiveAction);
+        netPacketProcessor.SubscribeNetSerializable<WireGadgetsPacket>(CustomizationSynchronization.ReceiveAction);
+        netPacketProcessor.SubscribeNetSerializable<UnwireGadgetsPacket>(CustomizationSynchronization.ReceiveAction);
+        netPacketProcessor.SubscribeNetSerializable<DropEmptySpoolPacket>(CustomizationSynchronization.ReceiveAction);
+        netPacketProcessor.SubscribeNetSerializable<LoadSpoolPacket>(CustomizationSynchronization.ReceiveAction);
+        netPacketProcessor.SubscribeNetSerializable<ReplaceSpoolPacket>(CustomizationSynchronization.ReceiveAction);
+        netPacketProcessor.SubscribeNetSerializable<ReplaceDuctTapePacket>(CustomizationSynchronization.ReceiveAction);
+        netPacketProcessor.SubscribeNetSerializable<SnapItemPacket>(CustomizationSynchronization.ReceiveAction);
+        netPacketProcessor.SubscribeNetSerializable<UnsnapItemPacket>(CustomizationSynchronization.ReceiveAction);
     }
 
     private void OnCommonPaintThemePacket(CommonPaintThemePacket packet)
@@ -1791,7 +1548,6 @@ public class NetworkClient : NetworkManager
         SendNetSerializablePacket(serverPeer, packet, deliveryMethod);
     }
 
-
     #region Mod Packets
     public void SendExternalPacketToServer<T>(T packet, bool reliable) where T : class, IPacket, new()
     {
@@ -1898,7 +1654,6 @@ public class NetworkClient : NetworkManager
             Flags = (ushort)flags,
         }, DeliveryMethod.ReliableOrdered);
     }
-
 
     //public void SendTrainCouple(Coupler coupler, Coupler otherCoupler, bool playAudio, bool viaChainInteraction)
     //{
@@ -2228,12 +1983,7 @@ public class NetworkClient : NetworkManager
         if (nextCustomizationActionId == 0)
             nextCustomizationActionId = 1;
 
-        // Ordinary actions are not echoed to their sender. Preserve locally
-        // originated mutations so a snapshot that arrives after the loading
-        // timeout cannot erase them. Replacement actions are server-echoed after
-        // their authoritative replacement item id has been assigned.
-        if (customizationSnapshotTimedOut && packet is not ReplaceSpoolPacket and not ReplaceDuctTapePacket)
-            appliedActionsSinceSnapshotTimeout.Add(packet.Copy());
+        CustomizationSynchronization.RecordLocalAction(packet);
 
         SendNetSerializablePacketToServer(packet, DeliveryMethod.ReliableOrdered);
     }
@@ -2257,7 +2007,6 @@ public class NetworkClient : NetworkManager
             DeliveryMethod.ReliableOrdered
         );
     }
-
 
     public uint SendShopPurchase(ushort registerNetId, double amount, string[] itemPrefabNames, int[] itemAmounts)
     {

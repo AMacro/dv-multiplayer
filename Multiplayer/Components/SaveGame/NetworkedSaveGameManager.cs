@@ -203,6 +203,7 @@ public class NetworkedSaveGameManager : SingletonBehaviour<NetworkedSaveGameMana
         // Absence means first-time provisioning on the next connection. Keep the
         // identity/timestamp metadata so administrative lookup remains available.
         playerData.Remove(INVENTORY_KEY);
+        ShopPurchaseCoordinator.RequestStockRecount();
     }
 
     private static void UpdatePlayerMetadata(JObject playerData, ServerPlayer player)

@@ -36,6 +36,10 @@ public static class CustomizationStateManager
         foreach (var item in NetworkedItem.GetAll())
             CaptureItem(state, item);
 
+        // Native OnGadgetWired appends subscribers. Replaying in that same order
+        // restores the alternating sequence without assigning its private list.
+        state.Wires = state.Wires.OrderBy(GetWireReplayOrder).ToList();
+
         CaptureFreeHoles(state);
         LogSnapshot("captured", state);
         return state;
@@ -410,7 +414,8 @@ public static class CustomizationStateManager
             return;
 
         state.LoadedSpools.Add(new LoadSpoolPacket
-            { ToolItemNetId = toolItem.NetId, SpoolItemNetId = spoolItem.NetId });
+            { ToolItemNetId = toolItem.NetId, SpoolItemNetId = spoolItem.NetId,
+                HasRemainingUnits = true, RemainingUnits = tool.remainingUnits });
     }
 
     private static void CapturePlacement(
@@ -494,6 +499,20 @@ public static class CustomizationStateManager
                         SecondItemNetId = linkedId, FirstPortIndex = portIndex, SecondPortIndex = linkedPortIndex });
             }
         }
+    }
+
+    private static (int ControllerId, int SubscriberIndex) GetWireReplayOrder(WireGadgetsPacket wire)
+    {
+        if (TryGadget(wire.FirstItemNetId, out var first) && TryGadget(wire.SecondItemNetId, out var second))
+        {
+            if (first is AlternatingController a &&
+                first.WireLinkPorts[wire.FirstPortIndex] is GadgetWiringModule.WireLinkPortMulti<GadgetBase>)
+                return (wire.FirstItemNetId, a.subscribers.IndexOf(second));
+            if (second is AlternatingController b &&
+                second.WireLinkPorts[wire.SecondPortIndex] is GadgetWiringModule.WireLinkPortMulti<GadgetBase>)
+                return (wire.SecondItemNetId, b.subscribers.IndexOf(first));
+        }
+        return (int.MaxValue, 0);
     }
 
     private static void CaptureFreeHoles(CustomizationStateData state)
@@ -1157,7 +1176,15 @@ public static class CustomizationStateManager
         if (NetworkedItem.TryGet(packet.ToolItemNetId, out var toolItem) &&
             toolItem.GetTrackedItem<GadgetSolderingTool>() is { magazine: not null } tool &&
             NetworkedItem.TryGet(packet.SpoolItemNetId, out var spoolItem))
+        {
             LoadSpool(toolItem, tool, spoolItem);
+            if (packet.HasRemainingUnits)
+            {
+                // Native loading restores AMMO after magazine callbacks have run.
+                tool.OnAfterMagazineDataLoaded(new Newtonsoft.Json.Linq.JObject { ["AMMO"] = packet.RemainingUnits });
+                toolItem.MarkAsSynchronized();
+            }
+        }
     }
 
     private static void LoadSpool(NetworkedItem toolItem, GadgetSolderingTool tool, NetworkedItem spoolItem)
@@ -1184,29 +1211,12 @@ public static class CustomizationStateManager
                 return;
             }
 
-            ushort loadedNetId = spoolItem.NetId;
-            byte loadedOwner = spoolItem.OwnerPlayerId;
-            bool belongsToPlayer = spoolItem.Item?.InventorySpecs?.BelongsToPlayer ?? true;
-
-            Multiplayer.LogWarning($"Reconcile reel load for soldering tool {toolItem.NetId}: updating contained reel " +
-                $"{currentItem.NetId} with loaded reel {loadedNetId} instead of ejecting it");
-
-            // Keep the object already held by ItemMagazine and transfer the loaded
-            // reel's network identity and state onto it. The separately represented
-            // incoming object is only a duplicate on this peer.
-            spoolItem.SuppressDestroySync();
-            spoolItem.NetId = 0;
-            Inventory.Instance.DestroyItem(spoolItem.gameObject);
-
-            currentItem.NetId = loadedNetId;
-            currentItem.SetOwner(loadedOwner);
-            if (currentItem.Item?.InventorySpecs != null)
-                currentItem.Item.InventorySpecs.BelongsToPlayer = belongsToPlayer;
-            currentAmmo.isSpent = false;
-            tool.currentSpool = currentAmmo;
-            tool.ReloadResource();
-            FinalizeContainedSpool(currentItem);
-            return;
+            // Replace a stale local representation through the native magazine.
+            // Relabelling a spent reel as full changes both its model and resource.
+            if (!tool.magazine.RemoveItem(0, true, true))
+                return;
+            currentItem.SuppressDestroySync();
+            Inventory.Instance.DestroyItem(current);
         }
 
         EnsureInWorldStorage(spoolItem.Item);

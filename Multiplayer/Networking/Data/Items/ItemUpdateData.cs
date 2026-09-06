@@ -29,6 +29,7 @@ public class ItemUpdateData
     public ushort ItemNetId { get; set; }
     public byte OwnerPlayerId { get; set; }
     public bool BelongsToPlayer { get; set; }
+    public bool RestockOnDestroy { get; set; }
     public string PrefabName { get; set; }
     public ItemState ItemState { get; set; }
     public bool Active { get; set; }
@@ -39,6 +40,8 @@ public class ItemUpdateData
     public int InventorySlotIndex { get; set; } = -1;
     public int ContainerSlotIndex { get; set; } = -1;
     public string ContainerId { get; set; }
+    // Identity of this item's container, distinct from the container holding it.
+    public string ContainerIdentity { get; set; }
     public bool InLockedSlot { get; set; }
     public bool IsDropped { get; set; }
     public ushort CarNetId { get; set; }
@@ -65,7 +68,9 @@ public class ItemUpdateData
         {
             writer.Put(OwnerPlayerId);
             writer.Put(BelongsToPlayer);
+            writer.Put(RestockOnDestroy);
             writer.Put(PrefabName);
+            writer.Put(ContainerIdentity ?? string.Empty);
         }
         else if (UpdateType.HasFlag(ItemUpdateType.Ownership))
         {
@@ -140,7 +145,9 @@ public class ItemUpdateData
         {
             OwnerPlayerId = reader.GetByte();
             BelongsToPlayer = reader.GetBool();
+            RestockOnDestroy = reader.GetBool();
             PrefabName = reader.GetString();
+            ContainerIdentity = reader.GetString();
         }
         else if (UpdateType.HasFlag(ItemUpdateType.Ownership))
         {

@@ -106,8 +106,8 @@ public class NetworkServer : NetworkManager
     public ChatManager ChatManager => _chatManager;
 
     private uint lastTick;
-    private readonly List<PendingHostCustomizationAction> pendingHostCustomizationActions = [];
-    private bool hostCustomizationDrainRunning;
+    private HostCustomizationSynchronization hostCustomizationSynchronization;
+    private HostCustomizationSynchronization CustomizationSynchronization => hostCustomizationSynchronization ??= new(this);
 
     public NetworkServer(IDifficulty difficulty, Settings settings, bool singlePlayer, LobbyServerData serverData) : base(settings)
     {
@@ -155,8 +155,7 @@ public class NetworkServer : NetworkManager
     {
         Log($"Stopping server...");
         WorldStreamingInit.LoadingFinished -= OnLoaded;
-        pendingHostCustomizationActions.Clear();
-        hostCustomizationDrainRunning = false;
+        CustomizationSynchronization.Reset();
 
         if (lobbyServerManager != null)
         {
@@ -2221,8 +2220,11 @@ public class NetworkServer : NetworkManager
             return;
         }
 
-        var response = NetworkedItemManager.Instance.ReconcileClientItems(packet, player);
-        SendNetSerializablePacket(peer, response, DeliveryMethod.ReliableOrdered);
+        // The packet processor reuses the packet's list. Own the batch before
+        // yielding for native item initialization.
+        NetworkedItemManager.Instance.EnqueueClientItemReconciliation(
+            packet.Items.ToArray(), packet.IsFinalBatch, player,
+            response => SendNetSerializablePacket(peer, response, DeliveryMethod.ReliableOrdered));
     }
 
     internal void SendCustomizationAction<T>(T packet)
@@ -2258,92 +2260,8 @@ public class NetworkServer : NetworkManager
         // subscription. Keep a value copy because the action can remain queued
         // while later packets are deserialized into that same instance.
         var copy = (T)packet.Copy();
-        pendingHostCustomizationActions.Add(new PendingHostCustomizationAction(copy, player, peer,
-            (action, origin, echoOrigin) => RelayCustomizationAction((T)action, origin, echoOrigin)));
-        StartHostCustomizationDrain();
-    }
-
-    private void StartHostCustomizationDrain()
-    {
-        if (hostCustomizationDrainRunning || pendingHostCustomizationActions.Count == 0)
-            return;
-
-        CoroutineManager.Instance.StartCoroutine(DrainPendingHostCustomizationActions());
-    }
-
-    private IEnumerator DrainPendingHostCustomizationActions()
-    {
-        hostCustomizationDrainRunning = true;
-        try
-        {
-            while (IsRunning && pendingHostCustomizationActions.Count > 0)
-            {
-                bool appliedAny = false;
-                for (int index = 0; index < pendingHostCustomizationActions.Count; index++)
-                {
-                    var pending = pendingHostCustomizationActions[index];
-                    if (!peerToPlayer.TryGetValue(pending.Peer, out var connectedPlayer) ||
-                        connectedPlayer != pending.Player)
-                    {
-                        pendingHostCustomizationActions.RemoveAt(index--);
-                        continue;
-                    }
-
-                    bool blockedByEarlierDependency = pendingHostCustomizationActions.Take(index)
-                        .Any(earlier => CustomizationStateManager.ActionsConflict(earlier.Packet, pending.Packet));
-                    if (blockedByEarlierDependency ||
-                        !CustomizationStateManager.IsActionReady(pending.Packet, out _))
-                        continue;
-
-                    pendingHostCustomizationActions.RemoveAt(index--);
-                    bool applied = false;
-                    try
-                    {
-                        applied = CustomizationStateManager.ProcessActionAsHost(pending.Packet, pending.Player);
-                    }
-                    catch (Exception exception)
-                    {
-                        LogError($"Failed to apply customization action {pending.Packet.GetType().Name} from " +
-                            $"{pending.Player.Username}: {exception}");
-                    }
-
-                    if (pending.Packet.OriginActionId != 0)
-                        pending.Player.ProcessedCustomizationActionIds.Add(pending.Packet.OriginActionId);
-
-                    if (applied)
-                    {
-                        bool echoSender = pending.Packet is ReplaceSpoolPacket or ReplaceDuctTapePacket;
-                        pending.Relay(pending.Packet, pending.Peer, echoSender);
-                    }
-                    appliedAny = true;
-                }
-
-                if (!appliedAny)
-                    yield return null;
-            }
-        }
-        finally
-        {
-            hostCustomizationDrainRunning = false;
-        }
-    }
-
-    private sealed class PendingHostCustomizationAction
-    {
-        public readonly ICustomizationActionPacket Packet;
-        public readonly ServerPlayer Player;
-        public readonly ITransportPeer Peer;
-
-        public readonly Action<ICustomizationActionPacket, ITransportPeer, bool> Relay;
-
-        public PendingHostCustomizationAction(ICustomizationActionPacket packet, ServerPlayer player,
-            ITransportPeer peer, Action<ICustomizationActionPacket, ITransportPeer, bool> relay)
-        {
-            Packet = packet;
-            Player = player;
-            Peer = peer;
-            Relay = relay;
-        }
+        CustomizationSynchronization.Enqueue(copy, player, peer,
+            (action, origin, echoOrigin) => RelayCustomizationAction((T)action, origin, echoOrigin));
     }
 
     private void RelayCustomizationAction<T>(T packet, ITransportPeer origin = null, bool echoOrigin = false)

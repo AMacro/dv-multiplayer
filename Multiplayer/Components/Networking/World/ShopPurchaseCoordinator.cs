@@ -3,9 +3,12 @@ using DV.CashRegister;
 using DV.Shops;
 using DV.Utils;
 using Multiplayer.Networking.Data;
+using Multiplayer.Networking.Data.Items;
+using Multiplayer.Components.SaveGame;
 using Multiplayer.Networking.Packets.Common;
 using System;
 using System.Collections.Generic;
+using System.Collections;
 using System.Linq;
 using UnityEngine;
 
@@ -30,6 +33,8 @@ internal static class ShopPurchaseCoordinator
     private static readonly Dictionary<string, Queue<ServerPlayer>> pendingOwners = [];
     private static readonly Dictionary<ShopItemData, int> scaledAllowances = [];
     private static bool applyingClientApproval;
+    private static bool stockRecountPending;
+    private static int sessionGeneration;
 
     public static ShopPurchase[] Capture(CashRegisterWithModules register) => register.registerModules
         .OfType<ScanItemCashRegisterModule>()
@@ -93,6 +98,8 @@ internal static class ShopPurchaseCoordinator
     {
         pendingOwners.Clear();
         scaledAllowances.Clear();
+        stockRecountPending = false;
+        sessionGeneration++;
     }
 
     public static void AssignPurchasedObject(GameObject purchasedObject)
@@ -281,17 +288,79 @@ internal static class ShopPurchaseCoordinator
 
     public static void RecountExistingShopItems(GlobalShopController controller)
     {
-        var counts = SingletonBehaviour<StorageController>.Instance.GetAllStorageItems()
-            .Select(item => item?.GetComponent<ShopRestocker>())
-            .Where(restocker => restocker != null && restocker.restockOnItemDestroyed)
-            .Select(restocker => restocker.GetComponent<InventoryItemSpec>()?.ItemPrefabName)
-            .Where(prefabName => !string.IsNullOrEmpty(prefabName))
-            .GroupBy(prefabName => prefabName)
-            .ToDictionary(group => group.Key, group => group.Count());
+        if (controller == null || !NetworkLifecycle.Instance.IsHost())
+            return;
 
+        var players = NetworkLifecycle.Instance.Server.ServerPlayers.ToArray();
+        var stored = NetworkedSaveGameManager.Instance.GetSavedPlayerInventories()
+            .Where(inventory => !players.Any(player => player.Guid == inventory.Guid &&
+                (player.InventoryReconciliationComplete || player.Peer == NetworkLifecycle.Instance.Server.SelfPeer))).ToArray();
+
+        // Until a returning player's complete inventory is reconciled, its saved
+        // inventory reserves the stock. Partial live proxies are the same items.
+        var partialInventoryItems = players.Where(player => stored.Any(inventory => inventory.Guid == player.Guid))
+            .SelectMany(player => player.ReconciledInventoryItems).ToHashSet();
+        var networkedItems = NetworkedItem.GetAll().Where(item => item != null && item.NetId != 0).ToArray();
+        var ignoredItems = networkedItems.Where(item => item.IsPendingReconciliation || partialInventoryItems.Contains(item))
+            .Select(item => item.Item).ToHashSet();
+        var physicalItems = SingletonBehaviour<StorageController>.Instance.GetAllStorageItems()
+            .Concat(networkedItems.Select(item => item.Item)).Where(item => item != null && !ignoredItems.Contains(item))
+            .Distinct().Select(item => item.GetComponent<ShopRestocker>())
+            .Where(restocker => restocker != null && restocker.restockOnItemDestroyed)
+            .Select(restocker => restocker.GetComponent<InventoryItemSpec>()?.ItemPrefabName);
+        var counts = CountStockReservations(physicalItems, stored.SelectMany(inventory => inventory.Items),
+            pendingOwners.Select(entry => new KeyValuePair<string, int>(entry.Key, entry.Value.Count)));
+
+        bool changed = false;
         foreach (ShopItemData data in controller.shopItemsData)
-            data.purchasedItems = counts.TryGetValue(data.item.ItemPrefabName, out int count) ? count : 0;
+        {
+            int count = counts.TryGetValue(data.item.ItemPrefabName, out int total) ? total : 0;
+            changed |= data.purchasedItems != count;
+            data.purchasedItems = count;
+        }
 
         controller.Fire_GlobalShopDataChanged();
+        if (changed)
+            NetworkLifecycle.Instance.Server.SendShopAction(CreateStockSnapshot());
+    }
+
+    internal static Dictionary<string, int> CountStockReservations(IEnumerable<string> physicalItems,
+        IEnumerable<PlayerItemSaveData> storedItems, IEnumerable<KeyValuePair<string, int>> pendingPurchases)
+    {
+        var counts = physicalItems.Concat(storedItems
+                .Where(item => item.State?.Value<bool?>(ShopRestocker.RESTOCK_SHOP_KEY) == true)
+                .Select(item => item.ItemPrefabName))
+            .Where(name => !string.IsNullOrEmpty(name)).GroupBy(name => name)
+            .ToDictionary(group => group.Key, group => group.Count());
+        foreach (var purchase in pendingPurchases)
+            counts[purchase.Key] = (counts.TryGetValue(purchase.Key, out int count) ? count : 0) + purchase.Value;
+        return counts;
+    }
+
+    internal static void SuppressStorageTransitionRestock(GameObject item)
+    {
+        // The saved record retains the native Restock flag. Destroying a proxy
+        // while moving it to/from that record is not consumption of the item.
+        var restocker = item?.GetComponent<ShopRestocker>();
+        if (restocker != null)
+            restocker.restockOnItemDestroyed = false;
+    }
+
+    internal static void RequestStockRecount()
+    {
+        if (stockRecountPending || !NetworkLifecycle.Instance.IsHost())
+            return;
+        stockRecountPending = true;
+        CoroutineManager.Instance.StartCoroutine(RecountAfterDestroyedObjects(sessionGeneration));
+    }
+
+    private static IEnumerator RecountAfterDestroyedObjects(int generation)
+    {
+        yield return null;
+        if (generation != sessionGeneration)
+            yield break;
+        stockRecountPending = false;
+        if (NetworkLifecycle.Instance.IsHost())
+            RecountExistingShopItems(GlobalShopController.Instance);
     }
 }

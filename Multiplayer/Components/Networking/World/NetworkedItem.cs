@@ -87,7 +87,10 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
     public bool UsefulItem { get; private set; } = false;
     public Type TrackedItemType { get; private set; }
     public uint LastDirtyTick { get; private set; }
-    public bool IsReadyForSnapshots => registrationComplete && Item != null;
+    public bool IsReadyForSnapshots => registrationComplete && Item != null && !IsPendingInitialization;
+    internal bool IsPendingInitialization { get; set; }
+    internal bool IsPendingReconciliation { get; set; }
+    private bool pendingContainerRestore;
     public ItemState CurrentState => lastState;
     public int InventorySlotIndex { get; private set; } = -1;
     public int ContainerSlotIndex { get; private set; } = -1;
@@ -339,6 +342,9 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
     public ItemUpdateData GetSnapshot()
     {
+        if (IsPendingInitialization || IsPendingReconciliation || pendingContainerRestore)
+            return null;
+
         ItemUpdateData snapshot;
         ItemUpdateData.ItemUpdateType updateType = ItemUpdateData.ItemUpdateType.None;
 
@@ -453,8 +459,30 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         if (Item?.InventorySpecs != null && snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.Create))
             Item.InventorySpecs.BelongsToPlayer = snapshot.BelongsToPlayer;
 
+        if (snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.Create) &&
+            Item.GetComponent<DV.Shops.ShopRestocker>() is DV.Shops.ShopRestocker restocker)
+            restocker.OnItemSaveDataLoaded(new Newtonsoft.Json.Linq.JObject
+                { [DV.Shops.ShopRestocker.RESTOCK_SHOP_KEY] = snapshot.RestockOnDestroy });
+
+        if (snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.Create) &&
+            !string.IsNullOrEmpty(snapshot.ContainerIdentity) &&
+            Item.GetComponent<AItemContainer>() is AItemContainer container &&
+            container.ContainerId != snapshot.ContainerIdentity)
+            container.AssignIdAndRegister(snapshot.ContainerIdentity);
+
         if (snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.ItemState) || snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.FullSync) || snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.Create))
         {
+            // Leave native containers through RemoveItem so their slot, listeners,
+            // and magazine state cannot retain an item that has moved elsewhere.
+            if (Item.InContainer is AItemContainer previousContainer &&
+                (snapshot.ItemState != ItemState.InContainer ||
+                 previousContainer.ContainerId != snapshot.ContainerId ||
+                 snapshot.ContainerSlotIndex < 0 || snapshot.ContainerSlotIndex >= previousContainer.Capacity ||
+                 previousContainer[snapshot.ContainerSlotIndex] != gameObject))
+            {
+                DetachFromContainer();
+            }
+            pendingContainerRestore = snapshot.ItemState == ItemState.InContainer;
             lastState = snapshot.ItemState;
             Multiplayer.Log($"NetworkedItem.ApplySnapshot() netId: {snapshot?.ItemNetId}, ItemUpdateType: {snapshot?.UpdateType}, ItemState: {snapshot?.ItemState}, Active state: {gameObject.activeInHierarchy}");
 
@@ -467,8 +495,12 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
                 case ItemState.InHand:
                 case ItemState.InInventory:
-                case ItemState.InContainer:
                     HandleInventoryOrHandState(snapshot);
+                    break;
+
+                case ItemState.InContainer:
+                    // Membership is restored after this batch so the parent may
+                    // arrive after its contents, including in a later packet.
                     break;
 
                 case ItemState.Attached:
@@ -591,6 +623,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
             ItemNetId = NetId,
             OwnerPlayerId = this.OwnerPlayerId,
             BelongsToPlayer = Item.InventorySpecs.BelongsToPlayer,
+            RestockOnDestroy = Item.GetComponent<DV.Shops.ShopRestocker>()?.restockOnItemDestroyed == true,
             PrefabName = Item.InventorySpecs.ItemPrefabName,
             ItemState = lastState,
             Active = gameObject.activeSelf,
@@ -603,6 +636,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
             InventorySlotIndex = InventorySlotIndex,
             ContainerSlotIndex = ContainerSlotIndex,
             ContainerId = ContainerId,
+            ContainerIdentity = Item.GetComponent<AItemContainer>()?.ContainerId,
             InLockedSlot = InLockedSlot,
             IsDropped = IsDroppedInInventory,
             CarNetId = carId,
@@ -666,7 +700,8 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
     public ItemUpdateData CreateCurrentUpdateData(ItemUpdateData.ItemUpdateType updateType)
     {
         lastState = GetItemState();
-        CaptureCurrentLayout(lastState);
+        if (ShouldObserveLocalLayout())
+            CaptureCurrentLayout(lastState);
         return CreateUpdateData(updateType);
     }
 
@@ -898,6 +933,51 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
     public static bool IsCarriedState(ItemState state) =>
         state is ItemState.InHand or ItemState.InInventory or ItemState.InContainer;
+
+    internal void RestoreContainerMembership()
+    {
+        if (!pendingContainerRestore || IsPendingReconciliation || !IsReadyForSnapshots ||
+            string.IsNullOrEmpty(ContainerId))
+            return;
+
+        var container = Inventory.Instance.ItemContainerRegistry.GetContainer(ContainerId);
+        if (container == null || ContainerSlotIndex < 0 || ContainerSlotIndex >= container.Capacity)
+            return;
+        if (container[ContainerSlotIndex] == gameObject)
+        {
+            pendingContainerRestore = false;
+            return;
+        }
+        if (container[ContainerSlotIndex] != null)
+            return;
+
+        using (CustomizationSyncScope.Remote())
+        {
+            // SaveItemData retains the native state used by PostContainerLoadData.
+            // In particular AMMO must be restored after ItemMagazine.AddItem fires
+            // its ordinary loaded/full/empty callbacks.
+            var containerSave = container.GetComponent<ItemSaveData>();
+            containerSave?.SaveItemData();
+            var storage = StorageController.Instance;
+            if (!storage.AnyStorageContains(Item) && Item.BelongsToPlayer())
+                storage.AddItemToWorldStorage(Item);
+            if (!container.AddItem(gameObject, ContainerSlotIndex))
+                return;
+            containerSave?.PostContainerLoadData();
+            pendingContainerRestore = false;
+            MarkAsSynchronized();
+        }
+    }
+
+    internal void DetachFromContainer()
+    {
+        pendingContainerRestore = false;
+        if (Item.InContainer is not AItemContainer container)
+            return;
+        var (_, slot) = Inventory.Instance.ItemContainerRegistry.GetItemContainerIdAndIndex(gameObject);
+        using (CustomizationSyncScope.Remote())
+            container.RemoveItem(slot, false, false);
+    }
 
     private bool ShouldObserveLocalLayout()
     {

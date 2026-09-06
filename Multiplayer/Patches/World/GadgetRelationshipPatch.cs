@@ -148,7 +148,8 @@ public static class GadgetRelationshipPatch
             !NetworkedItem.TryGetNetworkedItem(item.GetComponent<ItemBase>(), out var spoolNet) ||
             spoolNet.NetId == 0) return;
         CustomizationStateManager.SendAction(new LoadSpoolPacket
-            { ToolItemNetId = toolNet.NetId, SpoolItemNetId = spoolNet.NetId });
+            { ToolItemNetId = toolNet.NetId, SpoolItemNetId = spoolNet.NetId,
+                HasRemainingUnits = true, RemainingUnits = tool.remainingUnits });
     }
 
     [HarmonyPatch(typeof(ItemSnapPointBase), nameof(ItemSnapPointBase.SnapItem), new[] { typeof(ItemBase), typeof(bool) }), HarmonyPostfix]
