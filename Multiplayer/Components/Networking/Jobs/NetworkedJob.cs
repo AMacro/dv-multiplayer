@@ -2,8 +2,10 @@ using DV.CabControls;
 using DV.InventorySystem;
 using DV.Logic.Job;
 using Multiplayer.Components.Networking.World;
+using Multiplayer.ModCompatibility;
 using Multiplayer.Networking.Data.Jobs;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -173,6 +175,12 @@ public class NetworkedJob : IdMonoBehaviour<ushort, NetworkedJob>
         job.JobCompleted += OnJobCompleted;
         job.JobExpired += OnJobExpired;
 
+        if (PersistentJobs.Active)
+        {
+            PersistentJobs.OnTrackChanged += OnJobTrackChanged;
+            PersistentJobs.OnCarChanged += OnJobCarChanged;
+        }
+
         // If this is called after Start(), we need to add to cache here
         if (gameObject.activeInHierarchy)
         {
@@ -229,7 +237,7 @@ public class NetworkedJob : IdMonoBehaviour<ushort, NetworkedJob>
             Multiplayer.LogError($"NetworkedJob.SetTasksFromServer(): netIdToTask is null for jobId {Job?.ID}");
             return;
         }
-        
+
         foreach (var kvp in netIdToTask)
         {
             CreateNetworkedTask(kvp.Value, kvp.Key);
@@ -275,6 +283,50 @@ public class NetworkedJob : IdMonoBehaviour<ushort, NetworkedJob>
     {
         Cause = DirtyCause.JobState;
         OnJobDirty?.Invoke(this);
+    }
+
+    private void OnJobTrackChanged(Job job)
+    {
+        if (job.ID == Job.ID)
+        {
+            foreach (var task in job.tasks)
+            {
+                NetworkedTask.DoOnActualTask(task, t =>
+                {
+                    if (NetworkedTask.TryGet(t, out var netTask))
+                        netTask.UpdateDestinationTrack();
+                });
+            }
+        }
+    }
+
+    private void OnJobCarChanged((Job, Car) jct)
+    {
+        Multiplayer.LogDebug(() => $"OnJobCarChanged() fired for {jct.Item2.ID} in {jct.Item1.ID}");
+        CoroutineManager.Instance.Run(OnJobCarChangedDelayed(jct));
+    }
+
+    private IEnumerator OnJobCarChangedDelayed((Job, Car) jct)
+    {
+        if (PersistentJobs.Active)
+        {
+            if (PersistentJobs.ResumeCoroRunning) Multiplayer.LogDebug(() => $"Cars still resuming, waiting with job car changes");
+
+            yield return new WaitUntil(() => PersistentJobs.ResumeCoroRunning == false);
+        }
+        yield return null;
+
+        var (job, car) = jct;
+
+        if (job.ID == Job.ID)
+            foreach (var task in job.tasks)
+                NetworkedTask.DoOnActualTask(task, t =>
+                {
+                    if (((t.GetType() != typeof(ParallelTasks)) && (t.GetType() != typeof(SequentialTasks))) && (NetworkedTask.TryGet(t, out var netTask)))
+                        netTask.UpdateCar(car);
+                });
+
+        yield break;
     }
 
     public void AddReport(NetworkedItem item)
@@ -356,6 +408,12 @@ public class NetworkedJob : IdMonoBehaviour<ushort, NetworkedJob>
         Job.JobAbandoned -= OnJobAbandoned;
         Job.JobCompleted -= OnJobCompleted;
         Job.JobExpired -= OnJobExpired;
+
+        if (PersistentJobs.Active)
+        {
+            PersistentJobs.OnTrackChanged -= OnJobTrackChanged;
+            PersistentJobs.OnCarChanged -= OnJobCarChanged;
+        }
 
         Destroy(this);
     }

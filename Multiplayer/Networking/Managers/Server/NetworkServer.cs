@@ -8,6 +8,7 @@ using DV.Logic.Job;
 using DV.Scenarios.Common;
 using DV.ServicePenalty;
 using DV.ThingTypes;
+using DV.Utils;
 using DV.WeatherSystem;
 using Humanizer;
 using LiteNetLib;
@@ -19,6 +20,7 @@ using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.Jobs;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Components.Networking.World;
+using Multiplayer.ModCompatibility;
 using Multiplayer.Networking.Data;
 using Multiplayer.Networking.Data.Items;
 using Multiplayer.Networking.Data.Jobs;
@@ -42,6 +44,7 @@ using Multiplayer.Patches.MainMenu;
 using Multiplayer.Patches.World;
 using Multiplayer.Utils;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -229,6 +232,7 @@ public class NetworkServer : NetworkManager
 
         // Jobs
         netPacketProcessor.SubscribeReusable<ServerboundJobValidateRequestPacket, ITransportPeer>(OnServerboundJobValidateRequestPacket);
+        netPacketProcessor.SubscribeReusable<ServerboundJobsRequestPacket, ITransportPeer>(OnServerboundJobsRequestPacket);
         netPacketProcessor.SubscribeReusable<ServerboundWarehouseMachineControllerRequestPacket, ITransportPeer>(OnServerboundWarehouseMachineControllerRequestPacket);
 
         // Items
@@ -913,6 +917,35 @@ public class NetworkServer : NetworkManager
         );
     }
 
+    public void SendAbsoluteCouplingStatus(TrainCar trainCar, ushort netId)
+    {
+        LogDebug(() => $"SendAbsoluteCouplingStatus({trainCar.ID})");
+
+        bool frontMu = false;
+        bool rearMu = false;
+
+        if (trainCar.IsMultipleUnit)
+        {
+            frontMu = trainCar.muModule.frontCable.IsConnected;
+            rearMu = trainCar.muModule.rearCable.IsConnected;
+        }
+
+        SendPacketToAll
+            (
+                new ClientboudCouplingStatePacket
+                {
+                    NetId = netId,
+                    FrontCouplingData = CouplingData.From(trainCar.frontCoupler),
+                    RearCouplingData = CouplingData.From(trainCar.rearCoupler),
+                    FronMuConnected = frontMu,
+                    RearMuConnected = rearMu
+                },
+                DeliveryMethod.ReliableOrdered,
+                PlayerLoadingState.ReadyForTrainSets,
+                true
+            );
+    }
+
     public void SendTrainControlAuthorityUpdate(ushort netId, uint portNetId, ControlAuthorityState state, ServerPlayer sendToPlayer = null, ServerPlayer excludePlayer = null)
     {
         var packet = new ClientboundTrainControlAuthorityUpdatePacket
@@ -949,17 +982,56 @@ public class NetworkServer : NetworkManager
         SendPacketToAll(ClientboundJobsUpdatePacket.FromNetworkedJobs(stationNetId, jobs), DeliveryMethod.ReliableOrdered, PlayerLoadingState.ReadyForJobs, excludeSelf: true);
     }
 
-    public void SendTaskUpdate(ushort taskNetId, TaskState newState, float taskStartTime, float taskFinishTime)
+    public void SendTaskUpdate(ushort jobNetId, ushort taskNetId, TaskState newState, float taskStartTime, float taskFinishTime)
     {
-        Multiplayer.Log($"Sending TaskUpdate for taskNetId {taskNetId}, newState {newState}");
+        NetworkedJob.TryGetJob(jobNetId, out var job);
+        Multiplayer.Log($"Sending TaskUpdate for taskNetId {taskNetId}, in job {job.ID} newState {newState}");
         SendPacketToAll
         (
             new ClientboundTaskUpdatePacket
             {
+                JobNetId = jobNetId,
                 TaskNetId = taskNetId,
                 NewState = newState,
                 TaskStartTime = taskStartTime,
-                TaskFinishTime = taskFinishTime
+                TaskFinishTime = taskFinishTime,
+                TaskStateUpdate = true
+            },
+            DeliveryMethod.ReliableOrdered,
+            PlayerLoadingState.ReadyForJobs,
+            excludeSelf: true
+        );
+    }
+
+    public void SendTaskDestTrackUpdate(ushort jobNetId, ushort taskNetId, Track newDestTrack)
+    {
+        Multiplayer.Log($"Sending TaskDestTrackUpdate for taskNetId {taskNetId}, new track is {newDestTrack.ID}");
+        SendPacketToAll
+        (
+            new ClientboundTaskUpdatePacket
+            {
+                JobNetId = jobNetId,
+                TaskNetId = taskNetId,
+                DestTrackId = newDestTrack.RailTrack().Networked().NetId,
+                ReplaceDestTrack = true
+            },
+            DeliveryMethod.ReliableOrdered,
+            PlayerLoadingState.ReadyForJobs,
+            excludeSelf: true
+        );
+    }
+
+    public void SendTaskCarUpdate(ushort jobNetId, ushort taskNetId, ushort carNetId)
+    {
+        Multiplayer.Log($"Sending TaskCarUpdate for taskNetId {taskNetId}, car netId is {carNetId}");
+        SendPacketToAll
+        (
+            new ClientboundTaskUpdatePacket
+            {
+                JobNetId = jobNetId,
+                TaskNetId = taskNetId,
+                CarNetID = carNetId,
+                ReplaceCar = true
             },
             DeliveryMethod.ReliableOrdered,
             PlayerLoadingState.ReadyForJobs,
@@ -2017,6 +2089,67 @@ public class NetworkServer : NetworkManager
         }
 
         //SendPacket(peer, new ClientboundJobValidateResponsePacket { JobNetId = packet.JobNetId, Invalid = false }, DeliveryMethod.ReliableUnordered);
+    }
+
+    private void OnServerboundJobsRequestPacket(ServerboundJobsRequestPacket packet, ITransportPeer peer)
+    {
+        LogDebug(() => $"ServerboundJobsRequestPacket for station {packet.StationNetId}");
+
+        if (!NetworkedStationController.Get(packet.StationNetId, out var networkedStationController))
+        {
+            LogWarning($"ServerboundJobsRequestPacket() invalid station net id {packet.StationNetId}");
+            return;
+        }
+
+        CoroutineManager.Instance.Run(SendJobsToClientsOnRequest(packet, networkedStationController));
+    }
+
+    private IEnumerator SendJobsToClientsOnRequest(ServerboundJobsRequestPacket packet, NetworkedStationController networkedStationController)
+    {
+        if (PersistentJobs.Active)
+        {
+            if (PersistentJobs.ResumeCoroRunning)
+                LogDebug(() => $"ServerboundJobsRequestPacket station {packet.StationNetId} is probably resuming cars, waiting");
+
+            while (PersistentJobs.ResumeCoroRunning)
+                yield return null;
+        }
+
+        if (packet.GenerateJobs)
+        {
+            LogDebug(() => $"ServerboundJobsRequestPacket requested job generation for station {packet.StationNetId}");
+
+            if (!networkedStationController.StationController.ProceduralJobsController.IsJobGenerationActive)
+            {
+                networkedStationController.StationController.ProceduralJobsController.TryToGenerateJobs();
+                yield return null;
+            }
+            else
+            {
+                LogDebug(() => $"ServerboundJobsRequestPacket station {packet.StationNetId} is already generating, won´t trigger again");
+            }
+        }
+
+        if (PersistentJobs.Active)
+        {
+            if (PersistentJobs.ResumeCoroRunning)
+                LogDebug(() => $"ServerboundJobsRequestPacket station {packet.StationNetId} is probably resuming cars, waiting");
+
+            while (PersistentJobs.ResumeCoroRunning)
+                yield return null;
+        }
+
+        if (networkedStationController.StationController.ProceduralJobsController.IsJobGenerationActive)
+            LogDebug(() => $"Station {networkedStationController.StationController.stationInfo.YardID} is still generating jobs, will wait with sending");
+
+        while (networkedStationController.StationController.ProceduralJobsController.IsJobGenerationActive)
+            yield return null;
+
+        NetworkedJob[] send = (packet.SpecificJobsNetIds.Any())
+            ? networkedStationController.NetworkedJobs.Where(nj => packet.SpecificJobsNetIds.Contains(nj.NetId)).ToArray()
+            : networkedStationController.NetworkedJobs.Where(nj => !packet.ExcludeJobNetId.Contains(nj.NetId)).ToArray();
+
+        NetworkLifecycle.Instance.Server.SendJobsCreatePacket(networkedStationController, send);
     }
 
     private void OnServerboundWarehouseMachineControllerRequestPacket(ServerboundWarehouseMachineControllerRequestPacket packet, ITransportPeer peer)

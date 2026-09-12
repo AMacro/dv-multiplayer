@@ -14,6 +14,7 @@ using JetBrains.Annotations;
 using LocoSim.Definitions;
 using LocoSim.Implementations;
 using Multiplayer.Components.Networking.Player;
+using Multiplayer.ModCompatibility;
 using Multiplayer.Networking.Data;
 using Multiplayer.Networking.Data.Train;
 using Multiplayer.Networking.Packets.Clientbound.Train;
@@ -216,6 +217,9 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
     // Control authority tracking
     private readonly Dictionary<uint, ServerPlayer> portAuthority = [];
+
+    public bool DoNotUpdate = true;
+    private uint? startTick = null;
 
     #endregion
 
@@ -898,14 +902,30 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         if (UnloadWatcher.isUnloading)
             return;
 
-        Server_SendBrakeStates();
-        Server_SendCouplers();
-        Server_SendCables();
-        Server_SendCargoState();
-        Server_SendCargoHealthUpdate();
-        Server_SendCarHealthState();
+        if (!startTick.HasValue)
+        {
+            startTick = tick;
+            Server_SendCargoState();
+            Server_SendCargoHealthUpdate();
+            Server_SendCarHealthState();
+        }
 
-        TicksSinceSync++; //keep track of last full sync
+        if (!DoNotUpdate)
+        {
+            Server_SendBrakeStates();
+            Server_SendCouplers();
+            Server_SendCables();
+            Server_SendCargoState();
+            Server_SendCargoHealthUpdate();
+            Server_SendCarHealthState();
+
+            TicksSinceSync++; //keep track of last full sync
+        }
+        else
+        {
+            if ((tick - startTick > 120) && !PersistentJobs.ResumeCoroRunning)
+                DoNotUpdate = false;
+        }
     }
 
     private void Server_SendBrakeStates()

@@ -10,7 +10,8 @@ public class ClientboundJobsUpdatePacket
     public uint StationNetId { get; set; }
     public JobUpdateStruct[] JobUpdates { get; set; }
 
-    
+    public ClientboundJobsUpdatePacket Clone() => new() { StationNetId = StationNetId, JobUpdates = JobUpdates };
+
     public static ClientboundJobsUpdatePacket FromNetworkedJobs(uint stationNetID, NetworkedJob[] jobs)
     {
         Multiplayer.Log($"ClientboundJobsUpdatePacket.FromNetworkedJobs({stationNetID}, {jobs.Length})");

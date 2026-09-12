@@ -1,4 +1,6 @@
 using DV.Logic.Job;
+using HarmonyLib;
+using Multiplayer.Components.Networking.Train;
 using System;
 using System.Collections.Generic;
 
@@ -83,15 +85,41 @@ public class NetworkedTask : IdMonoBehaviour<ushort, NetworkedTask>
             taskToNetworkedTask.Remove(Task);
     }
 
+    public static void DoOnActualTask(Task task, Action<Task> action)
+    {
+        if (task is ParallelTasks || task is SequentialTasks)
+        {
+            Traverse.Create(task)
+                .Field("tasks")
+                .GetValue<IEnumerable<Task>>()
+                .Do(t => DoOnActualTask(t, action));
+        }
+        else
+        {
+            action(task);
+        }
+    }
+
     public void SetState(TaskState newState)
     {
-        if (lastState == newState && lastStartTime == Task.taskStartTime && lastFinishTime == Task.taskFinishTime)
+        if ((lastState == newState && lastStartTime == Task.taskStartTime && lastFinishTime == Task.taskFinishTime) || !NetworkedJob.TryGetNetId(Task.Job, out var jobNetId))
             return;
 
         lastState = newState;
         lastStartTime = Task.taskStartTime;
         lastFinishTime = Task.taskFinishTime;
 
-        NetworkLifecycle.Instance.Server.SendTaskUpdate(NetId, newState, Task.taskStartTime, Task.taskFinishTime);
+        NetworkLifecycle.Instance.Server.SendTaskUpdate(jobNetId, NetId, newState, Task.taskStartTime, Task.taskFinishTime);
+    }
+
+    public void UpdateDestinationTrack()
+    {
+        var destTrackOrNull = Traverse.Create(Task).Field("destinationTrack").GetValue<Track>();
+        if (destTrackOrNull != null && NetworkedJob.TryGetNetId(Task.Job, out var jobNetId)) NetworkLifecycle.Instance.Server.SendTaskDestTrackUpdate(jobNetId, NetId, destTrackOrNull);
+    }
+
+    public void UpdateCar(Car car)
+    {
+        if (NetworkedTrainCar.TryGetNetId(car, out var carNetId) && NetworkedJob.TryGetNetId(Task.Job, out var jobNetId)) NetworkLifecycle.Instance.Server.SendTaskCarUpdate(jobNetId, NetId, carNetId);
     }
 }

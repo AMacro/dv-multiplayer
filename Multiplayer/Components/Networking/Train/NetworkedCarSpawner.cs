@@ -175,7 +175,7 @@ public static class NetworkedCarSpawner
         HandleCoupling(spawnPart.RearCoupling, trainCar.rearCoupler);
     }
 
-    private static void HandleCoupling(CouplingData couplingData, Coupler currentCoupler)
+    public static void HandleCoupling(CouplingData couplingData, Coupler currentCoupler)
     {
 
         CouplingData cd = couplingData;

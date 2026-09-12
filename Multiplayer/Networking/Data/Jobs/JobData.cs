@@ -1,13 +1,16 @@
 using DV.Logic.Job;
 using DV.ThingTypes;
+using DV.Utils;
+using HarmonyLib;
 using LiteNetLib.Utils;
 using MPAPI.Types;
 using Multiplayer.Components.Networking.Jobs;
+using Multiplayer.Components.Networking.Train;
+using Multiplayer.Networking.Data.Items;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System;
-using Multiplayer.Networking.Data.Items;
 
 namespace Multiplayer.Networking.Data.Jobs;
 
@@ -93,6 +96,15 @@ public class JobData
             finishTime = jobData.FinishTime,
             State = jobData.State,
         };
+
+        HashSet<Car> cars = [];
+        jobData.GetCars().Do(cid =>
+        {
+            if (NetworkedTrainCar.TryGet(cid, out Car car))
+                cars.Add(car);
+        });
+
+        JobsManager.Instance.RegisterGeneratedJob(newJob, cars);
 
         return new(newJob, netIdToTask);
     }
