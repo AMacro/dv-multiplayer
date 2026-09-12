@@ -12,6 +12,7 @@ namespace Multiplayer.Networking.Managers.Client;
 public class ClientPlayerManager : IDisposable
 {
     private const float CULLING_CHECK_INTERVAL = 2f;
+    private const float CULLING_CHECK_INTERVAL_EXTERNAL_CAM = 1f;
     private const float CULL_SQR_DISTANCE = 150f * 150f;
     private const float ACTIVATE_SQR_DISTANCE = 145f * 145f;
 
@@ -28,7 +29,7 @@ public class ClientPlayerManager : IDisposable
 
     public ClientPlayerManager()
     {
-        cullingRoutine = CoroutineManager.Instance.StartCoroutine(CullingCoro());
+        StartCulling();
     }
 
     public void StartCulling()
@@ -135,9 +136,12 @@ public class ClientPlayerManager : IDisposable
     {
         while (true)
         {
-            yield return new WaitForSeconds(CULLING_CHECK_INTERVAL);
+            float interval = PlayerManager.ActiveCamera == PlayerManager.PlayerCamera ? CULLING_CHECK_INTERVAL : CULLING_CHECK_INTERVAL_EXTERNAL_CAM;
 
-            Vector3 localPos = PlayerManager.PlayerTransform?.position ?? Vector3.zero;
+            yield return new WaitForSeconds(interval);
+
+            var localPlayer = PlayerManager.ActiveCamera?.transform ?? PlayerManager.PlayerTransform;
+            Vector3 localPos = localPlayer?.position ?? Vector3.zero;
 
             if (Players == null || Players.Count == 0)
                 continue;
