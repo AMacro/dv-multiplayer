@@ -95,8 +95,13 @@ internal sealed class ClientCustomizationSynchronization
         }
 
         pendingCustomizationState = packet.State;
-        // Pause live mutation application immediately. If the timeout path already
-        // released actions, they are replayed after this older baseline is applied.
+        // Reliable server-to-client ordering guarantees that actions already in
+        // this queue were sent before this snapshot was captured. The snapshot
+        // supersedes them; actions received while it is being applied arrive
+        // afterwards and remain queued.
+        pendingCustomizationActions.Clear();
+        // Pause live mutation application immediately. Local actions newer than
+        // this baseline are replayed after it is applied.
         customizationSnapshotApplied = false;
         if (customizerStateLoaded && !applyingCustomizationSnapshot)
             CoroutineManager.Instance.StartCoroutine(ApplyPendingCustomizationStates());

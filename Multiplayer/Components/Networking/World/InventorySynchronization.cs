@@ -153,23 +153,10 @@ internal sealed class InventorySynchronization
                 return false;
             }
 
-            JObject state = null;
-            try
-            {
-                state = item.GetComponent<ItemSaveData>()?.SaveItemData()?.DeepClone() as JObject;
-            }
-            catch (Exception exception)
-            {
-                // An empty replacement state can erase a previously valid native
-                // state (for example flashlight charge). Mark the whole capture
-                // incomplete so callers retain the last known-good inventory.
-                Multiplayer.LogWarning($"Could not save custom item state for {item.NetId} ({item.name}); " +
-                    $"preserving the previous inventory snapshot: {exception.Message}");
-                saveData = [];
-                return false;
-            }
+            JObject state = SaveItemState(item);
 
-            // Preserve native stock bookkeeping for items without ItemSaveData.
+            // Ensure native stock bookkeeping is present even when ItemSaveData
+            // has no registered restocker listener.
             state ??= [];
             item.GetComponent<ShopRestocker>()?.OnItemSaveDataRequested(state);
 
@@ -190,6 +177,32 @@ internal sealed class InventorySynchronization
         }
         saveData = result;
         return true;
+    }
+
+    private static JObject SaveItemState(NetworkedItem item)
+    {
+        var itemSaveData = item.GetComponent<ItemSaveData>();
+        if (itemSaveData == null)
+            return null;
+
+        try
+        {
+            return itemSaveData.SaveItemData()?.DeepClone() as JObject;
+        }
+        catch (Exception exception)
+        {
+            // SaveItemData mutates this publicized state object in place. Keep all
+            // fields written before a listener failed and add the flashlight's
+            // battery state explicitly because its native listener writes that
+            // after consulting controls which may be unavailable on an inactive
+            // remote proxy.
+            itemSaveData.saveData ??= [];
+            var flashlight = item.GetComponent<FlashlightItem>();
+            flashlight?.battery?.SaveState(itemSaveData.saveData);
+            Multiplayer.LogWarning($"Could not save all custom item state for {item.NetId} ({item.name}); " +
+                $"preserving the available state: {exception.Message}");
+            return itemSaveData.saveData.DeepClone() as JObject;
+        }
     }
 
     public IEnumerator RecoverStoredInventory(SavedPlayerInventory stored,

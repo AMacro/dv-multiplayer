@@ -2415,6 +2415,7 @@ public class NetworkServer : NetworkManager
     private void RelayCustomizationAction<T>(T packet, ITransportPeer origin = null, bool echoOrigin = false)
         where T : CustomizationActionPacket, INetSerializable, new()
     {
+        bool sentToOrigin = false;
         foreach (var player in CustomizationStateManager.GetCustomizationRecipients(packet).ToArray())
         {
             if (player.Peer == null || player.Peer == SelfPeer || (!echoOrigin && player.Peer == origin))
@@ -2422,6 +2423,18 @@ public class NetworkServer : NetworkManager
 
             EnsureCustomizationItemsKnown(packet, player);
             SendNetSerializablePacket(player.Peer, packet, DeliveryMethod.ReliableOrdered);
+            sentToOrigin |= player.Peer == origin;
+        }
+
+        // Replacement actions assign their canonical item id on the host. Their
+        // acknowledgement must reach the sender even while a recovery snapshot
+        // temporarily excludes that player from ordinary live-action routing.
+        if (echoOrigin && !sentToOrigin && origin != null && origin != SelfPeer &&
+            TryGetServerPlayer(origin, out var originPlayer) &&
+            originPlayer.LoadingState >= PlayerLoadingState.ReadyForCustomizers)
+        {
+            EnsureCustomizationItemsKnown(packet, originPlayer);
+            SendNetSerializablePacket(origin, packet, DeliveryMethod.ReliableOrdered);
         }
     }
 
