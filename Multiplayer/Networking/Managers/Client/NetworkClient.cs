@@ -268,6 +268,7 @@ public class NetworkClient : NetworkManager
         netPacketProcessor.SubscribeNetSerializable<CommonItemChangePacket>(OnCommonItemChangePacket);
         netPacketProcessor.SubscribeNetSerializable<ClientboundItemReconciliationPacket>(OnClientboundItemReconciliationPacket);
         netPacketProcessor.SubscribeNetSerializable<ClientboundCustomizationStatePacket>(CustomizationSynchronization.ReceiveSnapshot);
+        netPacketProcessor.SubscribeNetSerializable<ClientboundCustomizationAcknowledgmentPacket>(CustomizationSynchronization.ReceiveAcknowledgment);
         SubscribeCustomizationActions();
         netPacketProcessor.SubscribeReusable<CommonPitStopInteractionPacket>(OnCommonPitStopInteractionPacket);
         netPacketProcessor.SubscribeNetSerializable<CommonPitStopPlugInteractionPacket>(OnCommonPitStopPlugInteractionPacket);

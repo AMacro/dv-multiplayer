@@ -4,12 +4,8 @@ using System.Collections.Generic;
 using System.Linq;
 using DV;
 using DV.Common;
-using DV.Customization.Gadgets;
-using DV.Customization.Gadgets.Implementations;
 using DV.InventorySystem;
-using DV.Items;
 using DV.Shops;
-using DV.TimeKeeping;
 using DV.Utils;
 using Multiplayer.Components.SaveGame;
 using Multiplayer.Networking.Data;
@@ -157,11 +153,10 @@ internal sealed class InventorySynchronization
                 return false;
             }
 
-            JObject state = SaveItemState(item);
+            JObject state = NativeItemPersistence.Capture(item);
 
             // Ensure native stock bookkeeping is present even when ItemSaveData
             // has no registered restocker listener.
-            state ??= [];
             item.GetComponent<ShopRestocker>()?.OnItemSaveDataRequested(state);
 
             ItemState persistenceState = item.RefreshPersistenceState();
@@ -171,7 +166,7 @@ internal sealed class InventorySynchronization
                 ItemPrefabName = item.Item.InventorySpecs.ItemPrefabName,
                 BelongsToPlayer = item.Item.InventorySpecs.BelongsToPlayer,
                 IsGrabbed = persistenceState == ItemState.InHand,
-                State = state ?? [],
+                State = state,
                 InventorySlotIndex = item.InventorySlotIndex,
                 ContainerSlotIndex = item.ContainerSlotIndex,
                 ContainerId = item.ContainerId,
@@ -183,122 +178,6 @@ internal sealed class InventorySynchronization
         return true;
     }
 
-    private static JObject SaveItemState(NetworkedItem item)
-    {
-        var itemSaveData = item.GetComponent<ItemSaveData>();
-        if (itemSaveData == null)
-            return null;
-
-        try
-        {
-            return itemSaveData.SaveItemData()?.DeepClone() as JObject;
-        }
-        catch (Exception exception)
-        {
-            // SaveItemData mutates this publicized state object in place. Keep all
-            // fields written before a listener failed, then retry each vanilla
-            // subscriber independently. Several subscribers consult controls or
-            // streamed components that may be unavailable on an inactive proxy.
-            itemSaveData.saveData ??= [];
-            SaveVanillaItemState<BoomboxInteractionController>(item, itemSaveData.saveData,
-                (component, state) => component.OnItemSaveDataRequested(state));
-            SaveVanillaItemState<LocomotiveRemoteController>(item, itemSaveData.saveData,
-                (component, state) => component.OnItemSaveDataRequested(state));
-            SaveVanillaItemState<JobBooklet>(item, itemSaveData.saveData,
-                (component, state) => component.OnSaveDataRequested(state));
-            SaveVanillaItemState<Money>(item, itemSaveData.saveData,
-                (component, state) => component.OnItemSaveDataRequested(state));
-            SaveVanillaItemState<FlashlightItem>(item, itemSaveData.saveData,
-                (component, state) => component.OnItemSaveDataRequested(state));
-            foreach (FlashlightItem flashlight in item.GetComponents<FlashlightItem>())
-                SaveBatteryState(item, flashlight.battery, itemSaveData.saveData);
-            SaveVanillaItemState<Lantern>(item, itemSaveData.saveData,
-                (component, state) => component.OnItemSaveDataRequested(state));
-            SaveVanillaItemState<Lighter>(item, itemSaveData.saveData,
-                (component, state) => component.OnItemSaveDataRequested(state));
-            SaveVanillaItemState<PageBook>(item, itemSaveData.saveData,
-                (component, state) => component.OnItemSaveDataRequested(state));
-            SaveVanillaItemState<LabelableItem>(item, itemSaveData.saveData,
-                (component, state) => component.OnSaveDataRequested(state));
-            SaveVanillaItemState<ItemContainer>(item, itemSaveData.saveData,
-                (component, state) => component.OnItemSaveDataRequested(state));
-            SaveSnappableItemState(item, itemSaveData.saveData);
-            SaveVanillaItemState<AnalogAlarmClock>(item, itemSaveData.saveData,
-                (component, state) => component.OnItemSaveDataRequested(state));
-            SaveVanillaItemState<GadgetItem>(item, itemSaveData.saveData,
-                (component, state) => component.OnItemSaveDataRequestedInternal(state));
-            SaveVanillaItemState<GadgetSolderingTool>(item, itemSaveData.saveData,
-                (component, state) => component.OnSaveDataRequested(state));
-            SaveVanillaItemState<DuctTape>(item, itemSaveData.saveData,
-                (component, state) => component.OnItemSaveDataRequested(state));
-            SaveVanillaItemState<ProximitySensor>(item, itemSaveData.saveData,
-                (component, state) => component.OnItemSaveDataRequested(state));
-            foreach (LocomotiveRemoteController remote in item.GetComponents<LocomotiveRemoteController>())
-                SaveBatteryState(item, remote.battery, itemSaveData.saveData);
-            Multiplayer.LogWarning($"Could not save all custom item state for {item.NetId} ({item.name}); " +
-                $"preserving the available state: {exception.Message}");
-            return itemSaveData.saveData.DeepClone() as JObject;
-        }
-    }
-
-    private static void SaveVanillaItemState<T>(NetworkedItem item, JObject state,
-        Func<T, JObject, JObject> saveState) where T : Component
-    {
-        foreach (T component in item.GetComponents<T>())
-        {
-            try
-            {
-                saveState(component, state);
-            }
-            catch (Exception exception)
-            {
-                Multiplayer.LogWarning($"Could not save {typeof(T).Name} state for {item.NetId} ({item.name}); " +
-                    $"preserving other item state: {exception.Message}");
-            }
-        }
-    }
-
-    private static void SaveBatteryState(NetworkedItem item, Battery battery, JObject state)
-    {
-        if (battery == null)
-            return;
-        try
-        {
-            battery.SaveState(state);
-        }
-        catch (Exception exception)
-        {
-            Multiplayer.LogWarning($"Could not save battery state for {item.NetId} ({item.name}); " +
-                $"preserving other item state: {exception.Message}");
-        }
-    }
-
-    private static void SaveSnappableItemState(NetworkedItem item, JObject state)
-    {
-        foreach (SnappableItem snappable in item.GetComponents<SnappableItem>())
-        {
-            foreach (SnappableItem.SpecialSnappedBehaviour behaviour in snappable.specialSnappedBehaviours ?? [])
-            {
-                try
-                {
-                    switch (behaviour)
-                    {
-                        case SnappableItem.SpecialSnappedBehaviourCoupler coupler:
-                            coupler.OnItemSaveDataRequested(state);
-                            break;
-                        case SnappableItem.SpecialSnappedBehaviourGadgetSnapPoint gadgetSnapPoint:
-                            gadgetSnapPoint.OnItemSaveDataRequested(state);
-                            break;
-                    }
-                }
-                catch (Exception exception)
-                {
-                    Multiplayer.LogWarning($"Could not save snapped-item state for {item.NetId} ({item.name}); " +
-                        $"preserving other item state: {exception.Message}");
-                }
-            }
-        }
-    }
 
     public IEnumerator RecoverStoredInventory(SavedPlayerInventory stored,
         Action<bool, int, int, string> completed)

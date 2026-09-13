@@ -77,6 +77,7 @@ internal sealed class HostCustomizationSynchronization
                             server.LogWarning($"Discarding customization action {pending.Packet.GetType().Name} from " +
                                 $"{pending.Player.Username} after it remained unready for {ActionReadyTimeoutSeconds:F0}s");
                             server.ResynchronizeCustomization(pending.Player, pending.Peer);
+                            server.FlushCustomizationAcknowledgments(pending.Player, pending.Peer);
                             appliedAny = true;
                         }
                         continue;
@@ -102,7 +103,15 @@ internal sealed class HostCustomizationSynchronization
                         bool echoSender = pending.Packet is ReplaceSpoolPacket or ReplaceDuctTapePacket;
                         pending.Relay(pending.Packet, pending.Peer, echoSender);
                     }
+                    else
+                    {
+                        // The sender already performed this mutation locally.
+                        // Include its processed id in recovery so it is not
+                        // replayed when the authoritative baseline arrives.
+                        server.ResynchronizeCustomization(pending.Player, pending.Peer);
+                    }
                     appliedAny = true;
+                    server.FlushCustomizationAcknowledgments(pending.Player, pending.Peer);
                 }
 
                 if (!appliedAny)

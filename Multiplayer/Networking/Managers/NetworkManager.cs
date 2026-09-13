@@ -103,7 +103,7 @@ public abstract class NetworkManager
 
     protected virtual ITransportPeer Connect(string address, int port, NetDataWriter netDataWriter)
     {
-        return transport.Connect(address, port, netDataWriter);
+        return transport.Connect(address, port, ConnectionProtocol.Wrap(netDataWriter));
     }
 
 

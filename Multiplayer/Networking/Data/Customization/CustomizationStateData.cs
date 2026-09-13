@@ -94,7 +94,7 @@ public sealed class CustomizationStateData
     public List<GadgetPlacementData> Gadgets = new();
     internal List<MountGadgetPacket> Mounts = new();
     internal List<WireGadgetsPacket> Wires = new();
-    internal List<LoadSpoolPacket> LoadedSpools = new();
+    internal List<LoadSpoolPacket> MagazineStates = new();
     internal List<SnapItemPacket> SnappedItems = new();
     public List<CustomizationHoleData> Holes = new();
 
@@ -102,7 +102,7 @@ public sealed class CustomizationStateData
     {
         ValidateCount(CustomizationKeys.Count, MaxTargets, nameof(CustomizationKeys));
         ValidateCount(Gadgets.Count, MaxGadgets, nameof(Gadgets));
-        ValidateCount(Mounts.Count + Wires.Count + LoadedSpools.Count + SnappedItems.Count,
+        ValidateCount(Mounts.Count + Wires.Count + MagazineStates.Count + SnappedItems.Count,
             MaxRelationships, "relationships");
         ValidateCount(Holes.Count, MaxHoles, nameof(Holes));
         ValidateCount(ProcessedOriginActionIds.Count, MaxProcessedActions, nameof(ProcessedOriginActionIds));
@@ -121,7 +121,7 @@ public sealed class CustomizationStateData
 
         WritePackets(writer, Mounts);
         WritePackets(writer, Wires);
-        WritePackets(writer, LoadedSpools);
+        WritePackets(writer, MagazineStates);
         WritePackets(writer, SnappedItems);
 
         writer.Put(Holes.Count);
@@ -147,9 +147,9 @@ public sealed class CustomizationStateData
 
         ReadPackets(reader, result.Mounts);
         ReadPackets(reader, result.Wires);
-        ReadPackets(reader, result.LoadedSpools);
+        ReadPackets(reader, result.MagazineStates);
         ReadPackets(reader, result.SnappedItems);
-        ValidateCount(result.Mounts.Count + result.Wires.Count + result.LoadedSpools.Count +
+        ValidateCount(result.Mounts.Count + result.Wires.Count + result.MagazineStates.Count +
             result.SnappedItems.Count, MaxRelationships, "relationships");
 
         int holeCount = ReadCount(reader, MaxHoles, nameof(Holes));

@@ -5,6 +5,7 @@ namespace Multiplayer.Networking.Packets.Common.Customization;
 internal sealed class LoadSpoolPacket : CustomizationActionPacket, INetSerializable
 {
     public ushort ToolItemNetId;
+    // Zero explicitly restores an empty magazine in a customization snapshot.
     public ushort SpoolItemNetId;
     public bool HasRemainingUnits;
     public int RemainingUnits;

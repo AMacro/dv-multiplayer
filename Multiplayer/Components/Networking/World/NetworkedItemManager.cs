@@ -154,7 +154,7 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
         }
     }
 
-    private void ProcessReceived()
+    internal void ProcessReceived()
     {
         while (ReceivedSnapshots.Count > 0)
         {
@@ -593,7 +593,7 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
     }
 
     public void SendInitialItems(ServerPlayer player, IEnumerable<ushort> itemNetIds,
-        ISet<ushort> forceDropped = null)
+        ISet<ushort> forceDropped = null, ISet<ushort> refreshItems = null)
     {
         if (player == null || itemNetIds == null || !NetworkLifecycle.Instance.IsHost())
             return;
@@ -602,7 +602,8 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
         uint tick = NetworkLifecycle.Instance.Tick;
         foreach (ushort itemNetId in itemNetIds.Distinct())
         {
-            if (!NetworkedItem.TryGet(itemNetId, out var item) || player.KnownItems.ContainsKey(item))
+            if (!NetworkedItem.TryGet(itemNetId, out var item) ||
+                player.KnownItems.ContainsKey(item) && refreshItems?.Contains(itemNetId) != true)
                 continue;
 
             var snapshot = item.CreateCurrentUpdateData(ItemUpdateData.ItemUpdateType.Create);

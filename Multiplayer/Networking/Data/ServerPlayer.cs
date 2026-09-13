@@ -53,6 +53,9 @@ public class ServerPlayer : IDisposable
     internal int InventoryReconciliationAttempt { get; set; } = -1;
     internal HashSet<NetworkedItem> ReconciledInventoryItems { get; } = [];
     public HashSet<uint> ProcessedCustomizationActionIds { get; } = [];
+    // Actions provision these objects without an ordinary Create packet. Recovery
+    // must supply their current state before superseding queued replacements.
+    public HashSet<NetworkedItem> CustomizationReplacementItems { get; } = [];
 
     public PlayerTrackingData TrackingData { get; set; }
     public PlayerPostureFlags Posture { get; set; }        // already exists — keep

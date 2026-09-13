@@ -22,11 +22,16 @@ internal sealed class ClientCustomizationSynchronization
     private bool applyingCustomizationSnapshot;
     private bool customizationActionDrainRunning;
     private CustomizationStateData pendingCustomizationState;
+    private CustomizationStateData applyingCustomizationState;
     private readonly List<GadgetPlacementData> pendingCustomizationSnapshotPlacements = [];
     private readonly List<ICustomizationActionPacket> pendingCustomizationSnapshotRelationships = [];
     private readonly Dictionary<string, List<CustomizationHoleData>> pendingCustomizationSnapshotHoleStates = [];
-    private readonly List<ICustomizationActionPacket> pendingCustomizationActions = [];
-    private readonly List<ICustomizationActionPacket> unacknowledgedLocalActions = [];
+    private readonly SnapshotActionQueue<ICustomizationActionPacket> actionQueue = new(
+        action => action.OriginActionId,
+        action => action is ReplaceSpoolPacket or ReplaceDuctTapePacket or LoadSpoolPacket or DropEmptySpoolPacket,
+        action => action.Copy());
+    private List<ICustomizationActionPacket> pendingCustomizationActions => actionQueue.Pending;
+    private readonly Dictionary<uint, NetworkedItem> localReplacements = [];
 
     internal void Reset(bool forLoading = false)
     {
@@ -38,11 +43,12 @@ internal sealed class ClientCustomizationSynchronization
             customizationActionDrainRunning = false;
         }
         pendingCustomizationState = null;
+        applyingCustomizationState = null;
         pendingCustomizationSnapshotPlacements.Clear();
         pendingCustomizationSnapshotRelationships.Clear();
         pendingCustomizationSnapshotHoleStates.Clear();
-        pendingCustomizationActions.Clear();
-        unacknowledgedLocalActions.Clear();
+        actionQueue.Reset();
+        localReplacements.Clear();
         CustomizationStateManager.ClearPendingLocalState();
     }
 
@@ -76,13 +82,19 @@ internal sealed class ClientCustomizationSynchronization
 
     internal void RecordLocalAction(ICustomizationActionPacket packet)
     {
-        // Ordinary actions are not echoed to their sender. Retain them until a
-        // host snapshot reports that it processed their origin id. This also
-        // protects edits made after a recovery snapshot was captured but before
-        // that older baseline reaches the client. Replacement actions are
-        // server-echoed after their authoritative replacement item id is assigned.
-        if (packet is not ReplaceSpoolPacket and not ReplaceDuctTapePacket)
-            unacknowledgedLocalActions.Add(packet.Copy());
+        // Retain local edits until acknowledged by a host batch or snapshot.
+        // Edits needed by an older in-progress snapshot survive until replay
+        // completes. Replacement echoes separately bind authoritative item ids.
+        actionQueue.RecordLocal(packet);
+        // Preserve the native magazine while this edit is unacknowledged or
+        // needed by an older snapshot. Replaying a replacement/drop can destroy
+        // a newer reel, and the baseline can reference a reel destroyed locally.
+        ushort toolId = GetSpoolToolId(packet);
+        if (toolId != 0)
+            PreserveLocalMagazine(toolId);
+        NetworkedItem replacement = CustomizationStateManager.GetLocalReplacement(packet);
+        if (replacement != null)
+            localReplacements[packet.OriginActionId] = replacement;
 
     }
 
@@ -95,16 +107,39 @@ internal sealed class ClientCustomizationSynchronization
         }
 
         pendingCustomizationState = packet.State;
-        // Reliable server-to-client ordering guarantees that actions already in
-        // this queue were sent before this snapshot was captured. The snapshot
-        // supersedes them; actions received while it is being applied arrive
-        // afterwards and remain queued.
-        pendingCustomizationActions.Clear();
+        actionQueue.ReceiveSnapshot(packet.State.ProcessedOriginActionIds);
+        foreach (ushort toolId in actionQueue.LocalActions.Select(GetSpoolToolId).Where(id => id != 0).Distinct())
+            PreserveLocalMagazine(toolId);
         // Pause live mutation application immediately. Local actions newer than
         // this baseline are replayed after it is applied.
         customizationSnapshotApplied = false;
+        // Item packets are normally drained on a tick, whereas this snapshot
+        // starts a coroutine immediately. Flush preceding reliable Creates now:
+        // a refresh must not replace an existing reel after we have loaded it
+        // into the tool from this baseline.
+        NetworkedItemManager.Instance.ProcessReceived();
         if (customizerStateLoaded && !applyingCustomizationSnapshot)
             CoroutineManager.Instance.StartCoroutine(ApplyPendingCustomizationStates());
+    }
+
+    internal void ReceiveAcknowledgment(ClientboundCustomizationAcknowledgmentPacket packet) =>
+        actionQueue.Acknowledge(packet.ActionIds,
+            applyingCustomizationSnapshot || pendingCustomizationState != null);
+
+    private static ushort GetSpoolToolId(ICustomizationActionPacket action) => action switch
+    {
+        ReplaceSpoolPacket packet => packet.ToolItemNetId,
+        LoadSpoolPacket packet => packet.ToolItemNetId,
+        DropEmptySpoolPacket packet => packet.ToolItemNetId,
+        _ => 0,
+    };
+
+    private void PreserveLocalMagazine(ushort toolId)
+    {
+        pendingCustomizationState?.MagazineStates.RemoveAll(packet => packet.ToolItemNetId == toolId);
+        applyingCustomizationState?.MagazineStates.RemoveAll(packet => packet.ToolItemNetId == toolId);
+        pendingCustomizationSnapshotRelationships.RemoveAll(action =>
+            action is LoadSpoolPacket packet && packet.ToolItemNetId == toolId);
     }
 
     internal void ReceiveAction<T>(T packet)
@@ -113,10 +148,23 @@ internal sealed class ClientCustomizationSynchronization
         if (packet == null)
             return;
 
+        byte owner = packet switch
+        {
+            ReplaceSpoolPacket spool => spool.OwnerPlayerId,
+            ReplaceDuctTapePacket tape => tape.OwnerPlayerId,
+            _ => 0,
+        };
+        if (owner == client.PlayerId && localReplacements.TryGetValue(packet.OriginActionId, out var replacement) &&
+            CustomizationStateManager.BindLocalReplacement(packet, replacement))
+        {
+            localReplacements.Remove(packet.OriginActionId);
+            return;
+        }
+
         // LiteNetLib reuses the INetSerializable instance registered for this
         // subscription. Keep a value copy because the action can remain queued
         // while later packets are deserialized into that same instance.
-        pendingCustomizationActions.Add(packet.Copy());
+        actionQueue.Receive(packet);
         StartCustomizationActionDrain();
     }
 
@@ -131,27 +179,26 @@ internal sealed class ClientCustomizationSynchronization
             while (pendingCustomizationState != null)
             {
                 CustomizationStateData state = pendingCustomizationState;
+                applyingCustomizationState = state;
+                int generation = actionQueue.Generation;
                 pendingCustomizationState = null;
                 pendingCustomizationSnapshotPlacements.Clear();
                 pendingCustomizationSnapshotRelationships.Clear();
                 pendingCustomizationSnapshotHoleStates.Clear();
                 yield return CustomizationStateManager.ApplyCurrentStateWhenReady(state,
                     pendingCustomizationSnapshotPlacements, pendingCustomizationSnapshotRelationships,
-                    pendingCustomizationSnapshotHoleStates);
+                    pendingCustomizationSnapshotHoleStates,
+                    () => generation != actionQueue.Generation);
 
-                var capturedLocalActions = state.ProcessedOriginActionIds.ToHashSet();
-                var actionsNewerThanSnapshot = unacknowledgedLocalActions
-                    .Where(action => !capturedLocalActions.Contains(action.OriginActionId))
-                    .ToList();
-                pendingCustomizationActions.InsertRange(0, actionsNewerThanSnapshot.Select(action => action.Copy()));
-                unacknowledgedLocalActions.Clear();
-                unacknowledgedLocalActions.AddRange(actionsNewerThanSnapshot);
+                if (!actionQueue.CompleteSnapshot(generation))
+                    continue;
                 customizationSnapshotApplied = true;
                 client.Log($"Customization state loaded ({state.Gadgets.Count} gadgets, {state.Holes.Count} holes)");
             }
         }
         finally
         {
+            applyingCustomizationState = null;
             applyingCustomizationSnapshot = false;
         }
 

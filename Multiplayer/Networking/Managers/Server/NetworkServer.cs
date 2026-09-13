@@ -416,6 +416,13 @@ public class NetworkServer : NetworkManager
     public override void OnConnectionRequest(NetDataReader requestData, IConnectionRequest request)
     {
         LogDebug(() => $"NetworkServer OnConnectionRequest");
+        if (!ConnectionProtocol.TryRead(requestData))
+        {
+            LogWarning("Rejected connection with a missing or incompatible multiplayer protocol header");
+            // Do not send a version-dependent login response to an unknown peer.
+            request.Reject();
+            return;
+        }
         netPacketProcessor.ReadAllPackets(requestData, request);
     }
 
@@ -2438,7 +2445,20 @@ public class NetworkServer : NetworkManager
         }
     }
 
-    private IEnumerator SendInitialCustomizationStateWhenReady(ServerPlayer player, ITransportPeer peer)
+    internal void FlushCustomizationAcknowledgments(ServerPlayer player, ITransportPeer peer)
+    {
+        while (player.ProcessedCustomizationActionIds.Count >= ClientboundCustomizationAcknowledgmentPacket.BatchSize)
+        {
+            var ids = player.ProcessedCustomizationActionIds
+                .Take(ClientboundCustomizationAcknowledgmentPacket.BatchSize).ToArray();
+            SendNetSerializablePacket(peer, new ClientboundCustomizationAcknowledgmentPacket { ActionIds = ids },
+                DeliveryMethod.ReliableOrdered);
+            player.ProcessedCustomizationActionIds.ExceptWith(ids);
+        }
+    }
+
+    private IEnumerator SendInitialCustomizationStateWhenReady(ServerPlayer player, ITransportPeer peer,
+        bool restoreLiveRoutingOnFailure = false)
     {
         // Installed gadget items remain in this storage even while their train-car
         // interior is streamed out. Use it as a second source in addition to the
@@ -2463,6 +2483,7 @@ public class NetworkServer : NetworkManager
                 (car.HasAttachedCustomizations || carsWithStoredGadgets.Contains(car.TrainCar)))
             .ToList();
 
+        bool snapshotSent = false;
         try
         {
             foreach (var car in pinnedCars)
@@ -2500,21 +2521,37 @@ public class NetworkServer : NetworkManager
 
             var customizationState = CustomizationStateManager.CaptureCurrentState();
             customizationState.ProcessedOriginActionIds.AddRange(player.ProcessedCustomizationActionIds);
+            // Queued replacements may be superseded along with their later
+            // drop/load actions. Supply the current objects, including loose
+            // reels and tape absent from customization relationships. Owners
+            // already bound their native objects through the ordered ack;
+            // recreating those would detach real carried items.
+            var replacementIds = player.CustomizationReplacementItems
+                .Where(item => item != null && item.NetId != 0 && item.OwnerPlayerId != player.PlayerId)
+                .Select(item => item.NetId).ToHashSet();
             NetworkedItemManager.Instance.SendInitialItems(player,
-                CustomizationStateManager.GetReferencedItemIds(customizationState),
-                CustomizationStateManager.GetItemsRequiringDroppedCreate(customizationState));
+                CustomizationStateManager.GetReferencedItemIds(customizationState).Concat(replacementIds),
+                CustomizationStateManager.GetItemsRequiringDroppedCreate(customizationState), replacementIds);
 
             SendNetSerializablePacket(peer, new ClientboundCustomizationStatePacket
             {
                 State = customizationState,
             }, DeliveryMethod.ReliableOrdered);
             player.CustomizationSnapshotSent = true;
+            snapshotSent = true;
             player.ProcessedCustomizationActionIds.Clear();
+            player.CustomizationReplacementItems.Clear();
 
             LogDebug(() => $"Sent join customization snapshot to {player.Username} after loading {pinnedCars.Count} customized train-car interiors");
         }
         finally
         {
+            if (!snapshotSent && restoreLiveRoutingOnFailure &&
+                TryGetServerPlayer(peer, out var connectedPlayer) && connectedPlayer == player)
+            {
+                player.CustomizationSnapshotSent = true;
+                LogWarning($"Customization recovery snapshot failed for {player.Username}; restored live-action routing");
+            }
             foreach (var car in pinnedCars)
                 if (car != null)
                     car.EndInteriorNetworkSync();
@@ -2527,7 +2564,8 @@ public class NetworkServer : NetworkManager
             return;
 
         player.CustomizationSnapshotSent = false;
-        CoroutineManager.Instance.StartCoroutine(SendInitialCustomizationStateWhenReady(player, peer));
+        CoroutineManager.Instance.StartCoroutine(SendInitialCustomizationStateWhenReady(player, peer,
+            restoreLiveRoutingOnFailure: true));
     }
 
     private void EnsureCustomizationItemsKnown(ICustomizationActionPacket packet, ServerPlayer player)
@@ -2558,7 +2596,10 @@ public class NetworkServer : NetworkManager
             _ => 0,
         };
         if (createsReplacementLocally && NetworkedItem.TryGet(replacementId, out NetworkedItem replacementItem))
+        {
             player.KnownItems[replacementItem] = NetworkLifecycle.Instance.Tick;
+            player.CustomizationReplacementItems.Add(replacementItem);
+        }
     }
 
     private void OnCommonCashRegisterWithModulesActionPacket(CommonCashRegisterWithModulesActionPacket packet, ITransportPeer peer)
