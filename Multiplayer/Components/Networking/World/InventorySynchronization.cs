@@ -160,17 +160,16 @@ internal sealed class InventorySynchronization
             }
             catch (Exception exception)
             {
-                // Some inactive remote proxies (notably Flashlight) cannot run
-                // every native save listener. Preserve the item and its layout
-                // with default custom state instead of discarding the complete
-                // inventory snapshot.
+                // An empty replacement state can erase a previously valid native
+                // state (for example flashlight charge). Mark the whole capture
+                // incomplete so callers retain the last known-good inventory.
                 Multiplayer.LogWarning($"Could not save custom item state for {item.NetId} ({item.name}); " +
-                    $"using default state: {exception.Message}");
-                state = [];
+                    $"preserving the previous inventory snapshot: {exception.Message}");
+                saveData = [];
+                return false;
             }
 
-            // Preserve native stock bookkeeping even if a different save listener
-            // on an inactive proxy failed (for example the flashlight listener).
+            // Preserve native stock bookkeeping for items without ItemSaveData.
             state ??= [];
             item.GetComponent<ShopRestocker>()?.OnItemSaveDataRequested(state);
 
@@ -507,9 +506,11 @@ internal sealed class InventorySynchronization
             completedReconciliation[player] = [];
         }
 
-        var created = new List<(ItemReconciliationRequest Request, NetworkedItem Item)>();
+        var created = new List<(ItemReconciliationRequest Request, NetworkedItem Item, int ResponseIndex)>();
         foreach (var request in requests)
         {
+            int responseIndex = response.Items.Count;
+            response.Items.Add(default);
             var snapshot = request.Snapshot;
             GameObject gameObject = null;
             try
@@ -530,7 +531,7 @@ internal sealed class InventorySynchronization
                         networkedItem.IsPendingReconciliation = true;
                         player.ReconciledInventoryItems.Add(networkedItem);
                         networkedItem.DeferInitialCreate();
-                        created.Add((request, networkedItem));
+                        created.Add((request, networkedItem, responseIndex));
                         continue;
                     }
                 }
@@ -552,7 +553,7 @@ internal sealed class InventorySynchronization
                 }
             }
 
-            response.Items.Add(new ItemReconciliationResult(request.LocalId, 0, null));
+            response.Items[responseIndex] = new ItemReconciliationResult(request.LocalId, 0, null);
             player.InventoryReconciliationFailed = true;
         }
 
@@ -598,8 +599,8 @@ internal sealed class InventorySynchronization
                 item.IsPendingReconciliation = false;
                 player.KnownItems[item] = NetworkLifecycle.Instance.Tick;
                 player.NearbyItems[item] = Time.time;
-                response.Items.Add(new ItemReconciliationResult(request.LocalId, item.NetId,
-                    item.CreateCurrentUpdateData(ItemUpdateData.ItemUpdateType.Create)));
+                response.Items[entry.ResponseIndex] = new ItemReconciliationResult(request.LocalId, item.NetId,
+                    item.CreateCurrentUpdateData(ItemUpdateData.ItemUpdateType.Create));
             }
             catch (Exception exception)
             {
@@ -609,7 +610,7 @@ internal sealed class InventorySynchronization
                     ShopPurchaseCoordinator.SuppressStorageTransitionRestock(item.gameObject);
                     UnityEngine.Object.Destroy(item.gameObject);
                 }
-                response.Items.Add(new ItemReconciliationResult(request.LocalId, 0, null));
+                response.Items[entry.ResponseIndex] = new ItemReconciliationResult(request.LocalId, 0, null);
                 player.InventoryReconciliationFailed = true;
             }
         }

@@ -21,13 +21,12 @@ internal sealed class ClientCustomizationSynchronization
     private bool customizationSnapshotApplied;
     private bool applyingCustomizationSnapshot;
     private bool customizationActionDrainRunning;
-    private bool customizationSnapshotTimedOut;
     private CustomizationStateData pendingCustomizationState;
     private readonly List<GadgetPlacementData> pendingCustomizationSnapshotPlacements = [];
     private readonly List<ICustomizationActionPacket> pendingCustomizationSnapshotRelationships = [];
     private readonly Dictionary<string, List<CustomizationHoleData>> pendingCustomizationSnapshotHoleStates = [];
     private readonly List<ICustomizationActionPacket> pendingCustomizationActions = [];
-    private readonly List<ICustomizationActionPacket> appliedActionsSinceSnapshotTimeout = [];
+    private readonly List<ICustomizationActionPacket> unacknowledgedLocalActions = [];
 
     internal void Reset(bool forLoading = false)
     {
@@ -38,13 +37,12 @@ internal sealed class ClientCustomizationSynchronization
             applyingCustomizationSnapshot = false;
             customizationActionDrainRunning = false;
         }
-        customizationSnapshotTimedOut = false;
         pendingCustomizationState = null;
         pendingCustomizationSnapshotPlacements.Clear();
         pendingCustomizationSnapshotRelationships.Clear();
         pendingCustomizationSnapshotHoleStates.Clear();
         pendingCustomizationActions.Clear();
-        appliedActionsSinceSnapshotTimeout.Clear();
+        unacknowledgedLocalActions.Clear();
         CustomizationStateManager.ClearPendingLocalState();
     }
 
@@ -61,7 +59,6 @@ internal sealed class ClientCustomizationSynchronization
                 if (Time.time >= customizationDeadline)
                 {
                     client.LogWarning("Timed out waiting for customization state; continuing while retaining the late-snapshot path");
-                    customizationSnapshotTimedOut = true;
                     customizationSnapshotApplied = true;
                     customizerStateLoaded = true;
                     StartCustomizationActionDrain();
@@ -79,12 +76,13 @@ internal sealed class ClientCustomizationSynchronization
 
     internal void RecordLocalAction(ICustomizationActionPacket packet)
     {
-        // Ordinary actions are not echoed to their sender. Preserve locally
-        // originated mutations so a snapshot that arrives after the loading
-        // timeout cannot erase them. Replacement actions are server-echoed after
-        // their authoritative replacement item id has been assigned.
-        if (customizationSnapshotTimedOut && packet is not ReplaceSpoolPacket and not ReplaceDuctTapePacket)
-            appliedActionsSinceSnapshotTimeout.Add(packet.Copy());
+        // Ordinary actions are not echoed to their sender. Retain them until a
+        // host snapshot reports that it processed their origin id. This also
+        // protects edits made after a recovery snapshot was captured but before
+        // that older baseline reaches the client. Replacement actions are
+        // server-echoed after their authoritative replacement item id is assigned.
+        if (packet is not ReplaceSpoolPacket and not ReplaceDuctTapePacket)
+            unacknowledgedLocalActions.Add(packet.Copy());
 
     }
 
@@ -136,15 +134,13 @@ internal sealed class ClientCustomizationSynchronization
                     pendingCustomizationSnapshotPlacements, pendingCustomizationSnapshotRelationships,
                     pendingCustomizationSnapshotHoleStates);
 
-                if (customizationSnapshotTimedOut)
-                {
-                    var capturedLocalActions = state.ProcessedOriginActionIds.ToHashSet();
-                    pendingCustomizationActions.InsertRange(0, appliedActionsSinceSnapshotTimeout.Where(
-                        action => !capturedLocalActions.Contains(action.OriginActionId)));
-                    appliedActionsSinceSnapshotTimeout.Clear();
-                    customizationSnapshotTimedOut = false;
-                }
-
+                var capturedLocalActions = state.ProcessedOriginActionIds.ToHashSet();
+                var actionsNewerThanSnapshot = unacknowledgedLocalActions
+                    .Where(action => !capturedLocalActions.Contains(action.OriginActionId))
+                    .ToList();
+                pendingCustomizationActions.InsertRange(0, actionsNewerThanSnapshot.Select(action => action.Copy()));
+                unacknowledgedLocalActions.Clear();
+                unacknowledgedLocalActions.AddRange(actionsNewerThanSnapshot);
                 customizationSnapshotApplied = true;
                 client.Log($"Customization state loaded ({state.Gadgets.Count} gadgets, {state.Holes.Count} holes)");
             }
