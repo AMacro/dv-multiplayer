@@ -31,7 +31,7 @@ public static class CouplerPatch
     [HarmonyPostfix]
     private static void DisconnectAirHose(Coupler __instance, bool playAudio)
     {
-        //Multiplayer.LogDebug(() => $"DisconnectAirHose([{__instance?.train?.ID}, isFront: {__instance?.isFrontCoupler}])\r\n{new System.Diagnostics.StackTrace()}");
+        //Multiplayer.LogDebug(() => $"DisconnectAirHose([{__instance?.train?.ID}, isFront: {__instance?.isFrontCoupler}])Processing Packet: {NetworkLifecycle.Instance.IsProcessingPacket}\r\n{new System.Diagnostics.StackTrace()}");
         if (UnloadWatcher.isUnloading || NetworkLifecycle.Instance.IsProcessingPacket)
             return;
 

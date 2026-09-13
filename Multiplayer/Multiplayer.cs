@@ -10,7 +10,6 @@ using Multiplayer.Components.Networking;
 using Multiplayer.Editor;
 using Multiplayer.ModCompatibility;
 using Multiplayer.Models;
-using Multiplayer.Patches.Mods;
 using Multiplayer.Patches.World;
 using System;
 using System.IO;
@@ -49,7 +48,6 @@ public static class Multiplayer
     }
 
     public static string LocalBuildInfo => BuildInfo.BUILD_VERSION_MAJOR.ToString() + " - " + BuildInfo.BUILDBOT_INFO;
-
 
     public static bool specLog = false;
 
@@ -100,15 +98,12 @@ public static class Multiplayer
             harmony.PatchAll();
             SimComponent_Tick_Patch.Patch(harmony);
 
-            UnityModManager.ModEntry remoteDispatch = UnityModManager.FindMod("RemoteDispatch");
-            if (remoteDispatch?.Enabled == true)
-            {
-                Log("Found RemoteDispatch, patching...");
-                RemoteDispatchPatch.Patch(harmony, remoteDispatch.Assembly);
-            }
-
+            // Third Party Integrations
+            RemoteDispatch.TryLoad(harmony);
+            PersistentJobs.TryLoadPersistentJobs();
             SkinManager.Initialize();
 
+          
             Log("Loading Assets...");
             if (!LoadAssets())
                 return false;

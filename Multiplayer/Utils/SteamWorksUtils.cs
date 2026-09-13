@@ -1,16 +1,17 @@
+using DV;
 using DV.Localization;
 using DV.Platform.Steam;
 using DV.UIFramework;
-using DV;
 using Multiplayer.Components.MainMenu;
 using Multiplayer.Components.Networking;
 using Multiplayer.Networking.Data;
 using Multiplayer.Patches.MainMenu;
-using Steamworks.Data;
 using Steamworks;
+using Steamworks.Data;
+using System;
 using System.Collections;
 using System.Linq;
-using System;
+using System.Threading.Tasks;
 using UnityEngine;
 
 namespace Multiplayer.Utils;
@@ -168,32 +169,48 @@ public static class SteamworksUtils
                !NetworkLifecycle.Instance.IsClientRunning;
     }
 
-    public static void OnLobbyJoinRequest(Lobby lobby, SteamId id)
+    public static async void OnLobbyJoinRequest(Lobby lobby, SteamId id)
     {
-        var gameCheck = lobby.GetData(SteamworksUtils.LOBBY_MP_MOD_KEY);
-
-        if (gameCheck != SteamworksUtils.LOBBY_MP_MOD_KEY)
-            return;
+        Multiplayer.LogDebug(() => $"OnLobbyJoinRequest() {lobby.Id} from {id.Value}");
 
         if (!CanHandleLobbyRequest())
             return;
 
-        lobby.Refresh();
+        try
+        {
+            await RefreshAsync(lobby);
+        }
+        catch (Exception ex)
+        {
+            Multiplayer.LogException($"Lobby join request failed to refresh lobby {lobby.Id}", ex);
+            return;
+        }
+
+        if (!IsDVMP(lobby))
+        {
+            Multiplayer.LogDebug(() => $"Lobby join request failed, lobby {lobby.Id} is not a DVMP lobby");
+            return;
+        }
 
         QueueLobbyInvite(lobby);
     }
 
-    public static void OnLobbyInviteRequest(Friend friend, Lobby lobby)
+    public static async void OnLobbyInviteRequest(Friend friend, Lobby lobby)
     {
-        var gameCheck = lobby.GetData(SteamworksUtils.LOBBY_MP_MOD_KEY);
-
-        if (gameCheck != SteamworksUtils.LOBBY_MP_MOD_KEY)
-            return;
+        Multiplayer.LogDebug(() => $"OnLobbyInviteRequest() {lobby.Id} from {friend.Name} ({friend.Id.Value})");
 
         if (!CanHandleLobbyRequest())
             return;
 
-        lobby.Refresh();
+        try
+        {
+            await RefreshAsync(lobby);
+        }
+        catch (Exception ex)
+        {
+            Multiplayer.LogException($"Lobby invite failed to refresh lobby {lobby.Id}", ex);
+            return;
+        }
 
         NetworkLifecycle.Instance.QueueMainMenuEvent(() =>
         {
@@ -233,5 +250,26 @@ public static class SteamworksUtils
         });
 
         NetworkLifecycle.Instance.TriggerMainMenuEventLater();
+    }
+
+    public static async Task RefreshAsync(this Lobby lobby)
+    {
+        TaskCompletionSource<bool> resultWaiter = new();
+        Action<Lobby> eventHandler = (Lobby queriedLobby) =>
+        {
+            if (lobby.Id != queriedLobby.Id) return;
+            resultWaiter.SetResult(true);
+        };
+
+        SteamMatchmaking.OnLobbyDataChanged += eventHandler;
+        lobby.Refresh();
+        var result = await resultWaiter.Task;
+        SteamMatchmaking.OnLobbyDataChanged -= eventHandler;
+    }
+
+    public static bool IsDVMP(Lobby lobby)
+    {
+        var gameCheck = lobby.GetData(LOBBY_MP_MOD_KEY);
+        return gameCheck == LOBBY_MP_MOD_KEY;
     }
 }

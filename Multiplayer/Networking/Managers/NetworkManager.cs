@@ -7,6 +7,7 @@ using Multiplayer.Networking.Data.Jobs;
 using Multiplayer.Networking.Data.Player;
 using Multiplayer.Networking.Data.Train;
 using Multiplayer.Networking.Data.World;
+using Multiplayer.Networking.Packets.Clientbound.Train;
 using Multiplayer.Networking.Serialization;
 using Multiplayer.Networking.TransportLayers;
 using System;
@@ -63,6 +64,7 @@ public abstract class NetworkManager
         netPacketProcessor.RegisterNestedType(StationsChainNetworkData.Serialize, StationsChainNetworkData.Deserialize);
         netPacketProcessor.RegisterNestedType(TrainsetMovementPart.Serialize, TrainsetMovementPart.Deserialize);
         netPacketProcessor.RegisterNestedType(TrainsetSpawnPart.Serialize, TrainsetSpawnPart.Deserialize);
+        netPacketProcessor.RegisterNestedType(CouplingData.Serialize, CouplingData.Deserialize);
         netPacketProcessor.RegisterNestedType(TrainCarHealthData.Serialize, TrainCarHealthData.Deserialize);
         netPacketProcessor.RegisterNestedType(PitStopPlugMappingData.Serialize, PitStopPlugMappingData.Deserialize);
         netPacketProcessor.RegisterNestedType(LocoResourceModuleData.Serialize, LocoResourceModuleData.Deserialize);

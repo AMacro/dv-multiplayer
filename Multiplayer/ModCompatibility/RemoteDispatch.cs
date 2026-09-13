@@ -1,27 +1,38 @@
 using DV.JObjectExtstensions;
 using HarmonyLib;
 using MPAPI.Interfaces;
-using Multiplayer.Components.Networking.Player;
 using Multiplayer.Components.Networking;
 using Newtonsoft.Json.Linq;
 using System.Collections.Generic;
+using System.Collections;
 using System.Reflection;
 using System;
 using UnityEngine;
-using System.Linq;
-using Multiplayer.API;
+using UnityModManagerNet;
 
-namespace Multiplayer.Patches.Mods;
+namespace Multiplayer.ModCompatibility;
 
-public static class RemoteDispatchPatch
+public static class RemoteDispatch
 {
     private const byte DECIMAL_PLACES = 8;
     private const float DEGREES_PER_METER = 360f / 40e6f;
 
     private static MethodInfo Sessions_AddTag;
 
-    public static void Patch(Harmony harmony, Assembly assembly)
+    public static void TryLoad(Harmony harmony)
     {
+        UnityModManager.ModEntry modEntry = UnityModManager.FindMod("RemoteDispatch");
+        if (modEntry?.Enabled == true)
+        {
+            Multiplayer.Log("Found RemoteDispatch, waiting for it to load...");
+            CoroutineManager.Instance.Run(Patch(harmony, modEntry));
+        }
+    }
+    private static IEnumerator Patch(Harmony harmony, UnityModManager.ModEntry modEntry)
+    {
+        yield return new WaitUntil(() => modEntry.Loaded);
+
+        Assembly assembly = modEntry?.Assembly;
         foreach (Type type in assembly.ExportedTypes)
         {
             if (type.Namespace != "DvMod.RemoteDispatch")
@@ -30,11 +41,11 @@ public static class RemoteDispatchPatch
             {
                 case "PlayerData":
                     MethodInfo getPlayerData = AccessTools.DeclaredMethod(type, "GetPlayerData");
-                    MethodInfo getPlayerDataPostfix = AccessTools.Method(typeof(RemoteDispatchPatch), nameof(GetPlayerData_Postfix));
+                    MethodInfo getPlayerDataPostfix = AccessTools.Method(typeof(RemoteDispatch), nameof(GetPlayerData_Postfix));
                     harmony.Patch(getPlayerData, postfix: new HarmonyMethod(getPlayerDataPostfix));
 
                     MethodInfo checkTransform = AccessTools.DeclaredMethod(type, "CheckTransform");
-                    MethodInfo CheckTransformPostfix = AccessTools.Method(typeof(RemoteDispatchPatch), nameof(CheckTransform_Postfix));
+                    MethodInfo CheckTransformPostfix = AccessTools.Method(typeof(RemoteDispatch), nameof(CheckTransform_Postfix));
                     harmony.Patch(checkTransform, postfix: new HarmonyMethod(CheckTransformPostfix));
                     break;
                 case "Sessions":
@@ -42,6 +53,8 @@ public static class RemoteDispatchPatch
                     break;
             }
         }
+
+        Multiplayer.Log("RemoteDispatch patched");
     }
 
     private static void GetPlayerData_Postfix(ref JObject __result)

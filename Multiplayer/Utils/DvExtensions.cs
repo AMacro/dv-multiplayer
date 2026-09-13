@@ -7,6 +7,9 @@ using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Components.Networking.World;
 using Multiplayer.Networking.Data;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -173,5 +176,43 @@ public static class DvExtensions
             (NetworkLifecycle.Instance.Server.IsSinglePlayer ||
             (NetworkLifecycle.Instance.Server.PlayerCount == 1 && NetworkLifecycle.Instance.IsClientRunning));
     }
+    #endregion
+
+    #region GenericExtensions
+
+    public static int Replace<T>(this IList<T> source, T oldValue, T newValue)
+    {
+        if (source == null)
+            throw new ArgumentNullException(nameof(source));
+
+        var index = source.IndexOf(oldValue);
+        if (index != -1)
+            source[index] = newValue;
+        return index;
+    }
+
+    public static void ReplaceAll<T>(this IList<T> source, T oldValue, T newValue)
+    {
+        if (source == null)
+            throw new ArgumentNullException(nameof(source));
+
+        int index = -1;
+        do
+        {
+            index = source.IndexOf(oldValue);
+            if (index != -1)
+                source[index] = newValue;
+        } while (index != -1);
+    }
+
+
+    public static IEnumerable<T> Replace<T>(this IEnumerable<T> source, T oldValue, T newValue)
+    {
+        if (source == null)
+            throw new ArgumentNullException(nameof(source));
+
+        return source.Select(x => EqualityComparer<T>.Default.Equals(x, oldValue) ? newValue : x);
+    }
+
     #endregion
 }

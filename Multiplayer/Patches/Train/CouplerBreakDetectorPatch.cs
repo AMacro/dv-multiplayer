@@ -19,7 +19,7 @@ public static class CouplerBreakDetectorPatch
         if (NetworkLifecycle.Instance.IsHost())
             return true;
 
-        Multiplayer.LogDebug(() => $"OnCouplerBreak_Prefix({__instance?.motherCoupler?.train?.ID}, breakForce: {breakForce})\r\n{new System.Diagnostics.StackTrace()}");
+        //Multiplayer.LogDebug(() => $"OnCouplerBreak_Prefix({__instance?.motherCoupler?.train?.ID}, breakForce: {breakForce})\r\n{new System.Diagnostics.StackTrace()}");
         return false;
     }
 }

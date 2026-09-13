@@ -14,6 +14,7 @@ using JetBrains.Annotations;
 using LocoSim.Definitions;
 using LocoSim.Implementations;
 using Multiplayer.Components.Networking.Player;
+using Multiplayer.ModCompatibility;
 using Multiplayer.Networking.Data;
 using Multiplayer.Networking.Data.Train;
 using Multiplayer.Networking.Packets.Clientbound.Train;
@@ -26,6 +27,7 @@ using System.Linq;
 using System.Reflection;
 using UnityEngine;
 using static DV.HUD.InteriorControlsManager;
+using static Multiplayer.Networking.Data.Train.RigidbodySnapshot;
 
 namespace Multiplayer.Components.Networking.Train;
 
@@ -103,7 +105,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     }
 
     #endregion
-    private const int MAX_COUPLER_ITERATIONS = 10;
+    private const int MAX_COUPLER_ITERATIONS = 50;
     private const float MAX_PORT_DELTA = 0.001f;
     private const uint MIN_KINEMATIC_CYCLES = 10;
     private const float DISTANCE_TOLERANCE = 2f;
@@ -222,6 +224,9 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     // Control authority tracking
     private readonly Dictionary<uint, ServerPlayer> portAuthority = [];
 
+    public bool DoNotUpdate = true;
+    private uint? startTick = null;
+
     #endregion
 
     #region Client Variables
@@ -241,6 +246,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     private Coupler originalCoupledTo;
 
     private uint kinematicCycles = 0;
+    private bool wasKinematicBeforeHardCorrection = false;
 
     private readonly Dictionary<uint, bool> portNetIdToBlockState = [];
     private readonly Dictionary<uint, ControlImplBase> portNetIdToControl = [];
@@ -730,7 +736,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         {
             Destroy(this);
         }
-        catch {}
+        catch { }
 
         if (UnloadWatcher.isUnloading)
         {
@@ -902,14 +908,30 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         if (UnloadWatcher.isUnloading)
             return;
 
-        Server_SendBrakeStates();
-        Server_SendCouplers();
-        Server_SendCables();
-        Server_SendCargoState();
-        Server_SendCargoHealthUpdate();
-        Server_SendCarHealthState();
+        if (!startTick.HasValue)
+        {
+            startTick = tick;
+            Server_SendCargoState();
+            Server_SendCargoHealthUpdate();
+            Server_SendCarHealthState();
+        }
 
-        TicksSinceSync++; //keep track of last full sync
+        if (!DoNotUpdate)
+        {
+            Server_SendBrakeStates();
+            Server_SendCouplers();
+            Server_SendCables();
+            Server_SendCargoState();
+            Server_SendCargoHealthUpdate();
+            Server_SendCarHealthState();
+
+            TicksSinceSync++; //keep track of last full sync
+        }
+        else
+        {
+            if ((tick - startTick > 120) && !PersistentJobs.ResumeCoroRunning)
+                DoNotUpdate = false;
+        }
     }
 
     private void Server_SendBrakeStates()
@@ -1137,7 +1159,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         //todo: resolve player disconnection during chain interaction
         if (frontInteractionPlayer == player || rearInteractionPlayer == player)
         {
-            Multiplayer.LogWarning($"Server_OnPlayerDisconnect() Coupler interaction in unknown state [{CurrentID}, {NetId}] isFront: {frontInteractionPlayer == player}");
+            //Multiplayer.LogWarning($"Server_OnPlayerDisconnect() Coupler interaction in unknown state [{CurrentID}, {NetId}] isFront: {frontInteractionPlayer == player}");
             if (frontInteractionPlayer == player)
             {
                 frontInteracting = false;
@@ -1161,7 +1183,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
     public void Server_PlayerOnCar(ServerPlayer player)
     {
-        Multiplayer.LogDebug(() => $"Server_PlayerOnCar() {player?.Username} is on car {CurrentID}, netId: {NetId}, player.CarId: {player?.CarId}");
+        //Multiplayer.LogDebug(() => $"Server_PlayerOnCar() {player?.Username} is on car {CurrentID}, netId: {NetId}, player.CarId: {player?.CarId}");
         if (player == null || player.CarId == NetId)
             return;
 
@@ -1193,7 +1215,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
     public void Server_RemovePlayer(ServerPlayer player)
     {
-        Multiplayer.LogDebug(() => $"Server_RemovePlayer() {player?.Username} is leaving car {CurrentID}, netId: {NetId}, player.CarId: {player?.CarId}");
+        //Multiplayer.LogDebug(() => $"Server_RemovePlayer() {player?.Username} is leaving car {CurrentID}, netId: {NetId}, player.CarId: {player?.CarId}");
         serverPlayersInCar.Remove(player);
         TrainCar?.visitChecker?.OnPlayerCarChanged(TrainCar);
     }
@@ -1356,7 +1378,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         //Multiplayer.LogDebug(() => $"Common_OnPortUpdated() port [{port?.id}] updated on [{CurrentID}, {NetId}]. Value: {port?.Value}, PrevValue: {port?.prevValue}, ValueType: {port?.valueType}, Tick: {NetworkLifecycle.Instance.Tick}");
         if (port.valueType != PortValueType.CONTROL && !NetworkLifecycle.Instance.IsHost())
         {
-            Multiplayer.LogDebug(() => $"Common_OnPortUpdated() Ignoring non-control port update for [{port.id}] on [{CurrentID}, {NetId}]");
+            //Multiplayer.LogDebug(() => $"Common_OnPortUpdated() Ignoring non-control port update for [{port.id}] on [{CurrentID}, {NetId}]");
             return;
         }
 
@@ -1585,6 +1607,10 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         if (flags.HasFlag(CouplerInteractionType.CouplerTighten))
         {
             Multiplayer.LogDebug(() => $"8 Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], flags: {flags} current state: {coupler.ChainScript.state}");
+            if (coupler.ChainScript.state != ChainCouplerInteraction.State.Attached_Loose || !coupler.IsCoupled())
+            {
+                Multiplayer.LogWarning($"Incorrect coupling state for tightening! [{TrainCar?.ID}, {NetId}], flags: {flags} current state: {coupler.ChainScript.state} isCoupled: {coupler.IsCoupled()}");
+            }
             if (coupler.ChainScript.state == ChainCouplerInteraction.State.Attached_Loose)
             {
                 Multiplayer.LogDebug(() => $"9 Common_ReceiveCouplerInteraction() [{TrainCar?.ID}, {NetId}], coupler is front: {packet.IsFrontCoupler}, flags: {flags}");
@@ -1713,8 +1739,12 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             yield return new WaitForSeconds(ccInteraction.ROTATION_SMOOTH_DURATION);
         }
 
+        Multiplayer.LogDebug(() => $"LooseAttachCoupler() [{TrainCar?.ID}], Coupler: {coupler?.train?.ID}, OtherCoupler: {otherCoupler?.train?.ID}, Distance: {distance}, Iterations: {x}");
+
         //Drop the chain
         coupler.ChainScript.fsm.Fire(ChainCouplerInteraction.Trigger.Dropped_By_Player);
+
+        Multiplayer.LogDebug(() => $"LooseAttachCoupler() [{TrainCar?.ID}], Coupler: {coupler?.train?.ID}, OtherCoupler: {otherCoupler?.train?.ID}, CoupledTo: {coupler.coupledTo?.train?.ID}");
     }
 
     private IEnumerator ParkCoupler(Coupler coupler)
@@ -1854,7 +1884,11 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     public bool InUse(out LocoInUseData.LocoInUseReason reason, out float timeout)
     {
         HashSet<NetworkedTrainCar> visited = new(TrainCar?.trainset?.cars?.Count ?? 1);
-        return InUse(out reason, out timeout, visited);
+
+        // Derailed demos shouldn't be blocked if brakes aren't applied
+        bool isDerailed = TrainCar.derailed && TrainCar.playerSpawnedCar;
+        //Multiplayer.LogDebug(() => $"InUse() [{CurrentID}, {NetId}] isDerailed: {isDerailed}, derailed: {TrainCar.derailed}, playerSpawnedCar: {TrainCar.playerSpawnedCar}");
+        return InUse(isDerailed, out reason, out timeout, visited);
     }
 
     /// <summary>
@@ -1864,7 +1898,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     /// <param name="timeout">The time remaining until the TrainCar is no longer considered in use</param>
     /// <param name="visited">A set of already visited NetworkedTrainCar instances to avoid infinite recursion</param>
     /// <returns>True if the train car is in use, false otherwise</returns>
-    private bool InUse(out LocoInUseData.LocoInUseReason reason, out float timeout, HashSet<NetworkedTrainCar> visited)
+    private bool InUse(bool isDerailed, out LocoInUseData.LocoInUseReason reason, out float timeout, HashSet<NetworkedTrainCar> visited)
     {
         timeout = 0f;
 
@@ -1893,21 +1927,23 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
         bool handbrakeApplied = TrainCar.carType == TrainCarType.HandCar ||
                                 brakeSystem?.handbrakePosition > 0f;
-        if (!handbrakeApplied)
+        if (!handbrakeApplied && !isDerailed)
         {
-            //Multiplayer.LogDebug(() => $"InUse() [{CurrentID}, {NetId}] handbrake not applied, reason: Brakes");
+            //Multiplayer.LogDebug(() => $"InUse() [{CurrentID}, {NetId}] handbrake not applied, reason: Brakes isDerailed: {isDerailed}");
             reason = LocoInUseData.LocoInUseReason.Brakes;
             return true;
         }
 
         // Specific checks for locomotives and carriages
-        bool result;
+        bool result = false;
         if (TrainCar.IsLoco)
-            result = LocoInUse(out reason, out timeout);
-        else
+            result = LocoInUse(isDerailed, out reason, out timeout);
+        else if (!isDerailed)
             result = CarInUse(out reason);
+        else
+            reason = LocoInUseData.LocoInUseReason.None;
 
-        if (!result && OtherCarInUse(visited))
+        if (!result && !isDerailed && OtherCarInUse(isDerailed, visited))
         {
             //Multiplayer.LogDebug(() => $"InUse() [{CurrentID}, {NetId}] other car in use");
             reason = LocoInUseData.LocoInUseReason.CoupledCarInUse;
@@ -1923,13 +1959,13 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     /// <param name="reason">The reason the locomotive is in use</param>
     /// <param name="timeout">The time remaining until the locomotive is no longer considered in use</param>
     /// <returns>True if the locomotive is in use, false otherwise</returns>
-    private bool LocoInUse(out LocoInUseData.LocoInUseReason reason, out float timeout)
+    private bool LocoInUse(bool isDerailed, out LocoInUseData.LocoInUseReason reason, out float timeout)
     {
         timeout = 0f;
 
         bool engineRunning = EngineRunning();
 
-        if (engineRunning)
+        if (engineRunning && !isDerailed)
         {
             //Multiplayer.LogDebug(() => $"LocoInUse() [{CurrentID}, {NetId}] engine running, reason: Engine");
             reason = LocoInUseData.LocoInUseReason.Engine;
@@ -2011,7 +2047,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     /// </summary>
     /// <param name="visited"></param>
     /// <returns>True if a coupled car is in use, false otherwise</returns>
-    private bool OtherCarInUse(HashSet<NetworkedTrainCar> visited)
+    private bool OtherCarInUse(bool isDerailed, HashSet<NetworkedTrainCar> visited)
     {
         //Multiplayer.LogDebug(() => $"OtherCarInUse() called for [{CurrentID}, {NetId}]");
 
@@ -2027,7 +2063,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
                 continue;
 
             if (TryGetFromTrainCar(otherTrainCar, out var otherNetTrainCar) && otherNetTrainCar != null)
-                if (otherNetTrainCar.InUse(out _, out _, visited))
+                if (otherNetTrainCar.InUse(isDerailed, out _, out _, visited))
                     return true;
         }
 
@@ -2045,6 +2081,85 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
             yield return null;
 
         Client_Initialized = true;
+    }
+
+    /// <summary>
+    /// Checks whether the received position exceeds the threshold for a simple position update.
+    /// </summary>
+    /// <param name="movementPart">The movement part containing the position and movement data.</param>
+    /// <param name="tick">The tick at which the update was received.</param>
+    /// <returns>Returns true if a hard correction is required, false otherwise.</returns>
+    public bool Client_CheckThreshold(in TrainsetMovementPart movementPart, uint tick)
+    {
+        if (tick <= lastTickProcessed)
+            return false;
+
+        if (movementPart.typeFlag.HasFlag(TrainsetMovementPart.MovementType.Position))
+        {
+            Vector3 worldPos = movementPart.Position + WorldMover.currentMove;
+
+            // Only apply position update if change exceeds threshold (stops cariages from jittering while stationary)
+            float positionDelta = Vector3.Distance(TrainCar.transform.position, worldPos);
+
+            if (positionDelta > NetworkTrainsetWatcher.MAX_POSITION_DELTA)
+            {
+                Multiplayer.LogDebug(() => $"Client_CheckThreshold() Position delta {positionDelta} exceeds threshold for car {CurrentID} at tick {tick}, current position: {TrainCar.transform.position}, expected position: {worldPos}");
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public void Client_BeginHardCorrection(in TrainsetMovementPart movementPart, uint tick)
+    {
+        if (!Client_Initialized || TrainCar.rb == null)
+            return;
+
+        wasKinematicBeforeHardCorrection = TrainCar.rb.isKinematic;
+
+        TrainCar.rb.isKinematic = true;
+        TrainCar.rb.velocity = Vector3.zero;
+        TrainCar.rb.angularVelocity = Vector3.zero;
+
+        if (movementPart.typeFlag == TrainsetMovementPart.MovementType.RigidBody)
+        {
+            if (TrainCar.isEligibleForSleep)
+                TrainCar.ForceOptimizationState(false);
+
+            if (!TrainCar.derailed)
+                TrainCar.Derail();
+
+            IncludedData flags = (IncludedData)movementPart.RigidbodySnapshot.IncludedDataFlags;
+
+            if (flags.HasFlag(IncludedData.Position))
+                TrainCar.rb.position = movementPart.RigidbodySnapshot.Position + WorldMover.currentMove;
+            if (flags.HasFlag(IncludedData.Rotation))
+                TrainCar.rb.rotation = movementPart.RigidbodySnapshot.Rotation;
+        }
+        else if (movementPart.typeFlag.HasFlag(TrainsetMovementPart.MovementType.Position))
+        {
+            TrainCar.rb.position = movementPart.Position + WorldMover.currentMove;
+            TrainCar.rb.rotation = movementPart.Rotation;
+        }
+
+        // Clear anything queued so stale interpolation data doesn't fight the new state
+        Client_trainSpeedQueue.Clear();
+        Client_trainRigidbodyQueue.Clear();
+        client_bogie1Queue.Clear();
+        client_bogie2Queue.Clear();
+        TrainCar.stress.ResetTrainStress();
+    }
+
+    public void Client_EndHardCorrection(in TrainsetMovementPart movementPart, uint tick)
+    {
+        if (!Client_Initialized || TrainCar.rb == null)
+            return;
+
+        TrainCar.rb.isKinematic = wasKinematicBeforeHardCorrection;
+        kinematicCycles = 0;
+
+        Client_ReceiveTrainPhysicsUpdate(in movementPart, tick);
     }
 
     public void Client_ReceiveTrainPhysicsUpdate(in TrainsetMovementPart movementPart, uint tick)
@@ -2341,7 +2456,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         }
         finally
         {
-            Multiplayer.LogDebug(() => $"WaitForControlToSettle() Control [{control.name}, {portNetId}], releasing authority for car {CurrentID} after {Time.time - time}");
+            Multiplayer.LogDebug(() => $"WaitForControlToSettle() Control [{control?.name}, {portNetId}], releasing authority for car {CurrentID} after {Time.time - time}");
             NetworkLifecycle.Instance.Client?.SendTrainControlAuthorityRequest(NetId, portNetId, false);
         }
     }
