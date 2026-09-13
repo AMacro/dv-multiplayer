@@ -665,20 +665,19 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
         }
 
         ClientInitialised = false;
+        InventorySynchronization.ResetClientReconciliation();
     }
 
-    internal IReadOnlyList<ServerboundItemReconciliationPacket> CreateItemReconciliationRequests() =>
-        InventorySynchronization.CreateItemReconciliationRequests();
+    internal IReadOnlyList<ServerboundItemReconciliationPacket> CreateItemReconciliationRequests(byte attempt) =>
+        InventorySynchronization.CreateItemReconciliationRequests(attempt);
 
-    internal bool ApplyItemReconciliation(ClientboundItemReconciliationPacket packet) =>
-        InventorySynchronization.ApplyItemReconciliation(packet);
-
-    internal void ContinueAfterItemReconciliationTimeout() =>
-        InventorySynchronization.ContinueAfterItemReconciliationTimeout();
+    internal bool ApplyItemReconciliation(ClientboundItemReconciliationPacket packet, byte attempt,
+        out bool succeeded) =>
+        InventorySynchronization.ApplyItemReconciliation(packet, attempt, out succeeded);
 
     internal void EnqueueClientItemReconciliation(ItemReconciliationRequest[] requests, bool isFinalBatch,
-        ServerPlayer player, Action<ClientboundItemReconciliationPacket> completed) =>
-        InventorySynchronization.EnqueueClientItemReconciliation(requests, isFinalBatch, player, completed);
+        byte attempt, ServerPlayer player, Action<ClientboundItemReconciliationPacket> completed) =>
+        InventorySynchronization.EnqueueClientItemReconciliation(requests, isFinalBatch, attempt, player, completed);
 
     internal static void RestoreContainerMemberships()
     {

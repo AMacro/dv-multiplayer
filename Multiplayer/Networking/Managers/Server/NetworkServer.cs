@@ -2352,11 +2352,27 @@ public class NetworkServer : NetworkManager
             return;
         }
 
+        if (packet.Attempt > 1)
+        {
+            LogWarning($"Disconnecting {player.Username} after invalid item reconciliation attempt {packet.Attempt}");
+            KickPlayer(player);
+            return;
+        }
+
         // The packet processor reuses the packet's list. Own the batch before
         // yielding for native item initialization.
+        byte reconciliationAttempt = packet.Attempt;
         NetworkedItemManager.Instance.EnqueueClientItemReconciliation(
-            packet.Items.ToArray(), packet.IsFinalBatch, player,
-            response => SendNetSerializablePacket(peer, response, DeliveryMethod.ReliableOrdered));
+            packet.Items.ToArray(), packet.IsFinalBatch, reconciliationAttempt, player,
+            response =>
+            {
+                SendNetSerializablePacket(peer, response, DeliveryMethod.ReliableOrdered);
+                if (response.IsFinalBatch && !player.InventoryReconciliationComplete && reconciliationAttempt >= 1)
+                {
+                    LogWarning($"Disconnecting {player.Username} after two failed item reconciliation attempts");
+                    KickPlayer(player);
+                }
+            });
     }
 
     internal void SendCustomizationAction<T>(T packet)
@@ -2490,6 +2506,15 @@ public class NetworkServer : NetworkManager
                 if (car != null)
                     car.EndInteriorNetworkSync();
         }
+    }
+
+    internal void ResynchronizeCustomization(ServerPlayer player, ITransportPeer peer)
+    {
+        if (player == null || peer == null || !player.CustomizationSnapshotSent)
+            return;
+
+        player.CustomizationSnapshotSent = false;
+        CoroutineManager.Instance.StartCoroutine(SendInitialCustomizationStateWhenReady(player, peer));
     }
 
     private void EnsureCustomizationItemsKnown(ICustomizationActionPacket packet, ServerPlayer player)

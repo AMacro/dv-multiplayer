@@ -7,12 +7,14 @@ using Multiplayer.Networking.Data;
 using Multiplayer.Networking.Managers.Server;
 using Multiplayer.Networking.Packets.Common.Customization;
 using Multiplayer.Networking.TransportLayers;
+using UnityEngine;
 
 namespace Multiplayer.Components.Networking.World;
 
 // Orders native customization operations; NetworkServer retains packet routing.
 internal sealed class HostCustomizationSynchronization
 {
+    private const float ActionReadyTimeoutSeconds = 10f;
     private readonly NetworkServer server;
     private readonly List<PendingHostCustomizationAction> pendingHostCustomizationActions = [];
     private bool hostCustomizationDrainRunning;
@@ -57,9 +59,28 @@ internal sealed class HostCustomizationSynchronization
 
                     bool blockedByEarlierDependency = pendingHostCustomizationActions.Take(index)
                         .Any(earlier => CustomizationStateManager.ActionsConflict(earlier.Packet, pending.Packet));
-                    if (blockedByEarlierDependency ||
-                        !CustomizationStateManager.IsActionReady(pending.Packet, out _))
+                    if (blockedByEarlierDependency)
+                    {
+                        pending.UnreadySince = -1f;
                         continue;
+                    }
+
+                    if (!CustomizationStateManager.IsActionReady(pending.Packet, out _))
+                    {
+                        if (pending.UnreadySince < 0f)
+                            pending.UnreadySince = Time.realtimeSinceStartup;
+                        else if (Time.realtimeSinceStartup - pending.UnreadySince >= ActionReadyTimeoutSeconds)
+                        {
+                            pendingHostCustomizationActions.RemoveAt(index--);
+                            if (pending.Packet.OriginActionId != 0)
+                                pending.Player.ProcessedCustomizationActionIds.Add(pending.Packet.OriginActionId);
+                            server.LogWarning($"Discarding customization action {pending.Packet.GetType().Name} from " +
+                                $"{pending.Player.Username} after it remained unready for {ActionReadyTimeoutSeconds:F0}s");
+                            server.ResynchronizeCustomization(pending.Player, pending.Peer);
+                            appliedAny = true;
+                        }
+                        continue;
+                    }
 
                     pendingHostCustomizationActions.RemoveAt(index--);
                     bool applied = false;
@@ -99,6 +120,7 @@ internal sealed class HostCustomizationSynchronization
         public readonly ICustomizationActionPacket Packet;
         public readonly ServerPlayer Player;
         public readonly ITransportPeer Peer;
+        public float UnreadySince = -1f;
 
         public readonly Action<ICustomizationActionPacket, ITransportPeer, bool> Relay;
 

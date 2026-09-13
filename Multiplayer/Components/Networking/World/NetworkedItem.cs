@@ -436,7 +436,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         return snapshot;
     }
 
-    public void ReceiveSnapshot(ItemUpdateData snapshot)
+    public void ReceiveSnapshot(ItemUpdateData snapshot, bool acceptServerAuthoritativeValues = false)
     {
         if (snapshot == null || snapshot.UpdateType == ItemUpdateData.ItemUpdateType.None)
             return;
@@ -448,10 +448,10 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
             return;
         }
 
-        ApplySnapshot(snapshot);
+        ApplySnapshot(snapshot, acceptServerAuthoritativeValues);
     }
 
-    private void ApplySnapshot(ItemUpdateData snapshot)
+    private void ApplySnapshot(ItemUpdateData snapshot, bool acceptServerAuthoritativeValues = false)
     {
         // Shop clients instantiate the raw prefab, whose local flag can differ from
         // the host's purchased instance. Apply this before dropped-state handling so
@@ -547,7 +547,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
             if (trackedItem != null && snapshot.States != null)
             {
-                ApplyTrackedValues(snapshot.States);
+                ApplyTrackedValues(snapshot.States, acceptServerAuthoritativeValues);
 
                 if (trackedItem is GadgetItem gadgetItem &&
                     gadgetItem.Gadget is AlternatingController alternating)
@@ -688,13 +688,21 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
     internal ItemState RefreshPersistenceState()
     {
-        lastState = GetItemState();
+        ItemState currentState = GetItemState();
+        if (currentState != lastState)
+            stateDirty = true;
         // Remote carried objects are inactive host-side proxies. Their layout was
         // supplied by the owning client and cannot be rediscovered through the
         // host's Inventory; doing so replaces valid slots/container IDs with -1.
         if (ShouldObserveLocalLayout())
-            CaptureCurrentLayout(lastState);
-        return lastState;
+        {
+            if (CaptureCurrentLayout(currentState))
+            {
+                stateDirty = true;
+                forceStateSnapshot = true;
+            }
+        }
+        return currentState;
     }
 
     public ItemUpdateData CreateCurrentUpdateData(ItemUpdateData.ItemUpdateType updateType)
@@ -773,7 +781,8 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
     }
 
-    private void ApplyTrackedValues(Dictionary<string, object> newValues)
+    private void ApplyTrackedValues(Dictionary<string, object> newValues,
+        bool acceptServerAuthoritativeValues = false)
     {
         Multiplayer.LogDebug(() => $"NetworkedItem.ApplyTrackedValues() itemNetId: {NetId}, item name: {name}. Null checks");
 
@@ -788,7 +797,8 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
             var trackedValue = trackedValues.Find(tv => ((dynamic)tv).Key == newValue.Key);
             if (trackedValue != null)
             {
-                if (!NetworkLifecycle.Instance.IsHost() || !((dynamic)trackedValue).ServerAuthoritative)
+                if (acceptServerAuthoritativeValues || !NetworkLifecycle.Instance.IsHost() ||
+                    !((dynamic)trackedValue).ServerAuthoritative)
                 {
                     try
                     {

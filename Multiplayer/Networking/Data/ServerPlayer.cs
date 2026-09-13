@@ -50,6 +50,7 @@ public class ServerPlayer : IDisposable
     public bool CustomizationSnapshotSent { get; set; }
     internal bool InventoryReconciliationComplete { get; set; }
     internal bool InventoryReconciliationFailed { get; set; }
+    internal int InventoryReconciliationAttempt { get; set; } = -1;
     internal HashSet<NetworkedItem> ReconciledInventoryItems { get; } = [];
     public HashSet<uint> ProcessedCustomizationActionIds { get; } = [];
 

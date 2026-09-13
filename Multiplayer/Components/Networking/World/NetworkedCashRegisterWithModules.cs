@@ -302,7 +302,14 @@ public class NetworkedCashRegisterWithModules : IdMonoBehaviour<ushort, Networke
             totalCost += data.basePrice * amounts[i];
         }
 
-        if (double.IsNaN(packet.Amount) || double.IsInfinity(packet.Amount) || packet.Amount + 0.001 < totalCost)
+        if (double.IsNaN(packet.Amount) || double.IsInfinity(packet.Amount) || packet.Amount + 0.001 < totalCost ||
+            Inventory.Instance.PlayerMoney + 0.001 < totalCost)
+        {
+            SendShopRejection(player, packet.RequestId, ShopAction.RejectFunds);
+            return;
+        }
+
+        if (!Inventory.Instance.RemoveMoney(totalCost))
         {
             SendShopRejection(player, packet.RequestId, ShopAction.RejectFunds);
             return;

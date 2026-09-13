@@ -85,6 +85,8 @@ public class NetworkClient : NetworkManager
     private ClientCustomizationSynchronization clientCustomizationSynchronization;
     private ClientCustomizationSynchronization CustomizationSynchronization => clientCustomizationSynchronization ??= new(this);
     private bool itemReconciliationComplete;
+    private bool itemReconciliationSucceeded;
+    private byte itemReconciliationAttempt;
     private uint nextCustomizationActionId = 1;
     private uint nextShopRequestId = 1;
     internal bool noCarTimeout = false;
@@ -406,21 +408,46 @@ public class NetworkClient : NetworkManager
          * ReadyForItems
          */
 
-        itemReconciliationComplete = false;
         Log("Reconciling local items");
         SendLoadStateUpdate(PlayerLoadingState.ReadyForItems);
-        foreach (var reconciliationPacket in NetworkedItemManager.Instance.CreateItemReconciliationRequests())
-            SendNetSerializablePacketToServer(reconciliationPacket, DeliveryMethod.ReliableOrdered);
         displayLoadingInfo.OnLoadingStatusChanged("Syncing items", false, ((float)LoadingState / (float)PlayerLoadingState.Complete) * 100);
 
-        float reconciliationDeadline = Time.time + Mathf.Max(RPC_Timeout, 5f);
-        while (!itemReconciliationComplete && Time.time < reconciliationDeadline)
-            yield return null;
-        if (!itemReconciliationComplete)
+        itemReconciliationAttempt = 0;
+        for (int reconciliationTry = 0; reconciliationTry < 2; reconciliationTry++)
         {
-            LogWarning("Timed out waiting for item reconciliation; continuing in degraded state");
-            NetworkedItemManager.Instance.ContinueAfterItemReconciliationTimeout();
-            itemReconciliationComplete = true;
+            itemReconciliationComplete = false;
+            itemReconciliationSucceeded = false;
+            foreach (var reconciliationPacket in NetworkedItemManager.Instance.CreateItemReconciliationRequests(
+                         itemReconciliationAttempt))
+                SendNetSerializablePacketToServer(reconciliationPacket, DeliveryMethod.ReliableOrdered);
+
+            float reconciliationDeadline = Time.time + Mathf.Max(RPC_Timeout, 5f);
+            while (IsRunning && !itemReconciliationComplete && Time.time < reconciliationDeadline)
+                yield return null;
+
+            if (!IsRunning)
+                yield break;
+            if (itemReconciliationComplete && itemReconciliationSucceeded)
+                break;
+
+            if (reconciliationTry == 0)
+            {
+                LogWarning(itemReconciliationComplete
+                    ? "Item reconciliation failed; retrying once"
+                    : "Timed out waiting for item reconciliation; retrying once");
+                // A timeout does not prove the host failed. Resend the same attempt
+                // so it can replay its authoritative result without duplicating the
+                // inventory. An explicit rejection starts a clean second attempt.
+                if (itemReconciliationComplete)
+                    itemReconciliationAttempt++;
+                continue;
+            }
+
+            LogError(itemReconciliationComplete
+                ? "Item reconciliation failed twice; aborting connection"
+                : "Item reconciliation timed out twice; aborting connection");
+            Stop();
+            yield break;
         }
 
         /* 
@@ -714,7 +741,28 @@ public class NetworkClient : NetworkManager
         if (LoadingState < PlayerLoadingState.Complete)
             Log("Received weather state");
 
-        WeatherDriver.Instance.LoadSaveData(JObject.FromObject(packet), Globals.G.GameParams.WeatherEditorAlwaysAllowed);
+        // BatteryConsumer measures usage from changes in the game's time-of-day.
+        // Periodic network correction can move that clock slightly backwards;
+        // vanilla interprets the negative delta as midnight wraparound and drains
+        // almost a full day of flashlight charge. Restart active consumers around
+        // the correction so their baseline is the newly synchronized time.
+        var activeFlashlightConsumers = Object.FindObjectsOfType<FlashlightItem>()
+            .Select(flashlight => flashlight.batteryConsumer)
+            .Where(consumer => consumer != null && consumer.isConsuming)
+            .ToArray();
+        foreach (var consumer in activeFlashlightConsumers)
+            consumer.TogglePowerConsumption(false);
+
+        try
+        {
+            WeatherDriver.Instance.LoadSaveData(JObject.FromObject(packet), Globals.G.GameParams.WeatherEditorAlwaysAllowed);
+        }
+        finally
+        {
+            foreach (var consumer in activeFlashlightConsumers)
+                if (consumer != null && consumer.gameObject.activeInHierarchy)
+                    consumer.TogglePowerConsumption(true);
+        }
     }
 
     private void OnClientboundRemoveLoadingScreen(ClientboundRemoveLoadingScreenPacket packet)
@@ -1525,10 +1573,14 @@ public class NetworkClient : NetworkManager
 
     private void OnClientboundItemReconciliationPacket(ClientboundItemReconciliationPacket packet)
     {
-        if (NetworkedItemManager.Instance.ApplyItemReconciliation(packet))
+        if (NetworkedItemManager.Instance.ApplyItemReconciliation(packet, itemReconciliationAttempt,
+                out bool succeeded))
         {
             itemReconciliationComplete = true;
-            Log($"Item reconciliation complete ({packet?.Items?.Count ?? 0} items in final batch)");
+            itemReconciliationSucceeded = succeeded;
+            Log(succeeded
+                ? $"Item reconciliation complete ({packet?.Items?.Count ?? 0} items in final batch)"
+                : $"Item reconciliation attempt {itemReconciliationAttempt + 1} failed");
         }
     }
 

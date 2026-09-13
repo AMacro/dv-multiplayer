@@ -23,16 +23,31 @@ namespace Multiplayer.Components.Networking.World;
 internal sealed class InventorySynchronization
 {
     private readonly Dictionary<int, NetworkedItem> pendingItemReconciliation = [];
+    private bool currentReconciliationFailed;
+    private bool clientReconciliationInProgress;
+    private byte clientReconciliationAttempt;
+    private IReadOnlyList<ServerboundItemReconciliationPacket> activeReconciliationRequests = [];
     private readonly Queue<IEnumerator> reconciliationBatches = new();
+    private readonly Dictionary<ServerPlayer, List<ClientboundItemReconciliationPacket>> completedReconciliation = [];
     private bool drainingReconciliationBatches;
     private readonly NetworkedItemManager manager;
 
     internal InventorySynchronization(NetworkedItemManager manager) => this.manager = manager;
 
+    internal void ResetClientReconciliation()
+    {
+        pendingItemReconciliation.Clear();
+        currentReconciliationFailed = false;
+        clientReconciliationInProgress = false;
+        activeReconciliationRequests = [];
+    }
+
     internal void PlayerDisconnected(ServerPlayer disconnectedPlayer)
     {
         if (disconnectedPlayer == null || !NetworkLifecycle.Instance.IsHost())
             return;
+
+        completedReconciliation.Remove(disconnectedPlayer);
 
         byte hostPlayerId = NetworkLifecycle.Instance.Server?.SelfId ?? 0;
         ServerPlayer hostPlayer = null;
@@ -96,11 +111,10 @@ internal sealed class InventorySynchronization
         var allItems = NetworkedItem.GetAll()
             .Where(item => item != null && item.NetId != 0)
             .ToArray();
-        foreach (var item in allItems)
-            item.RefreshPersistenceState();
+        var persistenceStates = allItems.ToDictionary(item => item, item => item.RefreshPersistenceState());
         var selected = allItems
             .Where(item => item.OwnerPlayerId == player.PlayerId &&
-                item.CurrentState is ItemState.InHand or ItemState.InInventory)
+                persistenceStates[item] is ItemState.InHand or ItemState.InInventory)
             .ToHashSet();
 
         bool added;
@@ -115,7 +129,7 @@ internal sealed class InventorySynchronization
             // them there. Ownership of the root decides whose inventory is saved.
             foreach (var item in allItems)
             {
-                if (selected.Contains(item) || item.CurrentState != ItemState.InContainer ||
+                if (selected.Contains(item) || persistenceStates[item] != ItemState.InContainer ||
                     string.IsNullOrEmpty(item.ContainerId) || !selectedContainerIds.Contains(item.ContainerId))
                     continue;
                 selected.Add(item);
@@ -160,12 +174,13 @@ internal sealed class InventorySynchronization
             state ??= [];
             item.GetComponent<ShopRestocker>()?.OnItemSaveDataRequested(state);
 
+            ItemState persistenceState = item.RefreshPersistenceState();
             result.Add(new PlayerItemSaveData
             {
                 NetId = 0,
                 ItemPrefabName = item.Item.InventorySpecs.ItemPrefabName,
                 BelongsToPlayer = item.Item.InventorySpecs.BelongsToPlayer,
-                IsGrabbed = item.CurrentState == ItemState.InHand,
+                IsGrabbed = persistenceState == ItemState.InHand,
                 State = state ?? [],
                 InventorySlotIndex = item.InventorySlotIndex,
                 ContainerSlotIndex = item.ContainerSlotIndex,
@@ -320,11 +335,15 @@ internal sealed class InventorySynchronization
         completed?.Invoke(true, created.Count, containerCount, null);
     }
 
-    internal IReadOnlyList<ServerboundItemReconciliationPacket> CreateItemReconciliationRequests()
+    internal IReadOnlyList<ServerboundItemReconciliationPacket> CreateItemReconciliationRequests(byte attempt)
     {
+        if (clientReconciliationInProgress && attempt == clientReconciliationAttempt)
+            return activeReconciliationRequests;
+
         pendingItemReconciliation.Clear();
+        currentReconciliationFailed = false;
         var packets = new List<ServerboundItemReconciliationPacket>();
-        var packet = new ServerboundItemReconciliationPacket();
+        var packet = new ServerboundItemReconciliationPacket { Attempt = attempt };
         int localId = 1;
 
         foreach (var item in NetworkedItem.GetAll())
@@ -332,7 +351,7 @@ internal sealed class InventorySynchronization
             if (packet.Items.Count >= ItemReconciliationProtocol.MaxItems)
             {
                 packets.Add(packet);
-                packet = new ServerboundItemReconciliationPacket();
+                packet = new ServerboundItemReconciliationPacket { Attempt = attempt };
             }
 
             if (!IsReconciliationCandidate(item))
@@ -351,14 +370,24 @@ internal sealed class InventorySynchronization
             localId++;
         }
 
+        packet.Attempt = attempt;
         packet.IsFinalBatch = true;
         packets.Add(packet);
+        clientReconciliationAttempt = attempt;
+        clientReconciliationInProgress = true;
+        activeReconciliationRequests = packets;
         Multiplayer.LogDebug(() => $"Prepared {localId - 1} local items in {packets.Count} batch(es) for authoritative reconciliation");
         return packets;
     }
 
-    internal bool ApplyItemReconciliation(ClientboundItemReconciliationPacket packet)
+    internal bool ApplyItemReconciliation(ClientboundItemReconciliationPacket packet, byte attempt,
+        out bool succeeded)
     {
+        succeeded = false;
+        if (packet == null || packet.Attempt != attempt)
+            return false;
+
+        bool rejected = false;
         foreach (var result in packet?.Items ?? [])
         {
             if (!pendingItemReconciliation.TryGetValue(result.LocalId, out var localItem))
@@ -370,6 +399,8 @@ internal sealed class InventorySynchronization
             pendingItemReconciliation.Remove(result.LocalId);
             if (result.NetId == 0)
             {
+                rejected = true;
+                currentReconciliationFailed = true;
                 Multiplayer.LogWarning($"Host rejected reconciliation for local item {result.LocalId} ({localItem?.name})");
                 continue;
             }
@@ -401,22 +432,23 @@ internal sealed class InventorySynchronization
 
         foreach (var unresolved in pendingItemReconciliation)
             Multiplayer.LogWarning($"Host did not return reconciliation data for local item {unresolved.Key} ({unresolved.Value?.name})");
+        rejected |= currentReconciliationFailed || pendingItemReconciliation.Count > 0;
         pendingItemReconciliation.Clear();
-        manager.ClientInitialised = true;
+        clientReconciliationInProgress = false;
+        activeReconciliationRequests = [];
+        succeeded = !rejected;
+        if (succeeded)
+            manager.ClientInitialised = true;
         return true;
     }
 
-    internal void ContinueAfterItemReconciliationTimeout()
-    {
-        // Allow ordinary item updates to resume, but retain the local-ID mapping so
-        // a delayed reliable response can still assign authoritative IDs.
-        manager.ClientInitialised = true;
-    }
-
     internal void EnqueueClientItemReconciliation(ItemReconciliationRequest[] requests, bool isFinalBatch,
-        ServerPlayer player, Action<ClientboundItemReconciliationPacket> completed)
+        byte attempt, ServerPlayer player, Action<ClientboundItemReconciliationPacket> completed)
     {
-        reconciliationBatches.Enqueue(ReconcileClientItems(requests, isFinalBatch, player, completed));
+        if (TryReplayCompletedReconciliation(requests, isFinalBatch, attempt, player, completed))
+            return;
+
+        reconciliationBatches.Enqueue(ReconcileClientItems(requests, isFinalBatch, attempt, player, completed));
         if (!drainingReconciliationBatches)
             CoroutineManager.Instance.StartCoroutine(DrainReconciliationBatches());
     }
@@ -438,18 +470,42 @@ internal sealed class InventorySynchronization
     }
 
     private IEnumerator ReconcileClientItems(
-        ItemReconciliationRequest[] requests, bool isFinalBatch,
+        ItemReconciliationRequest[] requests, bool isFinalBatch, byte attempt,
         ServerPlayer player, Action<ClientboundItemReconciliationPacket> completed)
     {
         var response = new ClientboundItemReconciliationPacket
         {
             IsFinalBatch = isFinalBatch,
+            Attempt = attempt,
         };
         if (!NetworkLifecycle.Instance.IsHost() || requests == null || player == null)
             yield break;
         if (!NetworkLifecycle.Instance.Server.TryGetServerPlayer(player.PlayerId, out var initialPlayer) ||
             initialPlayer != player)
             yield break;
+
+        // A duplicate can have been queued while the original batch was still
+        // initializing. Recheck here after earlier queued work has completed.
+        if (TryReplayCompletedReconciliation(requests, isFinalBatch, attempt, player, completed))
+            yield break;
+
+        if (player.InventoryReconciliationAttempt < 0 && attempt != 0 ||
+            player.InventoryReconciliationComplete ||
+            attempt < player.InventoryReconciliationAttempt ||
+            player.InventoryReconciliationAttempt >= 0 && attempt > player.InventoryReconciliationAttempt + 1)
+        {
+            Multiplayer.LogWarning($"Disconnecting {player.Username} after out-of-order item reconciliation attempt {attempt}");
+            NetworkLifecycle.Instance.Server.KickPlayer(player);
+            yield break;
+        }
+
+        if (attempt != player.InventoryReconciliationAttempt)
+        {
+            player.InventoryReconciliationAttempt = attempt;
+            player.InventoryReconciliationFailed = false;
+            player.InventoryReconciliationComplete = false;
+            completedReconciliation[player] = [];
+        }
 
         var created = new List<(ItemReconciliationRequest Request, NetworkedItem Item)>();
         foreach (var request in requests)
@@ -534,7 +590,11 @@ internal sealed class InventorySynchronization
                 snapshot.ItemNetId = item.NetId;
                 snapshot.Player = player.PlayerId;
                 snapshot.OwnerPlayerId = player.PlayerId;
-                item.ReceiveSnapshot(snapshot);
+                // This snapshot was constructed from the inventory state the host
+                // supplied during login. Seed even normally host-authoritative
+                // values (notably flashlight battery charge) before the host takes
+                // authority over subsequent updates.
+                item.ReceiveSnapshot(snapshot, acceptServerAuthoritativeValues: true);
                 item.IsPendingReconciliation = false;
                 player.KnownItems[item] = NetworkLifecycle.Instance.Tick;
                 player.NearbyItems[item] = Time.time;
@@ -563,7 +623,29 @@ internal sealed class InventorySynchronization
                 player.ReconciledInventoryItems.Clear();
             ShopPurchaseCoordinator.RequestStockRecount();
         }
+        if (!completedReconciliation.TryGetValue(player, out var responses))
+            completedReconciliation[player] = responses = [];
+        responses.Add(response);
         completed(response);
+    }
+
+    private bool TryReplayCompletedReconciliation(ItemReconciliationRequest[] requests, bool isFinalBatch,
+        byte attempt, ServerPlayer player, Action<ClientboundItemReconciliationPacket> completed)
+    {
+        if (player == null || attempt != player.InventoryReconciliationAttempt ||
+            !completedReconciliation.TryGetValue(player, out var completedBatches))
+            return false;
+
+        var replay = completedBatches.FirstOrDefault(batch =>
+            batch.IsFinalBatch == isFinalBatch &&
+            batch.Items.Select(item => item.LocalId).SequenceEqual(
+                (requests ?? []).Select(item => item.LocalId)));
+        if (replay == null)
+            return false;
+
+        Multiplayer.LogDebug(() => $"Replaying completed reconciliation attempt {attempt} for {player.Username}");
+        completed(replay);
+        return true;
     }
 
     private static bool IsAllowedReconciliationState(ItemState state, InventoryItemSpec spec) =>

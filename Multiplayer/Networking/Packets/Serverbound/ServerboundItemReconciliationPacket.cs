@@ -9,12 +9,14 @@ internal sealed class ServerboundItemReconciliationPacket : INetSerializable
 {
     public List<ItemReconciliationRequest> Items = [];
     public bool IsFinalBatch;
+    public byte Attempt;
 
     public void Serialize(NetDataWriter writer)
     {
         if (Items.Count > ItemReconciliationProtocol.MaxItems)
             throw new System.InvalidOperationException($"Too many item reconciliation requests: {Items.Count}");
         writer.Put(IsFinalBatch);
+        writer.Put(Attempt);
         writer.Put(Items.Count);
         foreach (var item in Items)
         {
@@ -28,6 +30,7 @@ internal sealed class ServerboundItemReconciliationPacket : INetSerializable
     {
         Items.Clear();
         IsFinalBatch = reader.GetBool();
+        Attempt = reader.GetByte();
         int count = reader.GetInt();
         if (count < 0 || count > ItemReconciliationProtocol.MaxItems)
             throw new System.InvalidOperationException($"Invalid item reconciliation count: {count}");
