@@ -42,6 +42,23 @@ internal sealed class InventorySynchronization
         activeReconciliationRequests = [];
     }
 
+    internal void PlayerConnected(ServerPlayer player)
+    {
+        byte hostId = NetworkLifecycle.Instance.Server.SelfId;
+        int restoredItems = 0;
+        foreach (var item in NetworkedItem.GetAll().ToArray())
+        {
+            if (item == null || item.OwnerUniqueId != player.Guid)
+                continue;
+            if (item.OwnerPlayerId == hostId && item.RefreshPersistenceState() is ItemState.Dropped or ItemState.Thrown)
+            {
+                item.SetSynchronizationOwner(player.PlayerId, true);
+                restoredItems++;
+            }
+        }
+        Multiplayer.LogDebug(() => $"Restored {restoredItems} world-item synchronization owners for player {player.PlayerId}");
+    }
+
     internal void PlayerDisconnected(ServerPlayer disconnectedPlayer)
     {
         if (disconnectedPlayer == null || !NetworkLifecycle.Instance.IsHost())
@@ -50,10 +67,6 @@ internal sealed class InventorySynchronization
         completedReconciliation.Remove(disconnectedPlayer);
 
         byte hostPlayerId = NetworkLifecycle.Instance.Server?.SelfId ?? 0;
-        ServerPlayer hostPlayer = null;
-        if (hostPlayerId != 0 && disconnectedPlayer.PlayerId != hostPlayerId)
-            NetworkLifecycle.Instance.Server.TryGetServerPlayer(hostPlayerId, out hostPlayer);
-        ShopPurchaseCoordinator.TransferPendingOwnership(disconnectedPlayer, hostPlayer);
 
         if (hostPlayerId == 0 || disconnectedPlayer.PlayerId == hostPlayerId)
             return;
@@ -91,7 +104,7 @@ internal sealed class InventorySynchronization
             }
 
             preservedItems++;
-            item.SetOwner(hostPlayerId, true);
+            item.AssignHostFallback(disconnectedPlayer, hostPlayerId);
             transferredItems++;
         }
 
@@ -299,7 +312,12 @@ internal sealed class InventorySynchronization
         int containerCount = created.Count(entry => entry.Item.GetComponent<AItemContainer>() != null);
         foreach (var entry in created)
         {
-            entry.Item.SetOwner(hostPlayerId);
+            // Recovery moves items to Lost and Found; it is not a purchase or pickup.
+            // Older inventory saves still identify the owner through their record.
+            Guid owner = NativeItemPersistence.TryReadOwner(entry.Record.State, out var savedOwner)
+                ? savedOwner : stored.Guid;
+            entry.Item.RestoreOwnerUniqueId(owner);
+            entry.Item.SetSynchronizationOwner(hostPlayerId);
             if (!string.IsNullOrEmpty(entry.Record.ContainerId))
                 continue;
 

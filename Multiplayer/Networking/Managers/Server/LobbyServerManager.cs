@@ -144,11 +144,13 @@ public class LobbyServerManager : MonoBehaviour
         Multiplayer.Log($"LobbyServerManager OnDestroy()");
         sendUpdates = false;
         StopAllCoroutines();
-        StartCoroutine(RemoveFromLobbyServer($"{Multiplayer.Settings.LobbyServerAddress}/{ENDPOINT_REMOVE_SERVER}"));
-
-
-        lobby?.SetJoinable(false);
-        lobby?.Leave();
+        // Normal server Stop removes the listing while this component is active.
+        // OnDestroy may run after both the coroutine runner and Steam are gone.
+        if (Steamworks.SteamClient.IsValid)
+        {
+            lobby?.SetJoinable(false);
+            lobby?.Leave();
+        }
 
         discoveryManager?.Stop();
     }

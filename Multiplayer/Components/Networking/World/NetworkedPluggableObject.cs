@@ -111,7 +111,7 @@ public class NetworkedPluggableObject : IdMonoBehaviour<ushort, NetworkedPluggab
 
     protected void OnDisable()
     {
-        if (!NetworkLifecycle.Instance.IsHost())
+        if (NetworkLifecycle.Instance == null || !NetworkLifecycle.Instance.IsHost())
             Refreshed = false;
     }
 
@@ -128,14 +128,14 @@ public class NetworkedPluggableObject : IdMonoBehaviour<ushort, NetworkedPluggab
             plugToNetworkedPluggable.Remove(PluggableObject);
         }
 
-        if (PluggableObject?.controlBase != null && handlersInitialised)
+        if (PluggableObject != null && PluggableObject.controlBase != null && handlersInitialised)
         {
             PluggableObject.controlBase.Grabbed -= OnGrabbed;
             PluggableObject.controlBase.Ungrabbed -= OnUngrabbed;
             PluggableObject.PluggedIn -= OnPluggedIn;
         }
 
-        if (NetworkLifecycle.Instance.IsHost())
+        if (NetworkLifecycle.Instance != null && NetworkLifecycle.Instance.Server != null && NetworkLifecycle.Instance.IsHost())
         {
             NetworkLifecycle.Instance.Server.PlayerDisconnected -= OnPlayerDisconnected;
         }
@@ -565,20 +565,14 @@ public class NetworkedPluggableObject : IdMonoBehaviour<ushort, NetworkedPluggab
         if (NetId == 0)
             base.Awake();
 
-        if (plugToStation.TryGetValue(this, out _))
-        {
-            Multiplayer.LogWarning($"Lookup cache 'plugToStation' already contains NetworkedPitStopStation \"{netPitStop?.StationName}\", skipping Init");
-            return;
-        }
-
         Station = netPitStop;
-        plugToStation.Add(this, netPitStop);
+        plugToStation[this] = netPitStop;
 
         if (PluggableObject == null)
             PluggableObject = GetComponent<PluggableObject>();
 
         if (PluggableObject != null)
-            plugToNetworkedPluggable.Add(PluggableObject, this);
+            plugToNetworkedPluggable[PluggableObject] = this;
     }
 
     public void DropPlug()

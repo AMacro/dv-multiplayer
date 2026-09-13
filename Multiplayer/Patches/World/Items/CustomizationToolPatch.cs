@@ -53,6 +53,7 @@ public static class CustomizationToolPatch
             return;
 
         __state.OldItem.SuppressDestroySync();
+        replacementItem.InheritOwner(__state.OldItem.OwnerPlayerId, __state.OldItem.OwnerUniqueId);
         replacementItem.MarkAsSynchronized();
         CustomizationStateManager.RegisterPendingDuctTapeReplacement(__state.OldItem.NetId, replacementItem);
         CustomizationStateManager.SendAction(new ReplaceDuctTapePacket

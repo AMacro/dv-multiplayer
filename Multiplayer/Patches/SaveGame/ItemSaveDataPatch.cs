@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Reflection.Emit;
 using HarmonyLib;
+using Newtonsoft.Json.Linq;
 using Multiplayer.Components.SaveGame;
 
 namespace Multiplayer.Patches.SaveGame;
@@ -9,6 +10,10 @@ namespace Multiplayer.Patches.SaveGame;
 [HarmonyPatch(typeof(ItemSaveData), nameof(ItemSaveData.SaveItemData))]
 internal static class ItemSaveDataPatch
 {
+    [HarmonyPostfix]
+    private static void SaveOwner(ItemSaveData __instance, JObject __result) =>
+        NativeItemPersistence.WriteOwner(__instance, __result);
+
     [HarmonyTranspiler]
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {
@@ -30,4 +35,20 @@ internal static class ItemSaveDataPatch
         if (replacements != 1)
             throw new InvalidOperationException($"Expected one ItemSaveData callback invocation, found {replacements}");
     }
+}
+
+// LoadItemData stores the native JObject before invoking listeners. Reapply after
+// post-load callbacks too, so initialization cannot replace the saved identity.
+[HarmonyPatch(typeof(ItemSaveData))]
+internal static class ItemOwnerLoadPatch
+{
+    [HarmonyPostfix]
+    [HarmonyPatch(nameof(ItemSaveData.LoadItemData))]
+    private static void RestoreOwner(ItemSaveData __instance) =>
+        NativeItemPersistence.RestoreOwner(__instance);
+
+    [HarmonyPostfix]
+    [HarmonyPatch(nameof(ItemSaveData.PostLoadItemData))]
+    private static void RestoreOwnerAfterInitialization(ItemSaveData __instance) =>
+        NativeItemPersistence.RestoreOwner(__instance);
 }

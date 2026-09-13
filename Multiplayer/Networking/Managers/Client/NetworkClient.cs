@@ -84,6 +84,9 @@ public class NetworkClient : NetworkManager
     internal bool railwayStateLoaded = false;
     private ClientCustomizationSynchronization clientCustomizationSynchronization;
     private ClientCustomizationSynchronization CustomizationSynchronization => clientCustomizationSynchronization ??= new(this);
+    private Coroutine worldSyncRoutine;
+    private bool worldSyncStarted;
+    private bool awaitingWorldLoad;
     private bool itemReconciliationComplete;
     private bool itemReconciliationSucceeded;
     private byte itemReconciliationAttempt;
@@ -117,10 +120,7 @@ public class NetworkClient : NetworkManager
         isSinglePlayer = singlePlayer;
         ClientPlayerManager = new ClientPlayerManager();
 
-        WorldStreamingInit.LoadingFinished += () =>
-        {
-            NetworkedPlayer.CaptureItemAnchorOffset();
-        };
+        WorldStreamingInit.LoadingFinished += OnWorldLoadingFinished;
 
         Username = Multiplayer.Settings.GetUserName();
         characterModelId = Multiplayer.Settings.CharacterId;
@@ -162,6 +162,13 @@ public class NetworkClient : NetworkManager
     public override void Stop()
     {
         Log("Stopping client");
+        WorldStreamingInit.LoadingFinished -= OnWorldLoadingFinished;
+        awaitingWorldLoad = false;
+        if (worldSyncRoutine != null)
+        {
+            CoroutineManager.Instance.Stop(worldSyncRoutine);
+            worldSyncRoutine = null;
+        }
         CustomizationSynchronization.Reset();
 
         if (!isAlsoHost && originalSession != null)
@@ -318,7 +325,27 @@ public class NetworkClient : NetworkManager
         {
             readyBlocks.Remove(modName);
             DisplayLoadingInfo displayLoadingInfo = Object.FindObjectOfType<DisplayLoadingInfo>();
-            displayLoadingInfo?.OnLoadingStatusChanged($"Mod {modName} loaded", false, 100);
+            if (displayLoadingInfo != null) displayLoadingInfo.OnLoadingStatusChanged($"Mod {modName} loaded", false, 100);
+        }
+    }
+
+    private void OnWorldLoadingFinished()
+    {
+        if (!IsRunning)
+            return;
+        NetworkedPlayer.CaptureItemAnchorOffset();
+        if (!awaitingWorldLoad || worldSyncStarted)
+            return;
+        awaitingWorldLoad = false;
+        worldSyncStarted = true;
+        worldSyncRoutine = CoroutineManager.Instance.StartCoroutine(SyncWorldState());
+        var playerTracker = WorldMover.Instance.playerTracker;
+        if (playerTracker != null && playerTracker.GetComponent<LocalPlayerTrackerBase>() == null)
+        {
+            if (VRManager.IsVREnabled())
+                playerTracker.gameObject.AddComponent<LocalPlayerTrackerVR>();
+            else
+                playerTracker.gameObject.AddComponent<LocalPlayerTrackerNonVR>();
         }
     }
 
@@ -344,7 +371,7 @@ public class NetworkClient : NetworkManager
         Log($"Waiting for ready-blocks...");
         DisplayLoadingInfo displayLoadingInfo = Object.FindObjectOfType<DisplayLoadingInfo>();
         foreach (string modName in readyBlocks)
-            displayLoadingInfo?.OnLoadingStatusChanged($"Waiting for mod {modName} to load", false, ((float)LoadingState / (float)PlayerLoadingState.Complete) * 100);
+            if (displayLoadingInfo != null) displayLoadingInfo.OnLoadingStatusChanged($"Waiting for mod {modName} to load", false, ((float)LoadingState / (float)PlayerLoadingState.Complete) * 100);
 
         while (readyBlocks.Count > 0)
             yield return null;
@@ -356,7 +383,7 @@ public class NetworkClient : NetworkManager
 
         Log("Syncing world state");
         SendLoadStateUpdate(PlayerLoadingState.ReadyForWorldState);
-        displayLoadingInfo.OnLoadingStatusChanged(Locale.LOADING_INFO__SYNC_WORLD_STATE, false, ((float)LoadingState / (float)PlayerLoadingState.Complete) * 100);
+        if (displayLoadingInfo != null) displayLoadingInfo.OnLoadingStatusChanged(Locale.LOADING_INFO__SYNC_WORLD_STATE, false, ((float)LoadingState / (float)PlayerLoadingState.Complete) * 100);
 
         while (!railwayStateLoaded)
             yield return null;
@@ -368,7 +395,7 @@ public class NetworkClient : NetworkManager
 
         Log("Requesting cars");
         SendLoadStateUpdate(PlayerLoadingState.ReadyForTrainSets);
-        displayLoadingInfo.OnLoadingStatusChanged("Syncing rolling stock", false, ((float)LoadingState / (float)PlayerLoadingState.Complete) * 100);
+        if (displayLoadingInfo != null) displayLoadingInfo.OnLoadingStatusChanged("Syncing rolling stock", false, ((float)LoadingState / (float)PlayerLoadingState.Complete) * 100);
 
         uint lastLoggedSets = 0;
 
@@ -401,7 +428,7 @@ public class NetworkClient : NetworkManager
         CustomizationSynchronization.Reset(forLoading: true);
         Log("Requesting customization state");
         SendLoadStateUpdate(PlayerLoadingState.ReadyForCustomizers);
-        displayLoadingInfo.OnLoadingStatusChanged("Syncing customizations", false, ((float)LoadingState / (float)PlayerLoadingState.Complete) * 100);
+        if (displayLoadingInfo != null) displayLoadingInfo.OnLoadingStatusChanged("Syncing customizations", false, ((float)LoadingState / (float)PlayerLoadingState.Complete) * 100);
 
         yield return CustomizationSynchronization.LoadInitialState(RPC_Timeout);
 
@@ -411,7 +438,7 @@ public class NetworkClient : NetworkManager
 
         Log("Reconciling local items");
         SendLoadStateUpdate(PlayerLoadingState.ReadyForItems);
-        displayLoadingInfo.OnLoadingStatusChanged("Syncing items", false, ((float)LoadingState / (float)PlayerLoadingState.Complete) * 100);
+        if (displayLoadingInfo != null) displayLoadingInfo.OnLoadingStatusChanged("Syncing items", false, ((float)LoadingState / (float)PlayerLoadingState.Complete) * 100);
 
         itemReconciliationAttempt = 0;
         for (int reconciliationTry = 0; reconciliationTry < 2; reconciliationTry++)
@@ -470,7 +497,7 @@ public class NetworkClient : NetworkManager
         yield return new WaitForSeconds(0.5f);
 
         SendLoadStateUpdate(PlayerLoadingState.Complete);
-        displayLoadingInfo.OnLoadingStatusChanged("Complete", false, ((float)LoadingState / (float)PlayerLoadingState.Complete) * 100);
+        if (displayLoadingInfo != null) displayLoadingInfo.OnLoadingStatusChanged("Complete", false, ((float)LoadingState / (float)PlayerLoadingState.Complete) * 100);
         yield return new WaitForSeconds(0.25f);
 
         // Start culling player models
@@ -562,24 +589,7 @@ public class NetworkClient : NetworkManager
             // Request Game Params and Save Game Data
             SendLoadStateUpdate(PlayerLoadingState.ReadyForGameData);
 
-            WorldStreamingInit.LoadingFinished += () =>
-            {
-                LogDebug(() => "Loading finished, beginning sync");
-                CoroutineManager.Instance.StartCoroutine(SyncWorldState());
-
-                if (WorldMover.Instance.playerTracker != null)
-                {
-                    var tracker = WorldMover.Instance.playerTracker.GetComponent<LocalPlayerTrackerBase>();
-                    if (tracker == null)
-                    {
-                        LogWarning($"LocalPlayerTracker not found, adding {(VRManager.IsVREnabled() ? "" : "non")}VR tracker.");
-                        if (VRManager.IsVREnabled())
-                            tracker = WorldMover.Instance.playerTracker.gameObject.AddComponent<LocalPlayerTrackerVR>();
-                        else
-                            tracker = WorldMover.Instance.playerTracker.gameObject.AddComponent<LocalPlayerTrackerNonVR>();
-                    }
-                }
-            };
+            awaitingWorldLoad = true;
 
             return;
         }
@@ -697,7 +707,7 @@ public class NetworkClient : NetworkManager
             return;
         }
 
-        displayLoadingInfo.OnLoadingStatusChanged(Locale.LOADING_INFO__WAIT_FOR_SERVER, false, 100);
+        if (displayLoadingInfo != null) displayLoadingInfo.OnLoadingStatusChanged(Locale.LOADING_INFO__WAIT_FOR_SERVER, false, 100);
     }
 
     private void OnClientboundGameParamsPacket(ClientboundGameParamsPacket packet)

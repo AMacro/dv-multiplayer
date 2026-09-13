@@ -2,6 +2,7 @@ using System;
 using DV.Customization.Gadgets;
 using DV.JObjectExtstensions;
 using Multiplayer.Components.Networking.World;
+using Multiplayer.Components.Networking;
 using Newtonsoft.Json.Linq;
 
 namespace Multiplayer.Components.SaveGame;
@@ -10,6 +11,34 @@ namespace Multiplayer.Components.SaveGame;
 // nested snap behaviours. Publicized APIs provide all component access.
 internal static class NativeItemPersistence
 {
+    internal const string OwnerUniqueIdKey = "multiplayer.ownerUniqueId";
+
+    internal static void WriteOwner(ItemSaveData save, JObject state)
+    {
+        if (state == null || NetworkLifecycle.Instance == null || !NetworkLifecycle.Instance.IsHost() ||
+            !save.TryGetComponent<NetworkedItem>(out var item))
+            return;
+        if (item.OwnerUniqueId is Guid owner && owner != Guid.Empty)
+            state[OwnerUniqueIdKey] = owner.ToString("D");
+        else
+            state.Remove(OwnerUniqueIdKey);
+    }
+
+    internal static bool TryReadOwner(JObject state, out Guid owner)
+    {
+        owner = Guid.Empty;
+        return state?[OwnerUniqueIdKey]?.Type == JTokenType.String &&
+            Guid.TryParse((string)state[OwnerUniqueIdKey], out owner) && owner != Guid.Empty;
+    }
+
+    internal static void RestoreOwner(ItemSaveData save)
+    {
+        if (NetworkLifecycle.Instance != null && NetworkLifecycle.Instance.IsHost() &&
+            TryReadOwner(save.saveData, out var owner) &&
+            save.TryGetComponent<NetworkedItem>(out var item))
+            item.RestoreOwnerUniqueId(owner);
+    }
+
     [ThreadStatic] private static CaptureContext currentCapture;
 
     private sealed class CaptureContext
@@ -43,6 +72,8 @@ internal static class NativeItemPersistence
             currentCapture = outerCapture;
         }
 
+        // Even a failing native callback must not roll back the current owner.
+        WriteOwner(save, save.saveData);
         return (JObject)save.saveData.DeepClone();
     }
 

@@ -16,7 +16,7 @@ public class CashRegisterWithModulesPatch
     private static bool OnDisable(CashRegisterWithModules __instance)
     {
         //Multiplayer.LogDebug(() => $"CashRegisterWithModules.OnDisable({__instance.GetObjectPath()})");
-        if (__instance == null)
+        if (__instance == null || NetworkLifecycle.Instance == null)
             return true;
 
         if (ShopPurchaseCoordinator.IsShopRegister(__instance))
@@ -62,7 +62,7 @@ public class CashRegisterWithModulesPatch
     [HarmonyPatch(nameof(CashRegisterWithModules.OnBuyPressed))]
     private static void OnBuyPressed_Postfix(CashRegisterWithModules __instance)
     {
-        if (!NetworkLifecycle.Instance.IsHost())
+        if (NetworkLifecycle.Instance == null || !NetworkLifecycle.Instance.IsServerRunning || !NetworkLifecycle.Instance.IsHost())
             return;
 
         if (!NetworkedCashRegisterWithModules.TryGet(__instance, out var netCashRegister))
@@ -145,7 +145,7 @@ public class CashRegisterWithModulesPatch
     private static void Cancel_Postfix(CashRegisterWithModules __instance)
     {
         //Multiplayer.LogWarning($"CashRegisterWithModules.Cancel_Postfix({__instance.GetObjectPath()})");
-        if (!NetworkLifecycle.Instance.IsHost())
+        if (NetworkLifecycle.Instance == null || !NetworkLifecycle.Instance.IsServerRunning || !NetworkLifecycle.Instance.IsHost())
             return;
 
         if (!NetworkedCashRegisterWithModules.TryGet(__instance, out var netCashRegister))

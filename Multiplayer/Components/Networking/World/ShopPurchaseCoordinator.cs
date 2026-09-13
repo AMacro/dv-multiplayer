@@ -30,7 +30,7 @@ internal readonly struct ShopPurchase
 
 internal static class ShopPurchaseCoordinator
 {
-    private static readonly Dictionary<string, Queue<ServerPlayer>> pendingOwners = [];
+    private static readonly Dictionary<string, Queue<Guid>> pendingOwners = [];
     private static readonly Dictionary<ShopItemData, int> scaledAllowances = [];
     private static bool applyingClientApproval;
     private static bool stockRecountPending;
@@ -62,35 +62,10 @@ internal static class ShopPurchaseCoordinator
         foreach (var purchase in purchases)
         {
             if (!pendingOwners.TryGetValue(purchase.PrefabName, out var owners))
-                pendingOwners[purchase.PrefabName] = owners = new Queue<ServerPlayer>();
+                pendingOwners[purchase.PrefabName] = owners = new Queue<Guid>();
 
             for (int i = 0; i < purchase.Amount; i++)
-                owners.Enqueue(buyer);
-        }
-    }
-
-    public static void TransferPendingOwnership(ServerPlayer from, ServerPlayer to)
-    {
-        if (from == null)
-            return;
-
-        foreach (string prefabName in pendingOwners.Keys.ToArray())
-        {
-            var owners = pendingOwners[prefabName];
-            var replacements = new Queue<ServerPlayer>(owners.Count);
-            while (owners.Count > 0)
-            {
-                ServerPlayer owner = owners.Dequeue();
-                if (owner == from)
-                    owner = to;
-                if (owner != null)
-                    replacements.Enqueue(owner);
-            }
-
-            if (replacements.Count == 0)
-                pendingOwners.Remove(prefabName);
-            else
-                pendingOwners[prefabName] = replacements;
+                owners.Enqueue(buyer.Guid);
         }
     }
 
@@ -113,12 +88,12 @@ internal static class ShopPurchaseCoordinator
         if (!pendingOwners.TryGetValue(prefabName, out var owners) || owners.Count == 0)
             return;
 
-        ServerPlayer buyer = owners.Dequeue();
+        Guid buyer = owners.Dequeue();
         if (owners.Count == 0)
             pendingOwners.Remove(prefabName);
 
-        item.SetOwner(buyer.PlayerId);
-        Multiplayer.LogDebug(() => $"Assigned purchased item {item.NetId} ({prefabName}) to {buyer.Username}");
+        item.RestoreOwnerUniqueId(buyer);
+        Multiplayer.LogDebug(() => $"Assigned purchased item {item.NetId} ({prefabName}) to owner {buyer}");
     }
 
     public static bool SuppressClientInstantiation(InventoryItemSpec itemSpec, int amountBought)

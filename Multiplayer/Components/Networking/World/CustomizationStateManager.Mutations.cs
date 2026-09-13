@@ -257,6 +257,9 @@ public static partial class CustomizationStateManager
         byte replacementOwner = packet.OwnerPlayerId != 0
             ? packet.OwnerPlayerId
             : currentItem?.OwnerPlayerId ?? toolItem?.OwnerPlayerId ?? 0;
+        Guid? replacementUniqueId = replacementOwner == currentItem?.OwnerPlayerId
+            ? currentItem.OwnerUniqueId
+            : replacementOwner == toolItem?.OwnerPlayerId ? toolItem.OwnerUniqueId : null;
         bool belongsToPlayer = currentItem?.Item?.InventorySpecs?.BelongsToPlayer ?? true;
         GameObject spentObject = currentAmmo != null && currentAmmo.isSpent ? current : null;
 
@@ -295,7 +298,7 @@ public static partial class CustomizationStateManager
         else if (packet.ReplacementSpoolItemNetId != 0)
             spentItem.NetId = packet.ReplacementSpoolItemNetId;
 
-        spentItem.SetOwner(replacementOwner);
+        spentItem.InheritOwner(replacementOwner, replacementUniqueId);
         if (spentItem.Item?.InventorySpecs != null)
             spentItem.Item.InventorySpecs.BelongsToPlayer = belongsToPlayer;
         spentItem.MarkAsSynchronized();
@@ -421,6 +424,8 @@ public static partial class CustomizationStateManager
         NetworkedItem.TryGet(packet.ConsumedItemNetId, out var oldItem);
         var oldTape = oldItem?.GetTrackedItem<DV.Customization.Gadgets.Implementations.DuctTape>();
         byte replacementOwner = packet.OwnerPlayerId != 0 ? packet.OwnerPlayerId : oldItem?.OwnerPlayerId ?? 0;
+        Guid? replacementUniqueId = replacementOwner == oldItem?.OwnerPlayerId
+            ? oldItem.OwnerUniqueId : null;
         bool belongsToPlayer = oldItem?.Item?.InventorySpecs?.BelongsToPlayer ?? true;
         Vector3 position = packet.HasWorldTransform ? packet.Position + WorldMover.currentMove : oldItem?.transform.position ?? Vector3.zero;
         Quaternion rotation = packet.HasWorldTransform ? packet.Rotation : oldItem?.transform.rotation ?? Quaternion.identity;
@@ -473,7 +478,7 @@ public static partial class CustomizationStateManager
         else if (packet.ReplacementItemNetId != 0)
             replacementItem.NetId = packet.ReplacementItemNetId;
 
-        replacementItem.SetOwner(replacementOwner);
+        replacementItem.InheritOwner(replacementOwner, replacementUniqueId);
         if (replacementItem.Item?.InventorySpecs != null)
             replacementItem.Item.InventorySpecs.BelongsToPlayer = belongsToPlayer;
         if (!existingReplacement)

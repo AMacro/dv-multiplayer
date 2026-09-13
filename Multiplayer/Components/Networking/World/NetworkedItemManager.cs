@@ -63,6 +63,7 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
             return;
 
         NetworkLifecycle.Instance.Server.PlayerDisconnected += PlayerDisconnected;
+        NetworkLifecycle.Instance.Server.PlayerConnected += PlayerConnected;
 
         try
         {
@@ -76,6 +77,8 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
 
     private InventorySynchronization inventorySynchronization;
     private InventorySynchronization InventorySynchronization => inventorySynchronization ??= new(this);
+
+    private void PlayerConnected(ServerPlayer player) => InventorySynchronization.PlayerConnected(player);
 
     private void PlayerDisconnected(ServerPlayer player) => InventorySynchronization.PlayerDisconnected(player);
 
@@ -100,7 +103,10 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
 
         NetworkLifecycle.Instance.OnTick -= Common_OnTick;
         if (NetworkLifecycle.Instance.Server != null)
+        {
             NetworkLifecycle.Instance.Server.PlayerDisconnected -= PlayerDisconnected;
+            NetworkLifecycle.Instance.Server.PlayerConnected -= PlayerConnected;
+        }
     }
 
     public void AddDirtyItemSnapshot(NetworkedItem netItem, ItemUpdateData snapshot)
@@ -360,9 +366,13 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
             // have the sender's area loaded, so its physical item position is not a
             // reliable basis for ownership or reach validation.
             snapshot.Player = player.PlayerId;
-            snapshot.OwnerPlayerId = NetworkedItem.IsCarriedState(snapshot.ItemState)
-                ? player.PlayerId
-                : netItem.OwnerPlayerId;
+            if (changesItemState && NetworkedItem.IsCarriedState(snapshot.ItemState))
+            {
+                netItem.SetOwner(player.PlayerId, markDirty: true);
+                // State-only pickups must propagate their authority change too.
+                snapshot.UpdateType |= ItemUpdateData.ItemUpdateType.Ownership;
+            }
+            snapshot.OwnerPlayerId = netItem.OwnerPlayerId;
             NetworkLifecycle.Instance.Server.LogWarning($"NetworkedItemManager.ProcessReceivedAsHost() ItemNetId: {snapshot.ItemNetId}, snapshot type: {snapshot.UpdateType}");
             netItem.ReceiveSnapshot(snapshot);
             netItem.MarkRemoteUpdateAccepted();
@@ -712,6 +722,8 @@ public class NetworkedItemManager : SingletonBehaviour<NetworkedItemManager>
 
     internal void SendToCache(NetworkedItem netItem)
     {
+        if (netItem == null || netItem.Item == null)
+            return;
         // Cancel the old creation generation even if this object is immediately
         // reused for another Create with the same network ID.
         pendingGadgetCreates.Remove(netItem);

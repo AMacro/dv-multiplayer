@@ -19,8 +19,6 @@ public abstract class IdMonoBehaviour<T, I> : MonoBehaviour where T : struct whe
         set {
             if (_netId.Equals(value))
                 return;
-            if ((_netId as dynamic).CompareTo(default(T)) != 0)
-                idPool.ReleaseId(_netId);
             Register(value);
         }
     }
@@ -29,7 +27,7 @@ public abstract class IdMonoBehaviour<T, I> : MonoBehaviour where T : struct whe
 
     protected static bool Get(T netId, out IdMonoBehaviour<T, I> obj)
     {
-        if (indexToObject.TryGetValue(netId, out obj))
+        if (indexToObject.TryGetValue(netId, out obj) && obj != null)
             return true;
         obj = null;
         if ((netId as dynamic).CompareTo(default(T)) != 0)
@@ -39,7 +37,7 @@ public abstract class IdMonoBehaviour<T, I> : MonoBehaviour where T : struct whe
 
     protected static bool TryGet(T netId, out IdMonoBehaviour<T, I> obj)
     {
-        if (indexToObject.TryGetValue(netId, out obj))
+        if (indexToObject.TryGetValue(netId, out obj) && obj != null)
             return true;
 
         obj = null;
@@ -55,13 +53,26 @@ public abstract class IdMonoBehaviour<T, I> : MonoBehaviour where T : struct whe
 
     public void Register(T id)
     {
+        if (_netId.Equals(id) && indexToObject.TryGetValue(id, out var existing) && ReferenceEquals(existing, this))
+            return;
+        Unregister();
         _netId = id;
-        indexToObject[id] = this;
+        if (!id.Equals(default(T)))
+            indexToObject[id] = this;
+    }
+
+    private void Unregister()
+    {
+        if (!_netId.Equals(default(T)) && indexToObject.TryGetValue(_netId, out var current) && ReferenceEquals(current, this))
+        {
+            indexToObject.Remove(_netId);
+            idPool.ReleaseId(_netId);
+        }
     }
 
     protected virtual void OnDestroy()
     {
-        idPool.ReleaseId(NetId);
+        Unregister();
         if (!UnloadWatcher.isUnloading)
             return;
         idPool.Reset();

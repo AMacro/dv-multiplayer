@@ -5,6 +5,7 @@ using DV.Items;
 using DV.Customization.Gadgets;
 using DV.Customization.Gadgets.Implementations;
 using Multiplayer.Components.Networking.Train;
+using Multiplayer.Components.SaveGame;
 using Multiplayer.Networking.Data;
 using Multiplayer.Networking.Data.Items;
 using Multiplayer.Utils;
@@ -120,17 +121,61 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
     private Quaternion thrownRotation;
     private Vector3 throwDirection;
 
-    //Handle ownership
-    public byte OwnerPlayerId { get; private set; } // 0 means no owner
+    // Connected player responsible for replication; 0 means unassigned.
+    public byte OwnerPlayerId { get; private set; }
+
+    // Host-maintained stable owner, persisted in native item save data.
+    // A temporary replication fallback must not change this identity.
+    internal Guid? OwnerUniqueId { get; private set; }
 
     public void SetOwner(byte playerId, bool markDirty = false)
     {
+        // Resolve even when the byte ID is unchanged: picking up an item being
+        // simulated by the host transfers its stable ownership to the host.
+        var server = NetworkLifecycle.Instance?.Server;
+        if (playerId == 0)
+            OwnerUniqueId = null;
+        else if (server != null && server.TryGetServerPlayer(playerId, out var player))
+            OwnerUniqueId = player.Guid;
+        else if (OwnerPlayerId != playerId)
+            OwnerUniqueId = null;
+
+        SetSynchronizationOwner(playerId, markDirty);
+    }
+
+    internal void SetSynchronizationOwner(byte playerId, bool markDirty = false)
+    {
         if (OwnerPlayerId == playerId)
             return;
-
         OwnerPlayerId = playerId;
         if (markDirty)
             ownerDirty = true;
+    }
+
+    internal void AssignHostFallback(ServerPlayer previousOwner, byte hostPlayerId)
+    {
+        // The disconnected player has already left the server's byte-ID lookup.
+        // Seed older/uninitialized items without replacing an existing identity.
+        OwnerUniqueId ??= previousOwner.Guid;
+        SetSynchronizationOwner(hostPlayerId, markDirty: true);
+    }
+
+    internal void RestoreOwnerUniqueId(Guid ownerUniqueId)
+    {
+        if (!NetworkLifecycle.Instance.IsHost() || ownerUniqueId == Guid.Empty)
+            return;
+        OwnerUniqueId = ownerUniqueId;
+        var server = NetworkLifecycle.Instance.Server;
+        // This also handles items streamed in after their owner has reconnected.
+        var owner = server.ServerPlayers.FirstOrDefault(player => player.Guid == ownerUniqueId);
+        SetSynchronizationOwner(owner?.PlayerId ?? server.SelfId, markDirty: true);
+    }
+
+    internal void InheritOwner(byte playerId, Guid? ownerUniqueId)
+    {
+        SetOwner(playerId);
+        if (NetworkLifecycle.Instance.IsHost() && ownerUniqueId.HasValue)
+            OwnerUniqueId = ownerUniqueId;
     }
 
     protected override bool IsIdServerAuthoritative => true;
@@ -220,6 +265,11 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
             forceStateSnapshot = false;
 
             initialised = true;
+            // Inactive prefabs may receive native save data before ItemBase.Awake
+            // adds this component. Restore it after default registration as well.
+            var savedItem = GetComponent<ItemSaveData>();
+            if (savedItem != null)
+                NativeItemPersistence.RestoreOwner(savedItem);
             return true;
         }
         catch (Exception ex)
@@ -237,6 +287,8 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
     private void OnGrabbed(ControlImplBase obj)
     {
+        if (NetworkLifecycle.Instance.IsClientRunning && !NetworkLifecycle.Instance.IsProcessingPacket)
+            SetOwner(NetworkLifecycle.Instance.Client.PlayerId, markDirty: true);
         //Multiplayer.LogDebug(() => $"NetworkedItem.OnGrabbed() NetID: {NetId}, {name}");
         stateDirty = true;
     }
@@ -392,7 +444,9 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         if (stateDirty && NetworkLifecycle.Instance.IsClientRunning)
         {
             byte localPlayerId = NetworkLifecycle.Instance.Client?.PlayerId ?? 0;
-            bool isHeldByLocalPlayer = IsCarriedState(currentState);
+            bool isHeldByLocalPlayer = IsCarriedState(currentState) &&
+                (Item.IsGrabbed() || Inventory.Instance.Contains(gameObject, false) ||
+                 !IsCarriedState(lastState) && ShouldObserveLocalLayout());
             if (isHeldByLocalPlayer)
                 SetOwner(localPlayerId, markDirty: true);
 
@@ -483,6 +537,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
                 DetachFromContainer();
             }
             pendingContainerRestore = snapshot.ItemState == ItemState.InContainer;
+            ItemState previousState = lastState;
             lastState = snapshot.ItemState;
             Multiplayer.Log($"NetworkedItem.ApplySnapshot() netId: {snapshot?.ItemNetId}, ItemUpdateType: {snapshot?.UpdateType}, ItemState: {snapshot?.ItemState}, Active state: {gameObject.activeInHierarchy}");
 
@@ -490,7 +545,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
             {
                 case ItemState.Dropped:
                 case ItemState.Thrown:
-                    HandleDroppedOrThrownState(snapshot);
+                    HandleDroppedOrThrownState(snapshot, previousState);
                     break;
 
                 case ItemState.InHand:
@@ -525,8 +580,13 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         if (snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.Ownership) ||
             snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.Create))
         {
-            // Ownership-only updates must not activate or relocate the item.
-            SetOwner(snapshot.OwnerPlayerId);
+            // Packets carry replication authority, not the stable owner GUID.
+            // Genuine remote pickups establish ownership in the host's validated
+            // receive path; echoed fallback updates must preserve that identity.
+            if (snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.Create) && OwnerUniqueId == null)
+                SetOwner(snapshot.OwnerPlayerId);
+            else
+                SetSynchronizationOwner(snapshot.OwnerPlayerId);
         }
 
         if (snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.Create) ||
@@ -824,7 +884,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
     #region Item State Update Handlers
 
-    private void HandleDroppedOrThrownState(ItemUpdateData snapshot)
+    private void HandleDroppedOrThrownState(ItemUpdateData snapshot, ItemState previousState)
     {
         //resolve attachment
         if (Item.IsSnapped)
@@ -847,7 +907,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         // Installed gadgets can retain stale rigidbody velocity while their backing
         // item is hidden. Reset it on a remote drop so removal does not launch the
         // item through the cab when physics resumes.
-        if (snapshot.ItemState == ItemState.Dropped && Item.ItemRigidbody != null)
+        if (snapshot.ItemState == ItemState.Dropped && previousState == ItemState.InstalledGadget && Item.ItemRigidbody != null)
         {
             TrainCar parentCar = Item.GetComponentInParent<TrainCar>();
             Item.ItemRigidbody.velocity = parentCar?.rb != null ? parentCar.rb.velocity : Vector3.zero;
