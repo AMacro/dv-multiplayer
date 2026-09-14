@@ -98,6 +98,15 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
     //Handle ownership
     public sbyte OwnerId { get; private set; } = -1; // 0 means no owner
 
+    // Last player to hold/pocket this item; not cleared on drop so systems like
+    // Lost & Found can tell whose item this is. 0 means no player has owned it.
+    public byte LastOwnerId { get; private set; }
+
+    public void SetLastOwner(byte playerId)
+    {
+        LastOwnerId = playerId;
+    }
+
     //public void SetOwner(ushort playerId)
     //{
     //    if (OwnerId != playerId)
@@ -130,9 +139,10 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         if (!initialised)
             Register();
 
-        // Mark registration as complete for items that don't need tracked values
+        // Items without tracked values complete registration here; FinaliseTrackedValues
+        // also applies any snapshots that were received before Start ran
         if (!registrationComplete && !UsefulItem)
-            registrationComplete = true;
+            FinaliseTrackedValues();
     }
 
     public T GetTrackedItem<T>() where T : Component
@@ -549,8 +559,14 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
         //resolve ownership
         if (NetworkLifecycle.Instance.IsHost())
+        {
             if (NetworkLifecycle.Instance.Server.TryGetServerPlayer(snapshot.Player, out ServerPlayer player) && player.OwnsItem(NetId))
                 player.RemoveOwnedItem(NetId);
+
+            //the item is back in the shared world; track it in world storage so it saves with the world
+            if (Item.InventorySpecs != null && Item.InventorySpecs.BelongsToPlayer)
+                StorageController.Instance.AddItemToWorldStorage(Item);
+        }
 
         //activate and relocate item
         gameObject.SetActive(true);
@@ -615,8 +631,19 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         }
 
         if (NetworkLifecycle.Instance.IsHost())
-            if (NetworkLifecycle.Instance.Server.TryGetServerPlayer(snapshot.Player, out ServerPlayer player) && !player.OwnsItem(NetId))
-                player.AddOwnedItem(NetId);
+        {
+            if (NetworkLifecycle.Instance.Server.TryGetServerPlayer(snapshot.Player, out ServerPlayer player))
+            {
+                if (!player.OwnsItem(NetId))
+                    player.AddOwnedItem(NetId);
+
+                SetLastOwner(player.PlayerId);
+            }
+
+            //the item is in a player's possession; take it out of the world storages so
+            //it is not saved (and not summonable) as a world item
+            StorageController.Instance.RemoveItemFromStorageItemList(Item);
+        }
 
         //todo add to player model's hand
         this.gameObject.SetActive(false);
@@ -635,7 +662,9 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
             return;
         }
 
-        if (NetworkLifecycle.Instance.IsHost())
+        // NetId 0 means this was a per-player inventory copy, never a world item. Announcing
+        // its destruction would make other clients discard whatever they have under id 0.
+        if (NetworkLifecycle.Instance.IsHost() && NetId != 0)
         {
             var updateData = CreateUpdateData(ItemUpdateData.ItemUpdateType.Destroy);
             if (updateData != null)

@@ -1,82 +1,83 @@
 using DV.CabControls;
 using HarmonyLib;
+using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.World;
-using Multiplayer.Utils;
-using System;
-using UnityEngine;
+using Multiplayer.Networking.Data;
+using System.Collections.Generic;
 
-namespace Multiplayer.Patches.World.Items;
-/*
+namespace Multiplayer.Patches.World;
+
 [HarmonyPatch(typeof(StorageController))]
 public static class StorageControllerPatch
 {
-    [HarmonyPatch(nameof(StorageController.AddItemToLostAndFound))]
+    // Reimplementation of the vanilla method with one addition: items belonging to other
+    // players are skipped, so a player's Lost & Found (summon button, fast travel) can no
+    // longer capture someone else's belongings. (#104)
     [HarmonyPrefix]
-    static void AddItemToLostAndFound(StorageController __instance, ItemBase item)
-    {
-
-        Multiplayer.LogDebug(() =>
-        {
-            NetworkedItem.TryGetNetworkedItem(item, out NetworkedItem netItem);
-            return $"StorageController.AddItemToLostAndFound({item.name}) netId: {netItem?.NetId}\r\n{new System.Diagnostics.StackTrace()}";
-        });
-    }
-
-    [HarmonyPatch(nameof(StorageController.RemoveItemFromLostAndFound))]
-    [HarmonyPrefix]
-    static void RemoveItemFromLostAndFound(StorageController __instance, ItemBase item)
-    {
-
-        Multiplayer.LogDebug(() =>
-        {
-            NetworkedItem.TryGetNetworkedItem(item, out NetworkedItem netItem);
-            return $"StorageController.RemoveItemFromLostAndFound({item.name}) netId: {netItem?.NetId}\r\n{new System.Diagnostics.StackTrace()}";
-        });
-    }
-
-    [HarmonyPatch(nameof(StorageController.RequestLostAndFoundItemActivation))]
-    [HarmonyPrefix]
-    static void RequestLostAndFoundItemActivation(StorageController __instance)
-    {
-
-        Multiplayer.LogDebug(() =>
-        {
-            return $"StorageController.RequestLostAndFoundItemActivation()\r\n{new System.Diagnostics.StackTrace()}";
-        });
-    }
-
     [HarmonyPatch(nameof(StorageController.MoveItemsFromWorldToLostAndFound))]
-    [HarmonyPrefix]
-    static void MoveItemsFromWorldToLostAndFound(StorageController __instance, bool ignoreItemsWithRespawnParents)
+    private static bool MoveItemsFromWorldToLostAndFound(StorageController __instance, bool includeNonRespawnParents, bool includeRespawnParents, bool includeSnappedItems)
     {
-
-        Multiplayer.LogDebug(() =>
+        foreach (ItemBase item in new List<ItemBase>(__instance.StorageWorld.GetStorageItemList()))
         {
-            return $"StorageController.MoveItemsFromWorldToLostAndFound({ignoreItemsWithRespawnParents})\r\n{new System.Diagnostics.StackTrace()}";
-        });
+            if (item == null || item.IsGrabbed() || !item.GetComponent<InventoryItemSpec>().BelongsToPlayer)
+                continue;
+
+            if (BelongsToAnotherPlayer(item))
+                continue;
+
+            bool isSnapped = item.IsSnapped;
+            if (isSnapped && !includeSnappedItems)
+                continue;
+
+            if (item.GetComponent<RespawnOnDrop>().OnValidRespawnParent)
+            {
+                if (!includeRespawnParents || !__instance.PrepareItemForLostAndFound(item))
+                    continue;
+            }
+            else if (!includeNonRespawnParents)
+            {
+                if (!includeSnappedItems || !isSnapped || !__instance.PrepareItemForLostAndFound(item))
+                    continue;
+            }
+            else if (isSnapped && !__instance.PrepareItemForLostAndFound(item))
+            {
+                continue;
+            }
+
+            __instance.StorageWorld.RemoveItem(item);
+            __instance.StorageLostAndFound.AddItem(item);
+        }
+
+        return false;
     }
 
-    [HarmonyPatch(nameof(StorageController.ForceSummonAllWorldItemsToLostAndFound))]
+    // AddItemToStorageItemList ends with an unguarded RespawnOnDrop.UpdateSpawnParams().
+    // If anything removed that component the call throws, aborting the game's inventory
+    // handling part-way and leaving an unusable item in the slot. Restore it defensively.
     [HarmonyPrefix]
-    static void ForceSummonAllWorldItemsToLostAndFound(StorageController __instance)
+    [HarmonyPatch(nameof(StorageController.AddItemToStorageItemList), typeof(StorageBase), typeof(ItemBase))]
+    private static void AddItemToStorageItemList(ItemBase item)
     {
-
-        Multiplayer.LogDebug(() =>
+        if (item != null && item.GetComponent<RespawnOnDrop>() == null)
         {
-            return $"StorageController.ForceSummonAllWorldItemsToLostAndFound()\r\n{new System.Diagnostics.StackTrace()}";
-        });
+            Multiplayer.LogWarning($"Restoring missing RespawnOnDrop on {item.name} before adding it to storage");
+            item.gameObject.AddComponent<RespawnOnDrop>();
+        }
     }
 
-    [HarmonyPatch(nameof(StorageController.RequestItemActivation))]
-    [HarmonyPrefix]
-    static void RequestItemActivation(StorageController __instance)
+    private static bool BelongsToAnotherPlayer(ItemBase item)
     {
+        if (!NetworkedItem.TryGetNetworkedItem(item, out NetworkedItem netItem))
+            return false; // purely local item -> personal, summon allowed
 
-        Multiplayer.LogDebug(() =>
-        {
-            return $"StorageController.RequestItemActivation()\r\n{new System.Diagnostics.StackTrace()}";
-        });
+        // Clients may only summon their own local (un-networked) items;
+        // networked items are managed by the server
+        if (!NetworkLifecycle.Instance.IsHost())
+            return netItem.NetId != 0;
+
+        // Host: skip items last owned by a connected remote player
+        return netItem.LastOwnerId != 0
+            && NetworkLifecycle.Instance.Server.TryGetServerPlayer(netItem.LastOwnerId, out ServerPlayer owner)
+            && !NetworkLifecycle.Instance.IsHost(owner);
     }
-
 }
-*/
