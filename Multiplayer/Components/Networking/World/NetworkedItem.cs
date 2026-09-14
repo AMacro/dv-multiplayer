@@ -2,7 +2,10 @@ using DV.CabControls;
 using DV.Interaction;
 using DV.InventorySystem;
 using DV.Items;
+using DV.Customization.Gadgets;
+using DV.Customization.Gadgets.Implementations;
 using Multiplayer.Components.Networking.Train;
+using Multiplayer.Components.SaveGame;
 using Multiplayer.Networking.Data;
 using Multiplayer.Networking.Data.Items;
 using Multiplayer.Utils;
@@ -21,7 +24,10 @@ public enum ItemState : byte
     Thrown,         //was thrown by player
     InHand,         //held by player
     InInventory,    //in player's inventory
-    Attached        //attached to another object (e.g. EOT Lanterns)
+    Attached,       //attached to another object (e.g. EOT Lanterns)
+    InstalledGadget, //backing item is hidden while its Gadget is linked to a customization target
+    InLostAndFound,
+    InContainer
 }
 
 public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
@@ -76,11 +82,26 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
     public ItemBase Item { get; private set; }
     private GrabHandlerItem grabHandler;
     private SnappableItem snappableItem;
+    private ItemReparentingBase itemReparenting;
     private Component trackedItem;
     private List<object> trackedValues = new List<object>();
     public bool UsefulItem { get; private set; } = false;
     public Type TrackedItemType { get; private set; }
     public uint LastDirtyTick { get; private set; }
+    public bool IsReadyForSnapshots => registrationComplete && Item != null && !IsPendingInitialization;
+    internal bool IsPendingInitialization { get; set; }
+    internal bool IsPendingReconciliation { get; set; }
+    private bool pendingContainerRestore;
+    public ItemState CurrentState => lastState;
+    public int InventorySlotIndex { get; private set; } = -1;
+    public int ContainerSlotIndex { get; private set; } = -1;
+    public string ContainerId { get; private set; }
+    public bool InLockedSlot { get; private set; }
+    public bool IsDroppedInInventory { get; private set; }
+    public Vector3 WorldPosition => GetItemState() == ItemState.InstalledGadget &&
+        trackedItem is GadgetItem gadgetItem && gadgetItem.Gadget != null
+            ? gadgetItem.Gadget.transform.position
+            : transform.position;
     private bool initialised;
     private bool registrationComplete = false;
     private Queue<ItemUpdateData> pendingSnapshots = new Queue<ItemUpdateData>();
@@ -88,31 +109,74 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
     //Track dirty states
     private bool createdDirty = true;   //if set, we created this item dirty and have not sent an update
     private ItemState lastState;
+    private ItemState observedState;
+    private bool hasObservedState;
     private bool stateDirty;
+    private bool forceStateSnapshot;
+    private bool ownerDirty;
     private bool wasThrown;
+    private bool suppressDestroySync;
 
     private Vector3 thrownPosition;
     private Quaternion thrownRotation;
     private Vector3 throwDirection;
 
-    //Handle ownership
-    public sbyte OwnerId { get; private set; } = -1; // 0 means no owner
+    // Connected player responsible for replication; 0 means unassigned.
+    public byte OwnerPlayerId { get; private set; }
 
-    //public void SetOwner(ushort playerId)
-    //{
-    //    if (OwnerId != playerId)
-    //    {
-    //        if (OwnerId != 0)
-    //        {
-    //            NetworkedItemManager.Instance.RemoveItemFromPlayerInventory(this);
-    //        }
-    //        OwnerId = playerId;
-    //        if (playerId != 0)
-    //        {
-    //            NetworkedItemManager.Instance.AddItemToPlayerInventory(playerId, this);
-    //        }
-    //    }
-    //}
+    // Host-maintained stable owner, persisted in native item save data.
+    // A temporary replication fallback must not change this identity.
+    internal Guid? OwnerUniqueId { get; private set; }
+
+    public void SetOwner(byte playerId, bool markDirty = false)
+    {
+        // Resolve even when the byte ID is unchanged: picking up an item being
+        // simulated by the host transfers its stable ownership to the host.
+        var server = NetworkLifecycle.Instance?.Server;
+        if (playerId == 0)
+            OwnerUniqueId = null;
+        else if (server != null && server.TryGetServerPlayer(playerId, out var player))
+            OwnerUniqueId = player.Guid;
+        else if (OwnerPlayerId != playerId)
+            OwnerUniqueId = null;
+
+        SetSynchronizationOwner(playerId, markDirty);
+    }
+
+    internal void SetSynchronizationOwner(byte playerId, bool markDirty = false)
+    {
+        if (OwnerPlayerId == playerId)
+            return;
+        OwnerPlayerId = playerId;
+        if (markDirty)
+            ownerDirty = true;
+    }
+
+    internal void AssignHostFallback(ServerPlayer previousOwner, byte hostPlayerId)
+    {
+        // The disconnected player has already left the server's byte-ID lookup.
+        // Seed older/uninitialized items without replacing an existing identity.
+        OwnerUniqueId ??= previousOwner.Guid;
+        SetSynchronizationOwner(hostPlayerId, markDirty: true);
+    }
+
+    internal void RestoreOwnerUniqueId(Guid ownerUniqueId)
+    {
+        if (!NetworkLifecycle.Instance.IsHost() || ownerUniqueId == Guid.Empty)
+            return;
+        OwnerUniqueId = ownerUniqueId;
+        var server = NetworkLifecycle.Instance.Server;
+        // This also handles items streamed in after their owner has reconnected.
+        var owner = server.ServerPlayers.FirstOrDefault(player => player.Guid == ownerUniqueId);
+        SetSynchronizationOwner(owner?.PlayerId ?? server.SelfId, markDirty: true);
+    }
+
+    internal void InheritOwner(byte playerId, Guid? ownerUniqueId)
+    {
+        SetOwner(playerId);
+        if (NetworkLifecycle.Instance.IsHost() && ownerUniqueId.HasValue)
+            OwnerUniqueId = ownerUniqueId;
+    }
 
     protected override bool IsIdServerAuthoritative => true;
 
@@ -132,7 +196,9 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
         // Mark registration as complete for items that don't need tracked values
         if (!registrationComplete && !UsefulItem)
-            registrationComplete = true;
+            FinaliseTrackedValues();
+
+        NetworkedItemManager.Instance.CacheLateLocalWorldDuplicate(this);
     }
 
     public T GetTrackedItem<T>() where T : Component
@@ -175,17 +241,35 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
             Item = itemBase;
             itemBaseToNetworkedItem[Item] = this;
 
+            // The host is the default persistent owner for items that make up the
+            // session world. Explicit ownership (purchase, pickup, reconciliation)
+            // can transfer it afterward.
+            if (NetworkLifecycle.Instance.IsHost())
+            {
+                byte hostPlayerId = NetworkLifecycle.Instance.Server?.SelfId ?? 0;
+                if (hostPlayerId != 0)
+                    SetOwner(hostPlayerId);
+            }
+
             Item.Grabbed += OnGrabbed;
             Item.Ungrabbed += OnUngrabbed;
+            Item.ItemInventoryStateChanged += OnItemInventoryStateChanged;
 
             //Find special interaction components
             TryGetComponent<GrabHandlerItem>(out grabHandler);
             TryGetComponent<SnappableItem>(out snappableItem);
+            TryGetComponent<ItemReparentingBase>(out itemReparenting);
 
             lastState = GetItemState();
             stateDirty = false;
+            forceStateSnapshot = false;
 
             initialised = true;
+            // Inactive prefabs may receive native save data before ItemBase.Awake
+            // adds this component. Restore it after default registration as well.
+            var savedItem = GetComponent<ItemSaveData>();
+            if (savedItem != null)
+                NativeItemPersistence.RestoreOwner(savedItem);
             return true;
         }
         catch (Exception ex)
@@ -203,8 +287,26 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
     private void OnGrabbed(ControlImplBase obj)
     {
+        if (NetworkLifecycle.Instance.IsClientRunning && !NetworkLifecycle.Instance.IsProcessingPacket)
+            SetOwner(NetworkLifecycle.Instance.Client.PlayerId, markDirty: true);
         //Multiplayer.LogDebug(() => $"NetworkedItem.OnGrabbed() NetID: {NetId}, {name}");
         stateDirty = true;
+    }
+
+    private void OnItemInventoryStateChanged(ItemBase item, InventoryActionType actionType,
+        InventoryItemState itemState)
+    {
+        const InventoryActionType stateChangingActions = InventoryActionType.Add |
+            InventoryActionType.Drop | InventoryActionType.Purge | InventoryActionType.Equip |
+            InventoryActionType.Unequip;
+        if ((actionType & stateChangingActions) != 0)
+            stateDirty = true;
+    }
+
+    internal void MarkItemStateDirty()
+    {
+        stateDirty = true;
+        forceStateSnapshot = true;
     }
 
     public void OnThrow(Vector3 direction)
@@ -262,7 +364,8 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         var dirtyData = new Dictionary<string, object>();
         foreach (var trackedValue in trackedValues)
         {
-            if (((dynamic)trackedValue).IsDirty)
+            if (((dynamic)trackedValue).IsDirty &&
+                (NetworkLifecycle.Instance.IsHost() || !((dynamic)trackedValue).ServerAuthoritative))
             {
                 dirtyData[((dynamic)trackedValue).Key] = ((dynamic)trackedValue).GetValueAsObject();
             }
@@ -291,22 +394,67 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
     public ItemUpdateData GetSnapshot()
     {
+        if (IsPendingInitialization || IsPendingReconciliation || pendingContainerRestore)
+            return null;
+
         ItemUpdateData snapshot;
         ItemUpdateData.ItemUpdateType updateType = ItemUpdateData.ItemUpdateType.None;
-
-        bool hasDirtyVals = HasDirtyValues();
 
         if (Item == null && Register() == false)
             return null;
 
-        if (!stateDirty && !hasDirtyVals)
+        ItemState currentState = GetItemState();
+        if (currentState != lastState)
+            stateDirty = true;
+        if (ShouldObserveLocalLayout() && CaptureCurrentLayout(currentState))
+        {
+            stateDirty = true;
+            forceStateSnapshot = true;
+        }
+
+        bool hasDirtyVals = HasDirtyValues();
+
+        if (!stateDirty && !ownerDirty && !hasDirtyVals)
             return null;
 
-        ItemState currentState = GetItemState();
+        // A standalone client must never publish incidental mutations from another
+        // player's hand/inventory proxy. Remote customization can dirty tracked
+        // values locally (for example while ejecting a soldering reel), but that
+        // does not grant authority over the tool's item state or position.
+        if (!NetworkLifecycle.Instance.IsHost() && NetworkLifecycle.Instance.IsClientRunning)
+        {
+            byte localPlayerId = NetworkLifecycle.Instance.Client?.PlayerId ?? 0;
+            bool belongsToAnotherPlayer = OwnerPlayerId != 0 && localPlayerId != 0 &&
+                OwnerPlayerId != localPlayerId;
+            bool locallyHeld = Item.IsGrabbed() || Inventory.Instance.Contains(gameObject, false);
+            if (belongsToAnotherPlayer && !locallyHeld &&
+                IsCarriedState(lastState))
+            {
+                stateDirty = false;
+                forceStateSnapshot = false;
+                ownerDirty = false;
+                MarkValuesClean();
+                return null;
+            }
+        }
+
+        // A local pickup is observed rather than applied through ReceiveSnapshot.
+        // It establishes ownership, while a later drop only ends possession: the
+        // persistent owner must remain so lost and found can return the item.
+        if (stateDirty && NetworkLifecycle.Instance.IsClientRunning)
+        {
+            byte localPlayerId = NetworkLifecycle.Instance.Client?.PlayerId ?? 0;
+            bool isHeldByLocalPlayer = IsCarriedState(currentState) &&
+                (Item.IsGrabbed() || Inventory.Instance.Contains(gameObject, false) ||
+                 !IsCarriedState(lastState) && ShouldObserveLocalLayout());
+            if (isHeldByLocalPlayer)
+                SetOwner(localPlayerId, markDirty: true);
+
+        }
 
         if (!createdDirty)
         {
-            if (lastState != currentState)
+            if (lastState != currentState || forceStateSnapshot)
                 updateType |= ItemUpdateData.ItemUpdateType.ItemState;
 
             if (hasDirtyVals)
@@ -314,6 +462,9 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
                 Multiplayer.LogDebug(GetDirtyValuesDebugString);
                 updateType |= ItemUpdateData.ItemUpdateType.ObjectState;
             }
+
+            if (ownerDirty)
+                updateType |= ItemUpdateData.ItemUpdateType.Ownership;
         }
         else
         {
@@ -330,6 +481,8 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
         createdDirty = false;
         stateDirty = false;
+        forceStateSnapshot = false;
+        ownerDirty = false;
         wasThrown = false;
 
         MarkValuesClean();
@@ -337,7 +490,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         return snapshot;
     }
 
-    public void ReceiveSnapshot(ItemUpdateData snapshot)
+    public void ReceiveSnapshot(ItemUpdateData snapshot, bool acceptServerAuthoritativeValues = false)
     {
         if (snapshot == null || snapshot.UpdateType == ItemUpdateData.ItemUpdateType.None)
             return;
@@ -349,20 +502,50 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
             return;
         }
 
-        ApplySnapshot(snapshot);
+        ApplySnapshot(snapshot, acceptServerAuthoritativeValues);
     }
 
-    private void ApplySnapshot(ItemUpdateData snapshot)
+    private void ApplySnapshot(ItemUpdateData snapshot, bool acceptServerAuthoritativeValues = false)
     {
+        // Shop clients instantiate the raw prefab, whose local flag can differ from
+        // the host's purchased instance. Apply this before dropped-state handling so
+        // the item is restored to the client's world storage list.
+        if (Item?.InventorySpecs != null && snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.Create))
+            Item.InventorySpecs.BelongsToPlayer = snapshot.BelongsToPlayer;
+
+        if (snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.Create) &&
+            Item.GetComponent<DV.Shops.ShopRestocker>() is DV.Shops.ShopRestocker restocker)
+            restocker.OnItemSaveDataLoaded(new Newtonsoft.Json.Linq.JObject
+                { [DV.Shops.ShopRestocker.RESTOCK_SHOP_KEY] = snapshot.RestockOnDestroy });
+
+        if (snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.Create) &&
+            !string.IsNullOrEmpty(snapshot.ContainerIdentity) &&
+            Item.GetComponent<AItemContainer>() is AItemContainer container &&
+            container.ContainerId != snapshot.ContainerIdentity)
+            container.AssignIdAndRegister(snapshot.ContainerIdentity);
+
         if (snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.ItemState) || snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.FullSync) || snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.Create))
         {
+            // Leave native containers through RemoveItem so their slot, listeners,
+            // and magazine state cannot retain an item that has moved elsewhere.
+            if (Item.InContainer is AItemContainer previousContainer &&
+                (snapshot.ItemState != ItemState.InContainer ||
+                 previousContainer.ContainerId != snapshot.ContainerId ||
+                 snapshot.ContainerSlotIndex < 0 || snapshot.ContainerSlotIndex >= previousContainer.Capacity ||
+                 previousContainer[snapshot.ContainerSlotIndex] != gameObject))
+            {
+                DetachFromContainer();
+            }
+            pendingContainerRestore = snapshot.ItemState == ItemState.InContainer;
+            ItemState previousState = lastState;
+            lastState = snapshot.ItemState;
             Multiplayer.Log($"NetworkedItem.ApplySnapshot() netId: {snapshot?.ItemNetId}, ItemUpdateType: {snapshot?.UpdateType}, ItemState: {snapshot?.ItemState}, Active state: {gameObject.activeInHierarchy}");
 
             switch (snapshot.ItemState)
             {
                 case ItemState.Dropped:
                 case ItemState.Thrown:
-                    HandleDroppedOrThrownState(snapshot);
+                    HandleDroppedOrThrownState(snapshot, previousState);
                     break;
 
                 case ItemState.InHand:
@@ -370,14 +553,50 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
                     HandleInventoryOrHandState(snapshot);
                     break;
 
+                case ItemState.InContainer:
+                    // Membership is restored after this batch so the parent may
+                    // arrive after its contents, including in a later packet.
+                    break;
+
                 case ItemState.Attached:
                     HandleAttachedState(snapshot);
+                    break;
+
+                case ItemState.InstalledGadget:
+                    gameObject.SetActive(false);
+                    break;
+
+                case ItemState.InLostAndFound:
+                    HandleLostAndFoundState(snapshot);
                     break;
 
                 default:
                     throw new Exception($"NetworkedItem.ApplySnapshot() Item state not implemented: {snapshot?.ItemState}");
 
             }
+
+        }
+
+        if (snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.Ownership) ||
+            snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.Create))
+        {
+            // Packets carry replication authority, not the stable owner GUID.
+            // Genuine remote pickups establish ownership in the host's validated
+            // receive path; echoed fallback updates must preserve that identity.
+            if (snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.Create) && OwnerUniqueId == null)
+                SetOwner(snapshot.OwnerPlayerId);
+            else
+                SetSynchronizationOwner(snapshot.OwnerPlayerId);
+        }
+
+        if (snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.Create) ||
+            snapshot.UpdateType.HasFlag(ItemUpdateData.ItemUpdateType.ItemState))
+        {
+            InventorySlotIndex = snapshot.InventorySlotIndex;
+            ContainerSlotIndex = snapshot.ContainerSlotIndex;
+            ContainerId = snapshot.ContainerId;
+            InLockedSlot = snapshot.InLockedSlot;
+            IsDroppedInInventory = snapshot.IsDropped;
         }
 
         Multiplayer.Log($"NetworkedItem.ApplySnapshot() netID: {snapshot?.ItemNetId}, ItemUpdateType {snapshot?.UpdateType} About to process states");
@@ -388,7 +607,16 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
             if (trackedItem != null && snapshot.States != null)
             {
-                ApplyTrackedValues(snapshot.States);
+                ApplyTrackedValues(snapshot.States, acceptServerAuthoritativeValues);
+
+                if (trackedItem is GadgetItem gadgetItem &&
+                    gadgetItem.Gadget is AlternatingController alternating)
+                {
+                    GadgetTrackedValueRegistry.ApplyAlternatingPhase(
+                        alternating,
+                        snapshot.States,
+                        snapshot.SentTick);
+                }
             }
         }
 
@@ -397,6 +625,8 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         //mark values as clean
         createdDirty = false;
         stateDirty = false;
+        forceStateSnapshot = false;
+        ownerDirty = false;
 
         MarkValuesClean();
         return;
@@ -451,54 +681,168 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         {
             UpdateType = updateType,
             ItemNetId = NetId,
+            OwnerPlayerId = this.OwnerPlayerId,
+            BelongsToPlayer = Item.InventorySpecs.BelongsToPlayer,
+            RestockOnDestroy = Item.GetComponent<DV.Shops.ShopRestocker>()?.restockOnItemDestroyed == true,
             PrefabName = Item.InventorySpecs.ItemPrefabName,
             ItemState = lastState,
+            Active = gameObject.activeSelf,
             ItemPosition = position,
             ItemRotation = rotation,
             ThrowDirection = throwDirection,
+            Player = IsCarriedState(lastState)
+                ? OwnerPlayerId
+                : (byte)0,
+            InventorySlotIndex = InventorySlotIndex,
+            ContainerSlotIndex = ContainerSlotIndex,
+            ContainerId = ContainerId,
+            ContainerIdentity = Item.GetComponent<AItemContainer>()?.ContainerId,
+            InLockedSlot = InLockedSlot,
+            IsDropped = IsDroppedInInventory,
             CarNetId = carId,
             AttachedFront = frontCoupler,
             States = states,
         };
 
+        // A Create assembled outside GetSnapshot (initial/full player sync and the
+        // per-player nearby path) is still the item's initial create. Consume the
+        // flag here so its next real state change is not sent as another Create.
+        if (updateType.HasFlag(ItemUpdateData.ItemUpdateType.Create))
+            createdDirty = false;
+
         return updateData;
+    }
+
+    public void SuppressDestroySync() => suppressDestroySync = true;
+
+    internal void MarkRemoteUpdateAccepted()
+    {
+        LastDirtyTick = NetworkLifecycle.Instance.Tick;
+    }
+
+    public void MarkAsSynchronized()
+    {
+        createdDirty = false;
+        stateDirty = false;
+        forceStateSnapshot = false;
+        ownerDirty = false;
+        lastState = GetItemState();
+        MarkValuesClean();
+    }
+
+    internal void DeferInitialCreate()
+    {
+        createdDirty = false;
+        stateDirty = false;
+        forceStateSnapshot = false;
+        ownerDirty = false;
+        MarkValuesClean();
+    }
+
+    internal void PublishDeferredCreate()
+    {
+        lastState = GetItemState();
+        CaptureCurrentLayout(lastState);
+        createdDirty = true;
+    }
+
+    internal ItemState RefreshPersistenceState()
+    {
+        ItemState currentState = GetItemState();
+        if (currentState != lastState)
+            stateDirty = true;
+        // Remote carried objects are inactive host-side proxies. Their layout was
+        // supplied by the owning client and cannot be rediscovered through the
+        // host's Inventory; doing so replaces valid slots/container IDs with -1.
+        if (ShouldObserveLocalLayout())
+        {
+            if (CaptureCurrentLayout(currentState))
+            {
+                stateDirty = true;
+                forceStateSnapshot = true;
+            }
+        }
+        return currentState;
+    }
+
+    public ItemUpdateData CreateCurrentUpdateData(ItemUpdateData.ItemUpdateType updateType)
+    {
+        lastState = GetItemState();
+        if (ShouldObserveLocalLayout())
+            CaptureCurrentLayout(lastState);
+        return CreateUpdateData(updateType);
     }
 
     private ItemState GetItemState()
     {
-        //Multiplayer.LogDebug(() => $"GetItemState() NetId: {NetId}, {name}, Parent: {Item.transform.parent} WorldMover: {WorldMover.OriginShiftParent}, wasThrown: {wasThrown}, isGrabbed: {Item.IsGrabbed()} Inventory.Contains(): {Inventory.Instance.Contains(this.gameObject, false)} Storage.Contains: {StorageController.Instance.StorageInventory.ContainsItem(Item)}");
+        if (trackedItem is GadgetItem gadgetItem && gadgetItem.Gadget != null && gadgetItem.Gadget.IsLinked)
+            return ObserveState(ItemState.InstalledGadget);
 
+        var storage = StorageController.Instance;
+        if (storage?.StorageLostAndFound != null && storage.StorageLostAndFound.ContainsItem(Item))
+            return ObserveState(ItemState.InLostAndFound);
 
-        if (Item.transform.parent == WorldMover.OriginShiftParent && !wasThrown)
+        // Remote hand/inventory proxies are inactive and reparented outside the
+        // host's Inventory. Inspecting that local representation makes them look
+        // dropped and can echo a false drop back with an unrelated object-state
+        // update (for example when ejecting a soldering reel). Their most recent
+        // client-supplied state is authoritative instead.
+        if (OwnerPlayerId != 0 && IsCarriedState(lastState))
         {
-            Multiplayer.LogDebug(() => $"GetItemState() NetId: {NetId}, {name}, Parent: {Item.transform.parent} WorldMover: {WorldMover.OriginShiftParent}, wasThrown: {wasThrown}");
-            return ItemState.Dropped;
-        }
-
-        if (wasThrown)
-        {
-            Multiplayer.LogDebug(() => $"GetItemState() NetId: {NetId}, {name}, Parent: {Item.transform.parent} WorldMover: {WorldMover.OriginShiftParent}, wasThrown: {wasThrown}");
-            return ItemState.Thrown;
+            byte localPlayerId = NetworkLifecycle.Instance.IsHost()
+                ? NetworkLifecycle.Instance.Server?.SelfId ?? 0
+                : NetworkLifecycle.Instance.Client?.PlayerId ?? 0;
+            bool locallyHeld = Item.IsGrabbed() || Inventory.Instance.Contains(gameObject, false);
+            if (localPlayerId != 0 && OwnerPlayerId != localPlayerId && !locallyHeld)
+                return ObserveState(lastState);
         }
 
         if (Item.IsGrabbed())
-            return ItemState.InHand;
+            return ObserveState(ItemState.InHand);
 
         if (Inventory.Instance.Contains(this.gameObject, false))
-            return ItemState.InInventory;
+            return ObserveState(ItemState.InInventory);
+
+        if (Item.InContainer != null)
+            return ObserveState(ItemState.InContainer);
+
+        if (Item.transform.parent == WorldMover.OriginShiftParent && !wasThrown)
+            return ObserveState(ItemState.Dropped);
+
+        if (wasThrown)
+            return ObserveState(ItemState.Thrown);
 
         if (snappableItem != null && snappableItem.IsSnapped)
-        {
-            Multiplayer.LogDebug(() => $"GetItemState() NetId: {NetId}, {name}, snapped! {this.transform.parent}");
-            return ItemState.Attached;
-        }
+            return ObserveState(ItemState.Attached);
 
         //do we need a condition to check if it's attached to something else (last attach vs current attach)?
-        return ItemState.Dropped;
+        return ObserveState(ItemState.Dropped);
 
     }
 
-    private void ApplyTrackedValues(Dictionary<string, object> newValues)
+    private ItemState ObserveState(ItemState currentState)
+    {
+        if (!hasObservedState)
+        {
+            observedState = currentState;
+            hasObservedState = true;
+            return currentState;
+        }
+
+        if (observedState != currentState)
+        {
+            ItemState previousState = observedState;
+            observedState = currentState;
+            Multiplayer.LogDebug(() => $"NetworkedItem state changed NetId: {NetId}, {name}, " +
+                $"{previousState} -> {currentState}, Parent: {Item.transform.parent}, wasThrown: {wasThrown}");
+        }
+
+        return currentState;
+
+    }
+
+    private void ApplyTrackedValues(Dictionary<string, object> newValues,
+        bool acceptServerAuthoritativeValues = false)
     {
         Multiplayer.LogDebug(() => $"NetworkedItem.ApplyTrackedValues() itemNetId: {NetId}, item name: {name}. Null checks");
 
@@ -513,7 +857,8 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
             var trackedValue = trackedValues.Find(tv => ((dynamic)tv).Key == newValue.Key);
             if (trackedValue != null)
             {
-                if (!NetworkLifecycle.Instance.IsHost() || !((dynamic)trackedValue).ServerAuthoritative)
+                if (acceptServerAuthoritativeValues || !NetworkLifecycle.Instance.IsHost() ||
+                    !((dynamic)trackedValue).ServerAuthoritative)
                 {
                     try
                     {
@@ -539,7 +884,7 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
     #region Item State Update Handlers
 
-    private void HandleDroppedOrThrownState(ItemUpdateData snapshot)
+    private void HandleDroppedOrThrownState(ItemUpdateData snapshot, ItemState previousState)
     {
         //resolve attachment
         if (Item.IsSnapped)
@@ -547,16 +892,27 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
             Item.SnappableItem.SnappedTo.UnsnapItem(false);
         }
 
-        //resolve ownership
-        if (NetworkLifecycle.Instance.IsHost())
-            if (NetworkLifecycle.Instance.Server.TryGetServerPlayer(snapshot.Player, out ServerPlayer player) && player.OwnsItem(NetId))
-                player.RemoveOwnedItem(NetId);
-
         //activate and relocate item
         gameObject.SetActive(true);
         transform.position = snapshot.ItemPosition + WorldMover.currentMove;
         transform.rotation = snapshot.ItemRotation;
-        OwnerId = 0;
+
+        // Network-created/cached items were removed from every StorageController
+        // list. ItemMagazine.AddItem expects a dropped item to belong to world
+        // storage and otherwise can pass a null StorageBase into the base game.
+        var storage = StorageController.Instance;
+        if (storage != null && Item.BelongsToPlayer() && !storage.StorageWorld.ContainsItem(Item))
+            storage.AddItemToWorldStorage(Item);
+
+        // Installed gadgets can retain stale rigidbody velocity while their backing
+        // item is hidden. Reset it on a remote drop so removal does not launch the
+        // item through the cab when physics resumes.
+        if (snapshot.ItemState == ItemState.Dropped && previousState == ItemState.InstalledGadget && Item.ItemRigidbody != null)
+        {
+            TrainCar parentCar = Item.GetComponentInParent<TrainCar>();
+            Item.ItemRigidbody.velocity = parentCar?.rb != null ? parentCar.rb.velocity : Vector3.zero;
+            Item.ItemRigidbody.angularVelocity = parentCar?.rb != null ? parentCar.rb.angularVelocity : Vector3.zero;
+        }
 
         //handle throwing of the item
         if (snapshot.ItemState == ItemState.Thrown)
@@ -574,11 +930,6 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
     private void HandleAttachedState(ItemUpdateData snapshot)
     {
-        //resovle ownership
-        if (NetworkLifecycle.Instance.IsHost())
-            if (NetworkLifecycle.Instance.Server.TryGetServerPlayer(snapshot.Player, out ServerPlayer player) && player.OwnsItem(NetId))
-                player.RemoveOwnedItem(NetId);
-
         //handle attaching the item
         gameObject.SetActive(true);
         Multiplayer.LogDebug(() => $"NetworkedItem.HandleAttachedState() ItemNetId: {snapshot?.ItemNetId} attempting attachment to car {snapshot.CarNetId}, at the front {snapshot.AttachedFront}");
@@ -609,17 +960,163 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
 
     private void HandleInventoryOrHandState(ItemUpdateData snapshot)
     {
+        // The owner already has the native inventory object that was bound during
+        // reconciliation. Authoritative echoes must not turn that object into an
+        // inactive remote proxy; packet timing can otherwise make an arbitrary
+        // subset of the owner's inventory disappear after a successful join.
+        byte localPlayerId = NetworkLifecycle.Instance.Client?.PlayerId ?? 0;
+        bool isLocallyCarried = NetworkLifecycle.Instance.IsClientRunning &&
+            localPlayerId != 0 && snapshot.Player == localPlayerId &&
+            (Item.IsGrabbed() || Inventory.Instance.Contains(gameObject, false));
+        if (isLocallyCarried)
+        {
+            gameObject.SetActive(true);
+            return;
+        }
+
         if (Item.IsSnapped)
         {
             Item.SnappableItem.SnappedTo.UnsnapItem(false);
         }
 
-        if (NetworkLifecycle.Instance.IsHost())
-            if (NetworkLifecycle.Instance.Server.TryGetServerPlayer(snapshot.Player, out ServerPlayer player) && !player.OwnsItem(NetId))
-                player.AddOwnedItem(NetId);
+        // Mirror ItemReparentingBase.OnGrab for a remote pickup. This removes the
+        // proxy from the train's item activity/LOD container and notifies
+        // RespawnOnDrop that its spawn parent is no longer the train interior.
+        if (WorldMover.OriginShiftParent != null && transform.parent != WorldMover.OriginShiftParent)
+        {
+            if (itemReparenting != null)
+                itemReparenting.ParentItemExternal(WorldMover.OriginShiftParent, null);
+            else
+            {
+                TrainPhysicsLod.RemoveItemFromAnyCar(Item);
+                transform.SetParent(WorldMover.OriginShiftParent, true);
+            }
+        }
+
+        var storage = StorageController.Instance;
+        if (storage != null && storage.AnyStorageContains(Item))
+            storage.RemoveItemFromStorageItemList(Item);
 
         //todo add to player model's hand
         this.gameObject.SetActive(false);
+    }
+
+    public static bool IsCarriedState(ItemState state) =>
+        state is ItemState.InHand or ItemState.InInventory or ItemState.InContainer;
+
+    internal void RestoreContainerMembership()
+    {
+        if (!pendingContainerRestore || IsPendingReconciliation || !IsReadyForSnapshots ||
+            string.IsNullOrEmpty(ContainerId))
+            return;
+
+        var container = Inventory.Instance.ItemContainerRegistry.GetContainer(ContainerId);
+        if (container == null || ContainerSlotIndex < 0 || ContainerSlotIndex >= container.Capacity)
+            return;
+        if (container[ContainerSlotIndex] == gameObject)
+        {
+            pendingContainerRestore = false;
+            return;
+        }
+        if (container[ContainerSlotIndex] != null)
+            return;
+
+        using (CustomizationSyncScope.Remote())
+        {
+            // SaveItemData retains the native state used by PostContainerLoadData.
+            // In particular AMMO must be restored after ItemMagazine.AddItem fires
+            // its ordinary loaded/full/empty callbacks.
+            var containerSave = container.GetComponent<ItemSaveData>();
+            containerSave?.SaveItemData();
+            var storage = StorageController.Instance;
+            if (!storage.AnyStorageContains(Item) && Item.BelongsToPlayer())
+                storage.AddItemToWorldStorage(Item);
+            if (!container.AddItem(gameObject, ContainerSlotIndex))
+                return;
+            containerSave?.PostContainerLoadData();
+            pendingContainerRestore = false;
+            MarkAsSynchronized();
+        }
+    }
+
+    internal void DetachFromContainer()
+    {
+        pendingContainerRestore = false;
+        if (Item.InContainer is not AItemContainer container)
+            return;
+        var (_, slot) = Inventory.Instance.ItemContainerRegistry.GetItemContainerIdAndIndex(gameObject);
+        using (CustomizationSyncScope.Remote())
+            container.RemoveItem(slot, false, false);
+    }
+
+    private bool ShouldObserveLocalLayout()
+    {
+        if (!NetworkLifecycle.Instance.IsClientRunning)
+            return false;
+
+        byte localPlayerId = NetworkLifecycle.Instance.IsHost()
+            ? NetworkLifecycle.Instance.Server?.SelfId ?? 0
+            : NetworkLifecycle.Instance.Client?.PlayerId ?? 0;
+        return OwnerPlayerId == 0 || OwnerPlayerId == localPlayerId;
+    }
+
+    private bool CaptureCurrentLayout(ItemState state)
+    {
+        int inventorySlot = -1;
+        int containerSlot = -1;
+        string containerId = null;
+        bool locked = false;
+        bool dropped = false;
+        var inventory = Inventory.Instance;
+
+        if (state is ItemState.InHand or ItemState.InInventory)
+        {
+            inventorySlot = inventory?.IndexOf(gameObject) ?? -1;
+            if (inventorySlot >= 0)
+            {
+                locked = inventory.GetSlotLockState(inventorySlot);
+                dropped = inventory.GetSlotDroppedState(inventorySlot);
+            }
+        }
+        else if (state == ItemState.InContainer && inventory?.ItemContainerRegistry != null)
+        {
+            (containerId, containerSlot) = inventory.ItemContainerRegistry.GetItemContainerIdAndIndex(gameObject);
+        }
+
+        bool changed = InventorySlotIndex != inventorySlot || ContainerSlotIndex != containerSlot ||
+            !string.Equals(ContainerId, containerId, StringComparison.Ordinal) ||
+            InLockedSlot != locked || IsDroppedInInventory != dropped;
+        InventorySlotIndex = inventorySlot;
+        ContainerSlotIndex = containerSlot;
+        ContainerId = containerId;
+        InLockedSlot = locked;
+        IsDroppedInInventory = dropped;
+        return changed;
+    }
+
+    private void HandleLostAndFoundState(ItemUpdateData snapshot)
+    {
+        if (Item.IsSnapped)
+            Item.SnappableItem.SnappedTo.UnsnapItem(false);
+
+        if (WorldMover.OriginShiftParent != null && transform.parent != WorldMover.OriginShiftParent)
+        {
+            if (itemReparenting != null)
+                itemReparenting.ParentItemExternal(WorldMover.OriginShiftParent, null);
+            else
+            {
+                TrainPhysicsLod.RemoveItemFromAnyCar(Item);
+                transform.SetParent(WorldMover.OriginShiftParent, true);
+            }
+        }
+
+        var storage = StorageController.Instance;
+        if (storage != null && !storage.StorageLostAndFound.ContainsItem(Item))
+            storage.AddItemToLostAndFound(Item, false);
+
+        transform.position = snapshot.ItemPosition + WorldMover.currentMove;
+        transform.rotation = snapshot.ItemRotation;
+        gameObject.SetActive(snapshot.Active);
     }
     #endregion
 
@@ -628,29 +1125,41 @@ public class NetworkedItem : IdMonoBehaviour<ushort, NetworkedItem>
         if (UnloadWatcher.isQuitting)
             return;
 
+        // Scene unloading used to return before clearing this static lookup. Unity
+        // then left destroyed-object entries in GetAll(), which were scanned and
+        // logged as null items on every network tick in the next session.
+        if (Item != null)
+        {
+            Item.Grabbed -= OnGrabbed;
+            Item.Ungrabbed -= OnUngrabbed;
+            Item.ItemInventoryStateChanged -= OnItemInventoryStateChanged;
+            itemBaseToNetworkedItem.Remove(Item);
+        }
+        else if (!UnloadWatcher.isUnloading)
+        {
+            Multiplayer.LogWarning($"NetworkedItem.OnDestroy({name}, {NetId}) Item is null!");
+        }
+
         if (UnloadWatcher.isUnloading)
         {
             itemBaseToNetworkedItem.Clear();
+            // The base class resets its own static ID lookup during unload.
             base.OnDestroy();
             return;
         }
 
         if (NetworkLifecycle.Instance.IsHost())
         {
-            var updateData = CreateUpdateData(ItemUpdateData.ItemUpdateType.Destroy);
-            if (updateData != null)
-                NetworkedItemManager.Instance.AddDirtyItemSnapshot(this, updateData);
-        }
-
-        if (Item != null)
-        {
-            Item.Grabbed -= OnGrabbed;
-            Item.Ungrabbed -= OnUngrabbed;
-            itemBaseToNetworkedItem.Remove(Item);
-        }
-        else
-        {
-            Multiplayer.LogWarning($"NetworkedItem.OnDestroy({name}, {NetId}) Item is null!");
+            if (suppressDestroySync)
+            {
+                NetworkedItemManager.Instance.ForgetItem(this);
+            }
+            else
+            {
+                var updateData = CreateUpdateData(ItemUpdateData.ItemUpdateType.Destroy);
+                if (updateData != null)
+                    NetworkedItemManager.Instance.AddDirtyItemSnapshot(this, updateData);
+            }
         }
 
         base.OnDestroy();

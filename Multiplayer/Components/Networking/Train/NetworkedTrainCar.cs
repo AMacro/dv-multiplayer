@@ -47,6 +47,8 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         return b;
     }
 
+    public static IEnumerable<NetworkedTrainCar> GetAll() => trainCarsToNetworkedTrainCars.Values;
+
     public static bool TryGet(ushort netId, out TrainCar trainCar)
     {
         bool b = TryGet(netId, out NetworkedTrainCar networkedTrainCar);
@@ -162,6 +164,9 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
     public string CurrentID { get; private set; }
     public TrainCar TrainCar;
+    public bool HasAttachedCustomizations => TrainCar?.Customization != null &&
+        ((TrainCar.Customization.Customizers?.Count ?? 0) > 0 || TrainCar.Customization.HoleCount > 0);
+    public bool IsInteriorPinnedForNetworkSync => interiorSyncLeaseCount > 0;
     public uint TicksSinceSync = uint.MaxValue;
 
     public uint lastTickProcessed = 0;
@@ -184,6 +189,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     private readonly Dictionary<string, float> lastSentTrainDamages = [];
 
     private InteriorControlsManager interiorControlsManager;
+    private int interiorSyncLeaseCount;
     private readonly Dictionary<ControlImplBase, Action<ValueChangedEventArgs>> scrollableControlDelegates = [];
     private Dictionary<InteriorControlsManager.ControlType, OverridableBaseControl> controlTypeToControl = [];
     private readonly Dictionary<uint, OverridableBaseControl> portToBaseControl = [];
@@ -482,50 +488,40 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         NetworkLifecycle.Instance?.Client.SendTrainSyncRequest(NetId);
     }
 
+    private Coroutine interiorHookRoutine;
+
     private void OnTrainCarInteriorLoaded(GameObject interior)
     {
-        Multiplayer.LogDebug(() => $"OnTrainCarInteriorLoaded() {CurrentID}, interior is null: {interior == null}");
-
-        StartCoroutine(WaitForInterior());
+        // Streaming can unload the cab while controls are still initializing.
+        // Cancel work for the previous instance before binding the new one.
+        OnTrainCarInteriorUnloaded(interior);
+        if (interior != null)
+            interiorHookRoutine = StartCoroutine(WaitForInterior(interior));
     }
 
-    private IEnumerator WaitForInterior()
+    private IEnumerator WaitForInterior(GameObject interior)
     {
-        float time = Time.time;
-        interiorControlsManager = null;
-
-        yield return new WaitUntil
-        (
-            () =>
-            {
-                return TrainCar?.loadedInterior != null || Time.time - time > INTERIOR_CONTROLS_TIMEOUT;
-            }
-        );
-
-        yield return new WaitForFixedUpdate();
-
-        if (TrainCar?.loadedInterior == null)
+        float deadline = Time.time + INTERIOR_CONTROLS_TIMEOUT;
+        InteriorControlsManager controls = null;
+        while (interior != null && !interior.TryGetComponent(out controls) && Time.time < deadline)
+            yield return null;
+        if (interior == null)
+            yield break;
+        if (controls == null)
         {
-            Multiplayer.LogError($"TrainCar {CurrentID} failed to load an interior");
+            Multiplayer.LogWarning($"TrainCar {CurrentID} interior has no controls manager");
             yield break;
         }
-
-        time = Time.time;
-
-        yield return new WaitUntil
-        (
-            () =>
-            {
-                return TrainCar.loadedInterior.TryGetComponent<InteriorControlsManager>(out interiorControlsManager) || Time.time - time > INTERIOR_CONTROLS_TIMEOUT;
-            }
-        );
-
-        CoroutineManager.Instance.StartCoroutine(HookControls(interiorControlsManager));
+        interiorControlsManager = controls;
+        yield return HookControls(controls);
+        interiorHookRoutine = null;
     }
 
     private IEnumerator HookControls(InteriorControlsManager interiorControlsManager)
     {
-        yield return new WaitUntil(() => interiorControlsManager.Initialized);
+        yield return new WaitUntil(() => interiorControlsManager == null || interiorControlsManager.Initialized);
+        if (interiorControlsManager == null)
+            yield break;
 
         Multiplayer.LogDebug(() => $"HookControls() Hooking controls for car {CurrentID}, found {interiorControlsManager?.controls?.Count} controls");
 
@@ -534,6 +530,11 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         {
             var control = kvp.Value;
             var key = kvp.Key;
+
+            // Controls without an override port (e.g. the handbrake) use their
+            // dedicated synchronization path, not control-port authority.
+            if (control.overridableBaseControl == null)
+                continue;
 
             float timeOut = Time.time;
             yield return new WaitUntil
@@ -600,6 +601,11 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     private void OnTrainCarInteriorUnloaded(GameObject interior)
     {
         Multiplayer.LogDebug(() => $"OnTrainCarInteriorUnloaded() {CurrentID}");
+        if (interiorHookRoutine != null)
+        {
+            StopCoroutine(interiorHookRoutine);
+            interiorHookRoutine = null;
+        }
 
         foreach (var control in controlToPortNetId.Keys)
         {
@@ -628,6 +634,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
                 kvp.Key.ValueChanged -= kvp.Value;
         }
 
+        scrollableControlDelegates.Clear();
         portNetIdToControl.Clear();
         controlToPortNetId.Clear();
 
@@ -640,6 +647,13 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
         if (UnloadWatcher.isQuitting)
             return;
+
+        OnTrainCarInteriorUnloaded(null);
+        if (TrainCar != null)
+        {
+            TrainCar.InteriorLoaded -= OnTrainCarInteriorLoaded;
+            TrainCar.InteriorAboutToBeUnloaded -= OnTrainCarInteriorUnloaded;
+        }
 
         //Clean dictionaries
         trainCarsToNetworkedTrainCars.Remove(TrainCar);
@@ -1186,6 +1200,25 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
         serverPlayersInCar.Add(player);
         TrainCar?.visitChecker?.OnPlayerCarChanged(TrainCar);
+
+        // The vanilla ECS interior streamer is based on the host's local camera and
+        // can ignore CarVisitChecker's remote-player state. Customization components
+        // live in the instantiated interior, so explicitly load it for remote users.
+        if (TrainCar != null && !TrainCar.IsInteriorLoaded)
+            TrainCar.LoadInterior();
+    }
+
+    public void BeginInteriorNetworkSync()
+    {
+        interiorSyncLeaseCount++;
+        if (TrainCar != null && !TrainCar.IsInteriorLoaded)
+            TrainCar.LoadInterior();
+    }
+
+    public void EndInteriorNetworkSync()
+    {
+        if (interiorSyncLeaseCount > 0)
+            interiorSyncLeaseCount--;
     }
 
     public void Server_RemovePlayer(ServerPlayer player)

@@ -10,6 +10,7 @@ public class ClientboundPlayerJoinedPacket
     public bool IsVR { get; set; }
     public string CharacterId { get; set; }
     public string CrewName { get; set; } = string.Empty;
+    public uint Tick { get; set; }
     public PlayerTrackingData TrackingData { get; set; }
     public PlayerPostureFlags Posture { get; set; }
     public bool IsOnCar { get; set; }

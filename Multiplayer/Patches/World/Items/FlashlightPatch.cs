@@ -1,4 +1,5 @@
 using HarmonyLib;
+using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.World;
 using Multiplayer.Utils;
 using System;
@@ -58,8 +59,9 @@ public static class FlashlightItemPatch
                     __instance.battery.currentPower = value;     //set the value
                     __instance.battery.UpdatePower(0f);          //process a delta of 0 to force an update
                 },
-            (current, last) => Math.Abs(current - last) >= 1.0f, //Don't communicate updates for changes less than 1f
-            true                                                 //This parameter is driven by the server: true
+            (current, last) => LocallyOwns(networkedItem) &&
+                (Math.Abs(current - last) >= 1.0f || current != last && (current == 0f || current == 100f)),
+            serverAuthoritative: false
             );
 
         networkedItem.RegisterTrackedValue(
@@ -77,5 +79,17 @@ public static class FlashlightItemPatch
             );
 
         networkedItem.FinaliseTrackedValues();
+    }
+
+    private static bool LocallyOwns(NetworkedItem item)
+    {
+        var lifecycle = NetworkLifecycle.Instance;
+        if (lifecycle == null)
+            return false;
+
+        byte localPlayerId = lifecycle.IsHost()
+            ? lifecycle.Server?.SelfId ?? 0
+            : lifecycle.Client?.PlayerId ?? 0;
+        return localPlayerId != 0 && item.OwnerPlayerId == localPlayerId;
     }
 }

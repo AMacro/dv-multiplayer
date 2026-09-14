@@ -4,6 +4,7 @@ using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.World;
 using Multiplayer.Networking.Packets.Common;
 using Multiplayer.Utils;
+using System.Linq;
 
 namespace Multiplayer.Patches.World;
 
@@ -15,7 +16,10 @@ public class CashRegisterWithModulesPatch
     private static bool OnDisable(CashRegisterWithModules __instance)
     {
         //Multiplayer.LogDebug(() => $"CashRegisterWithModules.OnDisable({__instance.GetObjectPath()})");
-        if (__instance == null)
+        if (__instance == null || NetworkLifecycle.Instance == null)
+            return true;
+
+        if (ShopPurchaseCoordinator.IsShopRegister(__instance))
             return true;
 
         __instance?.StopAllCoroutines();
@@ -44,7 +48,10 @@ public class CashRegisterWithModulesPatch
         }
 
         if (netCashRegister.IsShopRegister)
-            return true;
+        {
+            CoroutineManager.Instance.StartCoroutine(netCashRegister.BuyShop());
+            return false;
+        }
 
         CoroutineManager.Instance.StartCoroutine(netCashRegister.Buy());
 
@@ -55,7 +62,7 @@ public class CashRegisterWithModulesPatch
     [HarmonyPatch(nameof(CashRegisterWithModules.OnBuyPressed))]
     private static void OnBuyPressed_Postfix(CashRegisterWithModules __instance)
     {
-        if (!NetworkLifecycle.Instance.IsHost())
+        if (NetworkLifecycle.Instance == null || !NetworkLifecycle.Instance.IsServerRunning || !NetworkLifecycle.Instance.IsHost())
             return;
 
         if (!NetworkedCashRegisterWithModules.TryGet(__instance, out var netCashRegister))
@@ -63,6 +70,9 @@ public class CashRegisterWithModulesPatch
             Multiplayer.LogWarning($"CashRegisterWithModules.OnBuyPressed_Postfix({__instance.GetObjectPath()}) NetworkedCashRegisterWithModules not found!");
             return;
         }
+
+        if (netCashRegister.IsShopRegister)
+            return;
 
         // Send buy action to all clients
         NetworkLifecycle.Instance.Server.SendCashRegisterAction(new CommonCashRegisterWithModulesActionPacket
@@ -74,13 +84,46 @@ public class CashRegisterWithModulesPatch
     }
 
     [HarmonyPrefix]
+    [HarmonyPatch(nameof(CashRegisterWithModules.Buy))]
+    private static void Buy_Prefix(CashRegisterWithModules __instance, out ShopPurchase[] __state)
+    {
+        __state = NetworkLifecycle.Instance.IsHost() &&
+            NetworkedCashRegisterWithModules.TryGet(__instance, out var networkedRegister) &&
+            networkedRegister.IsShopRegister
+                ? ShopPurchaseCoordinator.Capture(__instance)
+                : [];
+    }
+
+    [HarmonyPostfix]
+    [HarmonyPatch(nameof(CashRegisterWithModules.Buy))]
+    private static void Buy_Postfix(CashRegisterWithModules __instance, bool __result, ShopPurchase[] __state)
+    {
+        if (!__result || __state == null || __state.Length == 0 || !NetworkLifecycle.Instance.IsHost() ||
+            !NetworkedCashRegisterWithModules.TryGet(__instance, out var networkedRegister) ||
+            !networkedRegister.IsShopRegister ||
+            !NetworkLifecycle.Instance.Server.TryGetServerPlayer(NetworkLifecycle.Instance.Server.SelfId, out var buyer))
+            return;
+
+        ShopPurchaseCoordinator.QueueOwnership(__state, buyer);
+        NetworkLifecycle.Instance.Server.SendShopAction(new CommonShopPacket
+        {
+            RegisterNetId = networkedRegister.NetId,
+            Action = ShopAction.Approved,
+            BuyerPlayerId = buyer.PlayerId,
+            ItemPrefabNames = __state.Select(item => item.PrefabName).ToArray(),
+            ItemAmounts = __state.Select(item => item.Amount).ToArray(),
+            ItemUnitPrices = __state.Select(item => item.UnitPrice).ToArray()
+        });
+    }
+
+    [HarmonyPrefix]
     [HarmonyPatch(nameof(CashRegisterWithModules.Cancel))]
     private static bool Cancel(CashRegisterWithModules __instance)
     {
 
         //Multiplayer.LogDebug(()=>$"CashRegisterWithModules.Cancel({__instance.GetObjectPath()})\r\n{Environment.StackTrace}");
 
-        if (NetworkLifecycle.Instance.IsHost())
+        if (NetworkLifecycle.Instance?.IsHost() != false)
             return true;
 
         if (!NetworkedCashRegisterWithModules.TryGet(__instance, out var netCashRegister))
@@ -102,7 +145,7 @@ public class CashRegisterWithModulesPatch
     private static void Cancel_Postfix(CashRegisterWithModules __instance)
     {
         //Multiplayer.LogWarning($"CashRegisterWithModules.Cancel_Postfix({__instance.GetObjectPath()})");
-        if (!NetworkLifecycle.Instance.IsHost())
+        if (NetworkLifecycle.Instance == null || !NetworkLifecycle.Instance.IsServerRunning || !NetworkLifecycle.Instance.IsHost())
             return;
 
         if (!NetworkedCashRegisterWithModules.TryGet(__instance, out var netCashRegister))

@@ -3,12 +3,40 @@ using HarmonyLib;
 using Multiplayer.Components.Networking;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Networking.Data;
+using System;
 
 namespace Multiplayer.Patches.Train;
 
 [HarmonyPatch(typeof(CarVisitChecker))]
 public static class CarVisitCheckerPatch
 {
+    [ThreadStatic]
+    private static int physicsLodTransitionDepth;
+
+    [HarmonyPrefix]
+    [HarmonyPatch(typeof(TrainPhysicsLod), "SetLod")]
+    private static void BeginPhysicsLodTransition() => physicsLodTransitionDepth++;
+
+    [HarmonyFinalizer]
+    [HarmonyPatch(typeof(TrainPhysicsLod), "SetLod")]
+    private static Exception EndPhysicsLodTransition(Exception __exception)
+    {
+        physicsLodTransitionDepth--;
+        return __exception;
+    }
+
+    [HarmonyPrefix]
+    [HarmonyPatch(typeof(TrainCar), nameof(TrainCar.UnloadInterior))]
+    private static bool KeepOccupiedNetworkCarInteriorLoaded(TrainCar __instance)
+    {
+        if (physicsLodTransitionDepth == 0 ||
+            !NetworkLifecycle.Instance.IsHost() ||
+            !NetworkedTrainCar.TryGetFromTrainCar(__instance, out NetworkedTrainCar networkedCar))
+            return true;
+
+        return !networkedCar.HasPlayers() && !networkedCar.IsInteriorPinnedForNetworkSync;
+    }
+
     [HarmonyPrefix]
     [HarmonyPatch(nameof(CarVisitChecker.IsRecentlyVisited), MethodType.Getter)]
     public static bool IsRecentlyVisited_Prefix(CarVisitChecker __instance, ref bool __result)

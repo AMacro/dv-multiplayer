@@ -27,6 +27,7 @@ using Multiplayer.Components.Networking.UI;
 using Multiplayer.Components.Networking.World;
 using Multiplayer.Components.SaveGame;
 using Multiplayer.Networking.Data;
+using Multiplayer.Networking.Data.Customization;
 using Multiplayer.Networking.Data.Items;
 using Multiplayer.Networking.Data.Player;
 using Multiplayer.Networking.Data.Train;
@@ -37,6 +38,7 @@ using Multiplayer.Networking.Packets.Clientbound.SaveGame;
 using Multiplayer.Networking.Packets.Clientbound.Train;
 using Multiplayer.Networking.Packets.Clientbound.World;
 using Multiplayer.Networking.Packets.Common;
+using Multiplayer.Networking.Packets.Common.Customization;
 using Multiplayer.Networking.Packets.Common.Train;
 using Multiplayer.Networking.Packets.Serverbound;
 using Multiplayer.Networking.Packets.Serverbound.Jobs;
@@ -66,6 +68,7 @@ public class NetworkClient : NetworkManager
 
     private ITransportPeer selfPeer;
     public byte PlayerId { get; private set; }
+    public int MaxPlayers { get; private set; } = 1;
     public string Username { get; private set; }
     private string characterModelId;
     public string CrewName { get; private set; }
@@ -79,6 +82,16 @@ public class NetworkClient : NetworkManager
     internal uint trainSetsToSpawn = uint.MaxValue;
     internal uint trainSetsSpawned = 0;
     internal bool railwayStateLoaded = false;
+    private ClientCustomizationSynchronization clientCustomizationSynchronization;
+    private ClientCustomizationSynchronization CustomizationSynchronization => clientCustomizationSynchronization ??= new(this);
+    private Coroutine worldSyncRoutine;
+    private bool worldSyncStarted;
+    private bool awaitingWorldLoad;
+    private bool itemReconciliationComplete;
+    private bool itemReconciliationSucceeded;
+    private byte itemReconciliationAttempt;
+    private uint nextCustomizationActionId = 1;
+    private uint nextShopRequestId = 1;
     internal bool noCarTimeout = false;
 
     private Queue<ClientboundTaskUpdatePacket> ClientboundTaskUpdateQueue = new();
@@ -107,10 +120,7 @@ public class NetworkClient : NetworkManager
         isSinglePlayer = singlePlayer;
         ClientPlayerManager = new ClientPlayerManager();
 
-        WorldStreamingInit.LoadingFinished += () =>
-        {
-            NetworkedPlayer.CaptureItemAnchorOffset();
-        };
+        WorldStreamingInit.LoadingFinished += OnWorldLoadingFinished;
 
         Username = Multiplayer.Settings.GetUserName();
         characterModelId = Multiplayer.Settings.CharacterId;
@@ -126,6 +136,7 @@ public class NetworkClient : NetworkManager
         //netManager.Start();
         base.Start();
 
+        SteamworksUtils.GetSteamUser(out _, out ulong steamId);
         ServerboundClientLoginPacket serverboundClientLoginPacket = new()
         {
             Username = this.Username,
@@ -134,7 +145,8 @@ public class NetworkClient : NetworkManager
             BuildVersion = MainMenuControllerPatch.MenuProvider.BuildVersionString,
             Mods = ModCompatibilityManager.Instance.GetLocalMods(),
             CharacterId = Multiplayer.Settings.CharacterId,
-            IsVR = VRManager.IsVREnabled()
+            IsVR = VRManager.IsVREnabled(),
+            SteamId = steamId,
         };
 
         Log("Sending Login Packet");
@@ -150,6 +162,15 @@ public class NetworkClient : NetworkManager
     public override void Stop()
     {
         Log("Stopping client");
+        WorldStreamingInit.LoadingFinished -= OnWorldLoadingFinished;
+        awaitingWorldLoad = false;
+        if (worldSyncRoutine != null)
+        {
+            CoroutineManager.Instance.Stop(worldSyncRoutine);
+            worldSyncRoutine = null;
+        }
+        CustomizationSynchronization.Reset();
+
         if (!isAlsoHost && originalSession != null)
         {
             LogDebug(() => $"NetworkClient.Stop() destroying session... Original session is Null: {originalSession == null}");
@@ -189,7 +210,6 @@ public class NetworkClient : NetworkManager
         netPacketProcessor.SubscribeReusable<ClientboundSaveGameDataPacket>(OnClientboundSaveGameDataPacket);
         netPacketProcessor.SubscribeReusable<ClientboundRailwayStatePacket>(OnClientboundRailwayStatePacket);
 
-
         // General Sync
         netPacketProcessor.SubscribeNetSerializable<ClientboundRpcResponsePacket>(OnClientboundRpcResponsePacket);
         netPacketProcessor.SubscribeReusable<ClientboundTickSyncPacket>(OnClientboundTickSyncPacket);
@@ -198,14 +218,12 @@ public class NetworkClient : NetworkManager
         netPacketProcessor.SubscribeReusable<CommonChangeJunctionPacket>(OnCommonChangeJunctionPacket);
         netPacketProcessor.SubscribeReusable<CommonRotateTurntablePacket>(OnCommonRotateTurntablePacket);
 
-
         // Player Management
         netPacketProcessor.SubscribeReusable<ClientboundPlayerJoinedPacket>(OnClientboundPlayerJoinedPacket);
         netPacketProcessor.SubscribeReusable<ClientboundPlayerDisconnectPacket>(OnClientboundPlayerDisconnectPacket);
 
         netPacketProcessor.SubscribeReusable<ClientboundPlayerPositionPacket>(OnClientboundPlayerPositionPacket);
         netPacketProcessor.SubscribeReusable<ClientboundPlayerPreferencesUpdatePacket>(OnClientboundPlayerPreferencesUpdatePacket);
-
 
         // Train Sync
         netPacketProcessor.SubscribeReusable<ClientboundSpawnTrainSetPacket>(OnClientboundSpawnTrainSetPacket);
@@ -255,10 +273,15 @@ public class NetworkClient : NetworkManager
 
         // World Sync
         netPacketProcessor.SubscribeNetSerializable<CommonItemChangePacket>(OnCommonItemChangePacket);
+        netPacketProcessor.SubscribeNetSerializable<ClientboundItemReconciliationPacket>(OnClientboundItemReconciliationPacket);
+        netPacketProcessor.SubscribeNetSerializable<ClientboundCustomizationStatePacket>(CustomizationSynchronization.ReceiveSnapshot);
+        netPacketProcessor.SubscribeNetSerializable<ClientboundCustomizationAcknowledgmentPacket>(CustomizationSynchronization.ReceiveAcknowledgment);
+        SubscribeCustomizationActions();
         netPacketProcessor.SubscribeReusable<CommonPitStopInteractionPacket>(OnCommonPitStopInteractionPacket);
         netPacketProcessor.SubscribeNetSerializable<CommonPitStopPlugInteractionPacket>(OnCommonPitStopPlugInteractionPacket);
         netPacketProcessor.SubscribeReusable<ClientboundPitStopBulkUpdatePacket>(OnClientboundPitStopBulkUpdatePacket);
         netPacketProcessor.SubscribeReusable<CommonCashRegisterWithModulesActionPacket>(OnCommonCashRegisterWithModulesActionPacket);
+        netPacketProcessor.SubscribeReusable<CommonShopPacket>(OnCommonShopPacket);
         netPacketProcessor.SubscribeReusable<CommonGenericSwitchStatePacket>(OnCommonGenericSwitchStatePacket);
 
         netPacketProcessor.SubscribeReusable<CommonChatPacket>(OnCommonChatPacket);
@@ -302,7 +325,27 @@ public class NetworkClient : NetworkManager
         {
             readyBlocks.Remove(modName);
             DisplayLoadingInfo displayLoadingInfo = Object.FindObjectOfType<DisplayLoadingInfo>();
-            displayLoadingInfo?.OnLoadingStatusChanged($"Mod {modName} loaded", false, 100);
+            if (displayLoadingInfo != null) displayLoadingInfo.OnLoadingStatusChanged($"Mod {modName} loaded", false, 100);
+        }
+    }
+
+    private void OnWorldLoadingFinished()
+    {
+        if (!IsRunning)
+            return;
+        NetworkedPlayer.CaptureItemAnchorOffset();
+        if (!awaitingWorldLoad || worldSyncStarted)
+            return;
+        awaitingWorldLoad = false;
+        worldSyncStarted = true;
+        worldSyncRoutine = CoroutineManager.Instance.StartCoroutine(SyncWorldState());
+        var playerTracker = WorldMover.Instance.playerTracker;
+        if (playerTracker != null && playerTracker.GetComponent<LocalPlayerTrackerBase>() == null)
+        {
+            if (VRManager.IsVREnabled())
+                playerTracker.gameObject.AddComponent<LocalPlayerTrackerVR>();
+            else
+                playerTracker.gameObject.AddComponent<LocalPlayerTrackerNonVR>();
         }
     }
 
@@ -328,7 +371,7 @@ public class NetworkClient : NetworkManager
         Log($"Waiting for ready-blocks...");
         DisplayLoadingInfo displayLoadingInfo = Object.FindObjectOfType<DisplayLoadingInfo>();
         foreach (string modName in readyBlocks)
-            displayLoadingInfo?.OnLoadingStatusChanged($"Waiting for mod {modName} to load", false, ((float)LoadingState / (float)PlayerLoadingState.Complete) * 100);
+            if (displayLoadingInfo != null) displayLoadingInfo.OnLoadingStatusChanged($"Waiting for mod {modName} to load", false, ((float)LoadingState / (float)PlayerLoadingState.Complete) * 100);
 
         while (readyBlocks.Count > 0)
             yield return null;
@@ -340,7 +383,7 @@ public class NetworkClient : NetworkManager
 
         Log("Syncing world state");
         SendLoadStateUpdate(PlayerLoadingState.ReadyForWorldState);
-        displayLoadingInfo.OnLoadingStatusChanged(Locale.LOADING_INFO__SYNC_WORLD_STATE, false, ((float)LoadingState / (float)PlayerLoadingState.Complete) * 100);
+        if (displayLoadingInfo != null) displayLoadingInfo.OnLoadingStatusChanged(Locale.LOADING_INFO__SYNC_WORLD_STATE, false, ((float)LoadingState / (float)PlayerLoadingState.Complete) * 100);
 
         while (!railwayStateLoaded)
             yield return null;
@@ -352,7 +395,7 @@ public class NetworkClient : NetworkManager
 
         Log("Requesting cars");
         SendLoadStateUpdate(PlayerLoadingState.ReadyForTrainSets);
-        displayLoadingInfo.OnLoadingStatusChanged("Syncing rolling stock", false, ((float)LoadingState / (float)PlayerLoadingState.Complete) * 100);
+        if (displayLoadingInfo != null) displayLoadingInfo.OnLoadingStatusChanged("Syncing rolling stock", false, ((float)LoadingState / (float)PlayerLoadingState.Complete) * 100);
 
         uint lastLoggedSets = 0;
 
@@ -382,17 +425,58 @@ public class NetworkClient : NetworkManager
          * ReadyForCustomizers
          */
 
-        //TODO: implement
-        yield return new WaitForSeconds(0.25f);
+        CustomizationSynchronization.Reset(forLoading: true);
+        Log("Requesting customization state");
+        SendLoadStateUpdate(PlayerLoadingState.ReadyForCustomizers);
+        if (displayLoadingInfo != null) displayLoadingInfo.OnLoadingStatusChanged("Syncing customizations", false, ((float)LoadingState / (float)PlayerLoadingState.Complete) * 100);
+
+        yield return CustomizationSynchronization.LoadInitialState(RPC_Timeout);
 
         /* 
          * ReadyForItems
          */
 
-        Log($"Train sets spawned, requesting items");
+        Log("Reconciling local items");
         SendLoadStateUpdate(PlayerLoadingState.ReadyForItems);
+        if (displayLoadingInfo != null) displayLoadingInfo.OnLoadingStatusChanged("Syncing items", false, ((float)LoadingState / (float)PlayerLoadingState.Complete) * 100);
 
-        yield return new WaitForSeconds(0.25f);
+        itemReconciliationAttempt = 0;
+        for (int reconciliationTry = 0; reconciliationTry < 2; reconciliationTry++)
+        {
+            itemReconciliationComplete = false;
+            itemReconciliationSucceeded = false;
+            foreach (var reconciliationPacket in NetworkedItemManager.Instance.CreateItemReconciliationRequests(
+                         itemReconciliationAttempt))
+                SendNetSerializablePacketToServer(reconciliationPacket, DeliveryMethod.ReliableOrdered);
+
+            float reconciliationDeadline = Time.time + Mathf.Max(RPC_Timeout, 5f);
+            while (IsRunning && !itemReconciliationComplete && Time.time < reconciliationDeadline)
+                yield return null;
+
+            if (!IsRunning)
+                yield break;
+            if (itemReconciliationComplete && itemReconciliationSucceeded)
+                break;
+
+            if (reconciliationTry == 0)
+            {
+                LogWarning(itemReconciliationComplete
+                    ? "Item reconciliation failed; retrying once"
+                    : "Timed out waiting for item reconciliation; retrying once");
+                // A timeout does not prove the host failed. Resend the same attempt
+                // so it can replay its authoritative result without duplicating the
+                // inventory. An explicit rejection starts a clean second attempt.
+                if (itemReconciliationComplete)
+                    itemReconciliationAttempt++;
+                continue;
+            }
+
+            LogError(itemReconciliationComplete
+                ? "Item reconciliation failed twice; aborting connection"
+                : "Item reconciliation timed out twice; aborting connection");
+            Stop();
+            yield break;
+        }
 
         /* 
          * ReadyForJobs
@@ -402,7 +486,6 @@ public class NetworkClient : NetworkManager
         SendLoadStateUpdate(PlayerLoadingState.ReadyForJobs);
 
         yield return new WaitForSeconds(0.25f);
-
 
         /* 
          * ReadyForTiles
@@ -414,7 +497,7 @@ public class NetworkClient : NetworkManager
         yield return new WaitForSeconds(0.5f);
 
         SendLoadStateUpdate(PlayerLoadingState.Complete);
-        displayLoadingInfo.OnLoadingStatusChanged("Complete", false, ((float)LoadingState / (float)PlayerLoadingState.Complete) * 100);
+        if (displayLoadingInfo != null) displayLoadingInfo.OnLoadingStatusChanged("Complete", false, ((float)LoadingState / (float)PlayerLoadingState.Complete) * 100);
         yield return new WaitForSeconds(0.25f);
 
         // Start culling player models
@@ -488,6 +571,7 @@ public class NetworkClient : NetworkManager
         {
             Log($"Player accepted");
             PlayerId = packet.PlayerId;
+            MaxPlayers = Math.Max(packet.MaxPlayers, 1);
 
             if (!string.IsNullOrEmpty(packet.OverrideUsername))
             {
@@ -505,24 +589,7 @@ public class NetworkClient : NetworkManager
             // Request Game Params and Save Game Data
             SendLoadStateUpdate(PlayerLoadingState.ReadyForGameData);
 
-            WorldStreamingInit.LoadingFinished += () =>
-            {
-                LogDebug(() => "Loading finished, beginning sync");
-                CoroutineManager.Instance.StartCoroutine(SyncWorldState());
-
-                if (WorldMover.Instance.playerTracker != null)
-                {
-                    var tracker = WorldMover.Instance.playerTracker.GetComponent<LocalPlayerTrackerBase>();
-                    if (tracker == null)
-                    {
-                        LogWarning($"LocalPlayerTracker not found, adding {(VRManager.IsVREnabled() ? "" : "non")}VR tracker.");
-                        if (VRManager.IsVREnabled())
-                            tracker = WorldMover.Instance.playerTracker.gameObject.AddComponent<LocalPlayerTrackerVR>();
-                        else
-                            tracker = WorldMover.Instance.playerTracker.gameObject.AddComponent<LocalPlayerTrackerNonVR>();
-                    }
-                }
-            };
+            awaitingWorldLoad = true;
 
             return;
         }
@@ -575,7 +642,7 @@ public class NetworkClient : NetworkManager
         Log($"Received player joined packet for player id: {packet.PlayerId}, username: {packet.Username}");
         ClientPlayerManager.AddPlayer(packet.PlayerId, packet.Username, packet.CrewName, packet.CharacterId, packet.IsVR);
 
-        ClientPlayerManager.UpdatePosition(packet.PlayerId, packet.TrackingData, packet.Posture, packet.IsOnCar, packet.CarID);
+        ClientPlayerManager.UpdatePosition(packet.PlayerId, packet.TrackingData, packet.Posture, packet.IsOnCar, packet.CarID, packet.Tick);
     }
 
     //For other player left the game
@@ -602,7 +669,7 @@ public class NetworkClient : NetworkManager
 
     private void OnClientboundPlayerPositionPacket(ClientboundPlayerPositionPacket packet)
     {
-        ClientPlayerManager.UpdatePosition(packet.PlayerId, packet.TrackingData, packet.Posture, packet.IsOnCar, packet.CarID);
+        ClientPlayerManager.UpdatePosition(packet.PlayerId, packet.TrackingData, packet.Posture, packet.IsOnCar, packet.CarID, packet.Tick);
     }
 
     private void OnClientboundPlayerPreferencesUpdatePacket(ClientboundPlayerPreferencesUpdatePacket packet)
@@ -625,7 +692,8 @@ public class NetworkClient : NetworkManager
 
     private void OnClientboundTickSyncPacket(ClientboundTickSyncPacket packet)
     {
-        NetworkLifecycle.Instance.Tick = (uint)(packet.ServerTick + Ping / 2.0f * (1f / NetworkLifecycle.TICK_RATE));
+        // Both transports normalize this to one-way latency in milliseconds.
+        NetworkLifecycle.Instance.SynchronizeClientTick(packet.ServerTick, Ping);
     }
 
     private void OnClientboundServerLoadingPacket(ClientboundServerLoadingPacket packet)
@@ -639,7 +707,7 @@ public class NetworkClient : NetworkManager
             return;
         }
 
-        displayLoadingInfo.OnLoadingStatusChanged(Locale.LOADING_INFO__WAIT_FOR_SERVER, false, 100);
+        if (displayLoadingInfo != null) displayLoadingInfo.OnLoadingStatusChanged(Locale.LOADING_INFO__WAIT_FOR_SERVER, false, 100);
     }
 
     private void OnClientboundGameParamsPacket(ClientboundGameParamsPacket packet)
@@ -684,7 +752,28 @@ public class NetworkClient : NetworkManager
         if (LoadingState < PlayerLoadingState.Complete)
             Log("Received weather state");
 
-        WeatherDriver.Instance.LoadSaveData(JObject.FromObject(packet), Globals.G.GameParams.WeatherEditorAlwaysAllowed);
+        // BatteryConsumer measures usage from changes in the game's time-of-day.
+        // Periodic network correction can move that clock slightly backwards;
+        // vanilla interprets the negative delta as midnight wraparound and drains
+        // almost a full day of flashlight charge. Restart active consumers around
+        // the correction so their baseline is the newly synchronized time.
+        var activeFlashlightConsumers = Object.FindObjectsOfType<FlashlightItem>()
+            .Select(flashlight => flashlight.batteryConsumer)
+            .Where(consumer => consumer != null && consumer.isConsuming)
+            .ToArray();
+        foreach (var consumer in activeFlashlightConsumers)
+            consumer.TogglePowerConsumption(false);
+
+        try
+        {
+            WeatherDriver.Instance.LoadSaveData(JObject.FromObject(packet), Globals.G.GameParams.WeatherEditorAlwaysAllowed);
+        }
+        finally
+        {
+            foreach (var consumer in activeFlashlightConsumers)
+                if (consumer != null && consumer.gameObject.activeInHierarchy)
+                    consumer.TogglePowerConsumption(true);
+        }
     }
 
     private void OnClientboundRemoveLoadingScreen(ClientboundRemoveLoadingScreenPacket packet)
@@ -1454,11 +1543,9 @@ public class NetworkClient : NetworkManager
         netPitStop.ProcessBulkUpdate(packet);
     }
 
-
     private void OnCommonItemChangePacket(CommonItemChangePacket packet)
     {
         //LogDebug(() => $"OnCommonItemChangePacket({packet?.Items?.Count})");
-
 
         //LogDebug(() =>
         //{
@@ -1489,7 +1576,42 @@ public class NetworkClient : NetworkManager
         //    return debug;
         //});
 
-        //NetworkedItemManager.Instance.ReceiveSnapshots(packet.Items, null);
+        if (packet?.Items == null)
+            return;
+
+        NetworkedItemManager.Instance.ReceiveSnapshots(packet.Items, null);
+    }
+
+    private void OnClientboundItemReconciliationPacket(ClientboundItemReconciliationPacket packet)
+    {
+        if (NetworkedItemManager.Instance.ApplyItemReconciliation(packet, itemReconciliationAttempt,
+                out bool succeeded))
+        {
+            itemReconciliationComplete = true;
+            itemReconciliationSucceeded = succeeded;
+            Log(succeeded
+                ? $"Item reconciliation complete ({packet?.Items?.Count ?? 0} items in final batch)"
+                : $"Item reconciliation attempt {itemReconciliationAttempt + 1} failed");
+        }
+    }
+
+    private void SubscribeCustomizationActions()
+    {
+        netPacketProcessor.SubscribeNetSerializable<PlaceGadgetPacket>(CustomizationSynchronization.ReceiveAction);
+        netPacketProcessor.SubscribeNetSerializable<RemoveGadgetPacket>(CustomizationSynchronization.ReceiveAction);
+        netPacketProcessor.SubscribeNetSerializable<AddHolePacket>(CustomizationSynchronization.ReceiveAction);
+        netPacketProcessor.SubscribeNetSerializable<MoveHolePacket>(CustomizationSynchronization.ReceiveAction);
+        netPacketProcessor.SubscribeNetSerializable<RemoveHolePacket>(CustomizationSynchronization.ReceiveAction);
+        netPacketProcessor.SubscribeNetSerializable<MountGadgetPacket>(CustomizationSynchronization.ReceiveAction);
+        netPacketProcessor.SubscribeNetSerializable<UnmountGadgetPacket>(CustomizationSynchronization.ReceiveAction);
+        netPacketProcessor.SubscribeNetSerializable<WireGadgetsPacket>(CustomizationSynchronization.ReceiveAction);
+        netPacketProcessor.SubscribeNetSerializable<UnwireGadgetsPacket>(CustomizationSynchronization.ReceiveAction);
+        netPacketProcessor.SubscribeNetSerializable<DropEmptySpoolPacket>(CustomizationSynchronization.ReceiveAction);
+        netPacketProcessor.SubscribeNetSerializable<LoadSpoolPacket>(CustomizationSynchronization.ReceiveAction);
+        netPacketProcessor.SubscribeNetSerializable<ReplaceSpoolPacket>(CustomizationSynchronization.ReceiveAction);
+        netPacketProcessor.SubscribeNetSerializable<ReplaceDuctTapePacket>(CustomizationSynchronization.ReceiveAction);
+        netPacketProcessor.SubscribeNetSerializable<SnapItemPacket>(CustomizationSynchronization.ReceiveAction);
+        netPacketProcessor.SubscribeNetSerializable<UnsnapItemPacket>(CustomizationSynchronization.ReceiveAction);
     }
 
     private void OnCommonPaintThemePacket(CommonPaintThemePacket packet)
@@ -1597,6 +1719,29 @@ public class NetworkClient : NetworkManager
         netCashRegister.Client_ProcessCashRegisterAction(packet.Action, packet.Amount);
     }
 
+    private void OnCommonShopPacket(CommonShopPacket packet)
+    {
+        if (packet.Action == ShopAction.StockSnapshot)
+        {
+            ShopPurchaseCoordinator.ApplyStockSnapshot(packet.ItemPrefabNames, packet.ItemAmounts);
+            return;
+        }
+
+        if (packet.Action == ShopAction.StockChanged)
+        {
+            ShopPurchaseCoordinator.ApplyStockDelta(packet.ItemPrefabNames, packet.ItemAmounts);
+            return;
+        }
+
+        if (!NetworkedCashRegisterWithModules.Get(packet.RegisterNetId, out var register) || !register.IsShopRegister)
+        {
+            LogWarning($"Shop action received for invalid register {packet.RegisterNetId}");
+            return;
+        }
+
+        register.Client_ProcessShopAction(packet);
+    }
+
     private void OnCommonGenericSwitchStatePacket(CommonGenericSwitchStatePacket packet)
     {
         if (!NetworkedGenericSwitch.TryGet(packet.NetId, out NetworkedGenericSwitch netSwitch))
@@ -1621,7 +1766,6 @@ public class NetworkClient : NetworkManager
     {
         SendNetSerializablePacket(serverPeer, packet, deliveryMethod);
     }
-
 
     #region Mod Packets
     public void SendExternalPacketToServer<T>(T packet, bool reliable) where T : class, IPacket, new()
@@ -1651,6 +1795,7 @@ public class NetworkClient : NetworkManager
 
         SendPacketToServer(new ServerboundPlayerPositionPacket
         {
+            Tick = NetworkLifecycle.Instance.SynchronizedTick,
             TrackingData = trackingData,
             Posture = posture,
             IsOnCar = isOnCar,
@@ -1728,7 +1873,6 @@ public class NetworkClient : NetworkManager
             Flags = (ushort)flags,
         }, DeliveryMethod.ReliableOrdered);
     }
-
 
     //public void SendTrainCouple(Coupler coupler, Coupler otherCoupler, bool playAudio, bool viaChainInteraction)
     //{
@@ -2066,6 +2210,18 @@ public class NetworkClient : NetworkManager
                 DeliveryMethod.ReliableOrdered);
     }
 
+    internal void SendCustomizationAction<T>(T packet)
+        where T : CustomizationActionPacket, INetSerializable, new()
+    {
+        packet.OriginActionId = nextCustomizationActionId++;
+        if (nextCustomizationActionId == 0)
+            nextCustomizationActionId = 1;
+
+        CustomizationSynchronization.RecordLocalAction(packet);
+
+        SendNetSerializablePacketToServer(packet, DeliveryMethod.ReliableOrdered);
+    }
+
     public void SendPaintThemeChange(NetworkedTrainCar netTraincar, TrainCarPaint.Target targetArea, uint themeId)
     {
         Log($"Sending paint theme change for {netTraincar.CurrentID}");
@@ -2084,6 +2240,24 @@ public class NetworkClient : NetworkManager
             },
             DeliveryMethod.ReliableOrdered
         );
+    }
+
+    public uint SendShopPurchase(ushort registerNetId, double amount, string[] itemPrefabNames, int[] itemAmounts)
+    {
+        uint requestId = nextShopRequestId++;
+        if (nextShopRequestId == 0)
+            nextShopRequestId = 1;
+
+        SendPacketToServer(new CommonShopPacket
+        {
+            RegisterNetId = registerNetId,
+            RequestId = requestId,
+            Action = ShopAction.Purchase,
+            Amount = amount,
+            ItemPrefabNames = itemPrefabNames ?? [],
+            ItemAmounts = itemAmounts ?? [],
+        }, DeliveryMethod.ReliableOrdered);
+        return requestId;
     }
 
     public void SendTrainControlAuthorityRequest(ushort netId, uint portNetId, bool requestAuthority)

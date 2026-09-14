@@ -156,7 +156,7 @@ public class NetworkedPitStopStation : IdMonoBehaviour<ushort, NetworkedPitStopS
 
     protected void OnDisable()
     {
-        if (!NetworkLifecycle.Instance.IsHost())
+        if (NetworkLifecycle.Instance == null || !NetworkLifecycle.Instance.IsHost())
             Refreshed = false;
     }
 
@@ -164,7 +164,7 @@ public class NetworkedPitStopStation : IdMonoBehaviour<ushort, NetworkedPitStopS
     {
         pitStopStationToNetworkedPitStopStation.Remove(Station);
 
-        if (NetworkLifecycle.Instance.IsHost())
+        if (NetworkLifecycle.Instance != null && NetworkLifecycle.Instance.Server != null && NetworkLifecycle.Instance.IsHost())
         {
             foreach (var kvp in resourceStartStopDelegates)
             {
@@ -199,7 +199,7 @@ public class NetworkedPitStopStation : IdMonoBehaviour<ushort, NetworkedPitStopS
             carSelectorGrab.Ungrabbed -= CarSelectorUnGrabbed;
         }
 
-        if (Station?.pitstop != null)
+        if (Station != null && Station.pitstop != null)
         {
             Station.pitstop.CarSelected -= CarSelected;
         }

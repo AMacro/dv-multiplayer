@@ -11,4 +11,5 @@ public class ServerboundClientLoginPacket
     public ModInfo[] Mods { get; set; }
     public string CharacterId { get; set; }
     public bool IsVR { get; set; }
+    public ulong SteamId { get; set; }
 }

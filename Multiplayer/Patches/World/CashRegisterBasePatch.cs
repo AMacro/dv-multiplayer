@@ -49,6 +49,9 @@ public class CashRegisterBasePatch
         if (__instance is not CashRegisterWithModules)
             return true;
 
+        if (ShopPurchaseCoordinator.IsShopRegister((CashRegisterWithModules)__instance))
+            return true;
+
         return NetworkLifecycle.Instance.IsHost();
     }
 
@@ -58,6 +61,9 @@ public class CashRegisterBasePatch
     {
         //Multiplayer.LogDebug(() => $"CashRegisterBase.OnDisable({__instance.GetObjectPath()}) {__instance.GetType()}");
         if (__instance is not CashRegisterWithModules)
+            return true;
+
+        if (ShopPurchaseCoordinator.IsShopRegister((CashRegisterWithModules)__instance))
             return true;
 
         // Prevent clients from cancelling/returning cash on cash registers when loading the game or leaving the area
