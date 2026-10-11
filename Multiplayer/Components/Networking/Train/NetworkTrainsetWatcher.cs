@@ -78,6 +78,7 @@ public class NetworkTrainsetWatcher : SingletonBehaviour<NetworkTrainsetWatcher>
         }
         cachedSendPacket.FirstNetId = set.firstCar.GetNetId();
         cachedSendPacket.LastNetId = set.lastCar.GetNetId();
+        cachedSendPacket.TopologyEpoch = NetworkedTrainCar.GetTopologyEpoch(set.firstCar);
 
         // Car may not be initialised, missing a valid NetID
         if (cachedSendPacket.FirstNetId == 0 || cachedSendPacket.LastNetId == 0)
@@ -206,6 +207,16 @@ public class NetworkTrainsetWatcher : SingletonBehaviour<NetworkTrainsetWatcher>
 
     public void Client_HandleTrainsetPhysicsUpdate(ClientboundTrainsetPhysicsPacket packet)
     {
+        foreach (TrainsetMovementPart part in packet.TrainsetParts)
+        {
+            if (!NetworkedTrainCar.TryGet(part.NetId, out NetworkedTrainCar networkedTrainCar) ||
+                networkedTrainCar.TopologyEpoch != packet.TopologyEpoch)
+            {
+                Multiplayer.LogDebug(() => $"Discarding stale train physics snapshot for {part.NetId}: packet epoch {packet.TopologyEpoch}.");
+                return;
+            }
+        }
+
         Trainset set = Trainset.allSets.Find
         (
             set =>
