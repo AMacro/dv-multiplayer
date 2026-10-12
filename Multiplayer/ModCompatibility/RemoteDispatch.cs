@@ -62,6 +62,9 @@ public static class RemoteDispatch
         if (!NetworkLifecycle.Instance.IsClientRunning)
             return;
 
+        // Since we will be readding the player anyway, ignore previous work
+        __result.RemoveAll();
+
         IEnumerable<IPlayer> players;
 
         if (NetworkLifecycle.Instance.IsHost())

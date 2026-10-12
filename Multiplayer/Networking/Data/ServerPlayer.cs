@@ -139,7 +139,7 @@ public class ServerPlayer : IDisposable
                 else
                 {
                     //Multiplayer.LogDebug(() => $"AbsoluteWorldPosition() hasID {Username}: CarId: {CarId}");
-                    pos = car.transform.TransformPoint(RawPosition) - WorldMover.currentMove; ;
+                    pos = car.transform.TransformPoint(RawPosition) - WorldMover.currentMove;
                 }
 
                 _lastAbsoluteWorldPosition = pos;
@@ -192,9 +192,7 @@ public class ServerPlayer : IDisposable
         }
     }
 
-    public float WorldRotationY => CarId == 0 || !NetworkedTrainCar.TryGet(CarId, out NetworkedTrainCar car)
-        ? RawRotationY
-        : (Quaternion.Euler(0, RawRotationY, 0) * car.transform.rotation).eulerAngles.y;
+    public float WorldRotationY => RawRotationY;
     #endregion
 
     #region Item Ownership
