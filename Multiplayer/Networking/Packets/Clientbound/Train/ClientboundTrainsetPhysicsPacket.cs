@@ -7,5 +7,6 @@ public class ClientboundTrainsetPhysicsPacket
     public int FirstNetId { get; set; }
     public int LastNetId { get; set; } 
     public uint Tick { get; set; }
+    public uint TopologyEpoch { get; set; }
     public TrainsetMovementPart[] TrainsetParts { get; set; }
 }

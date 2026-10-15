@@ -214,6 +214,7 @@ public class NetworkClient : NetworkManager
         netPacketProcessor.SubscribeReusable<ClientboundMoveTrainPacket>(OnClientboundMoveTrainPacket);
 
         netPacketProcessor.SubscribeReusable<ClientboundTrainsetPhysicsPacket>(OnClientboundTrainPhysicsPacket);
+        netPacketProcessor.SubscribeReusable<ClientboundTrainsetTopologyCommitPacket>(OnClientboundTrainsetTopologyCommitPacket);
         netPacketProcessor.SubscribeReusable<CommonTrainPortsPacket>(OnCommonSimFlowPacket);
         netPacketProcessor.SubscribeReusable<CommonTrainFusesPacket>(OnCommonTrainFusesPacket);
         netPacketProcessor.SubscribeReusable<CommonBrakeCylinderReleasePacket>(OnCommonBrakeCylinderReleasePacket);
@@ -815,6 +816,16 @@ public class NetworkClient : NetworkManager
         NetworkTrainsetWatcher.Instance.Client_HandleTrainsetPhysicsUpdate(packet);
     }
 
+    private void OnClientboundTrainsetTopologyCommitPacket(ClientboundTrainsetTopologyCommitPacket packet)
+    {
+        foreach (ushort netId in packet.NetIds)
+        {
+            if (NetworkedTrainCar.TryGet(netId, out NetworkedTrainCar networkedTrainCar) &&
+                packet.Epoch > networkedTrainCar.TopologyEpoch)
+                networkedTrainCar.TopologyEpoch = packet.Epoch;
+        }
+    }
+
     private void OnCommonCouplerInteractionPacket(CommonCouplerInteractionPacket packet)
     {
         if (!NetworkedTrainCar.TryGet(packet.NetId, out NetworkedTrainCar netTrainCar))
@@ -953,8 +964,11 @@ public class NetworkClient : NetworkManager
 
     private void OnClientboudCouplingStatePacket(ClientboudCouplingStatePacket packet)
     {
-        if (!NetworkedTrainCar.TryGet(packet.NetId, out TrainCar trainCar))
+        if (!NetworkedTrainCar.TryGet(packet.NetId, out NetworkedTrainCar networkedTrainCar) ||
+            networkedTrainCar.TopologyEpoch != packet.TopologyEpoch)
             return;
+
+        TrainCar trainCar = networkedTrainCar.TrainCar;
 
         LogDebug(() => $"OnClientboudCouplingStatePacket({trainCar.ID})");
 
@@ -1726,6 +1740,8 @@ public class NetworkClient : NetworkManager
             OtherNetId = otherCouplerNetId,
             IsFrontOtherCoupler = otherCouplerIsFront,
             Flags = (ushort)flags,
+            TopologyEpoch = NetworkedTrainCar.GetTopologyEpoch(coupler?.train),
+            OtherTopologyEpoch = NetworkedTrainCar.GetTopologyEpoch(otherCoupler?.train),
         }, DeliveryMethod.ReliableOrdered);
     }
 

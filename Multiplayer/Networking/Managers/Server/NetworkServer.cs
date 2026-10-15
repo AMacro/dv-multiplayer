@@ -935,6 +935,7 @@ public class NetworkServer : NetworkManager
                 new ClientboudCouplingStatePacket
                 {
                     NetId = netId,
+                    TopologyEpoch = NetworkedTrainCar.GetTopologyEpoch(trainCar),
                     FrontCouplingData = CouplingData.From(trainCar.frontCoupler),
                     RearCouplingData = CouplingData.From(trainCar.rearCoupler),
                     FronMuConnected = frontMu,
@@ -1573,10 +1574,52 @@ public class NetworkServer : NetworkManager
         //todo: add validation that to ensure the client is near the coupler - this packet may also be used for remote operations and may need to factor that in in the future
         if (NetworkedTrainCar.TryGet(packet.NetId, out NetworkedTrainCar netTrainCar))
         {
-            if (netTrainCar.Server_ValidateCouplerInteraction(packet, player))
+            bool primaryEpochMatches = netTrainCar.TopologyEpoch == packet.TopologyEpoch;
+            bool otherEpochMatches = packet.OtherNetId == 0 ||
+                NetworkedTrainCar.TryGet(packet.OtherNetId, out NetworkedTrainCar otherTrainCar) &&
+                otherTrainCar.TopologyEpoch == packet.OtherTopologyEpoch;
+
+            // Host actions have already changed the authoritative world.
+            // An earlier queued event can advance the topology epoch before
+            // the next local event is processed. Remote proposals still need
+            // matching epochs; all events still require interaction validation.
+            bool hostAlreadyApplied = peer == SelfPeer;
+            if ((hostAlreadyApplied || (primaryEpochMatches && otherEpochMatches)) &&
+                netTrainCar.Server_ValidateCouplerInteraction(packet, player))
             {
+                // A remote client only proposes the interaction. Apply the
+                // accepted proposal to the host's world before announcing it
+                // to peers, making that world the topology authority. The
+                // local host has already applied its own direct interaction.
+                if (peer != SelfPeer)
+                    netTrainCar.Common_ReceiveCouplerInteraction(packet);
+
                 //passed validation, send to all but the originator
                 SendPacketToAll(packet, DeliveryMethod.ReliableOrdered, PlayerLoadingState.ReadyForTrainSets, peer);
+
+                // The request is the transaction boundary. Stamp every trainset
+                // touched by it before a later physics snapshot can be sent.
+                CouplerInteractionType interaction = (CouplerInteractionType)packet.Flags;
+                bool changesTopology = interaction.HasFlag(CouplerInteractionType.CouplerCouple) ||
+                    interaction.HasFlag(CouplerInteractionType.CouplerPark) ||
+                    interaction.HasFlag(CouplerInteractionType.CoupleViaUI) ||
+                    interaction.HasFlag(CouplerInteractionType.UncoupleViaUI) ||
+                    interaction.HasFlag(CouplerInteractionType.CoupleViaRemote) ||
+                    interaction.HasFlag(CouplerInteractionType.UncoupleViaRemote);
+
+                if (changesTopology)
+                {
+                    TrainCar otherCar = null;
+                    if (packet.OtherNetId != 0)
+                        NetworkedTrainCar.TryGet(packet.OtherNetId, out otherCar);
+
+                    ushort[] committedNetIds = NetworkedTrainCar.Server_CommitTopologyTransaction(netTrainCar.TrainCar, otherCar);
+                    SendPacketToAll(
+                        new ClientboundTrainsetTopologyCommitPacket { Epoch = netTrainCar.TopologyEpoch, NetIds = committedNetIds },
+                        DeliveryMethod.ReliableOrdered,
+                        PlayerLoadingState.ReadyForTrainSets,
+                        excludeSelf: false);
+                }
             }
             else
             {

@@ -309,3 +309,4 @@ MultiplayerAssets/ProjectSettings/*
 /Lobby Servers/Rust Server/target
 *.pem
 /docs
+/local-udp-backup

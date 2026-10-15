@@ -39,6 +39,64 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     private static readonly Dictionary<string, NetworkedTrainCar> trainCarIdToNetworkedTrainCars = [];
     private static readonly Dictionary<string, TrainCar> trainCarIdToTrainCars = [];
     private static readonly Dictionary<HoseAndCock, Coupler> hoseToCoupler = [];
+    private static uint nextTopologyEpoch;
+
+    /// <summary>
+    /// Version of the server-committed trainset topology this car belongs to.
+    /// Zero is the initial topology sent while a world is loaded.
+    /// </summary>
+    public uint TopologyEpoch { get; set; }
+
+    public static uint GetTopologyEpoch(TrainCar trainCar)
+    {
+        // Start/loosen/park actions have no second car. They must not throw
+        // from StateChanged, which runs before native FSM entry actions.
+        if (trainCar == null)
+            return 0;
+        return TryGetFromTrainCar(trainCar, out NetworkedTrainCar networkedTrainCar)
+            ? networkedTrainCar.TopologyEpoch
+            : 0;
+    }
+
+    /// <summary>
+    /// Atomically stamps every currently affected server trainset with a new
+    /// topology version. The returned IDs are the precise client commit set.
+    /// </summary>
+    public static ushort[] Server_CommitTopologyTransaction(params TrainCar[] affectedCars)
+    {
+        uint epoch = ++nextTopologyEpoch;
+        if (epoch == 0)
+            epoch = ++nextTopologyEpoch;
+
+        HashSet<TrainCar> affected = new(affectedCars.Where(car => car != null));
+        HashSet<TrainCar> committed = new();
+
+        foreach (Trainset set in Trainset.allSets)
+        {
+            if (set?.cars == null || !set.cars.Any(affected.Contains))
+                continue;
+
+            foreach (TrainCar car in set.cars)
+                committed.Add(car);
+        }
+
+        // A car can be between trainsets during a split; it still needs a
+        // version so stale snapshots cannot be applied to it.
+        foreach (TrainCar car in affected)
+            committed.Add(car);
+
+        List<ushort> netIds = [];
+        foreach (TrainCar car in committed)
+        {
+            if (!TryGetFromTrainCar(car, out NetworkedTrainCar networkedTrainCar))
+                continue;
+
+            networkedTrainCar.TopologyEpoch = epoch;
+            netIds.Add(networkedTrainCar.NetId);
+        }
+
+        return netIds.ToArray();
+    }
 
     public static bool TryGet(ushort netId, out NetworkedTrainCar obj)
     {

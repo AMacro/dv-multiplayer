@@ -3,7 +3,8 @@
         <TargetFramework>net48</TargetFramework>
         <LangVersion>latest</LangVersion>
         <RootNamespace>Multiplayer</RootNamespace>
-        <InformationalVersion>0.1.16.0</InformationalVersion>
+        <InformationalVersion>0.1.17.1</InformationalVersion>
+        <Version>0.1.17.1</Version>
     </PropertyGroup>
     <ItemGroup>
         <PackageReference Include="Krafs.Publicizer" Version="2.3.0">
@@ -113,7 +114,7 @@
             <VersionNumber Include="$(InformationalVersion.Split('+')[0] )" />
         </ItemGroup>
     </Target>
-    <Target Name="PostBuild" AfterTargets="PostBuildEvent" DependsOnTargets="PostBuildMacros">
+    <Target Name="PostBuild" AfterTargets="PostBuildEvent" DependsOnTargets="PostBuildMacros" Condition="'$(SkipModDeployment)' != 'true'">
         <!-- Sign Assemblies if in 'Release' -->
         <Exec Condition="$(ConfigurationName) == 'Release' AND $(Cert-Thumb) != ''" Command="&quot;$(SignToolPath)SignTool.exe&quot; sign /sha1 $(Cert-Thumb) /fd SHA256 /t http://timestamp.sectigo.com &quot;$(TargetPath)&quot; &quot;$(OutDir)/LiteNetLib.dll&quot;" />
         <!-- Copy to build folder -->

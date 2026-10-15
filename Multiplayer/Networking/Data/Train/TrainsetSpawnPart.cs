@@ -16,6 +16,7 @@ public readonly struct TrainsetSpawnPart
     private static readonly byte[] EMPTY_GUID = new Guid().ToByteArray(); // Empty GUID as bytes
 
     public readonly ushort NetId;
+    public readonly uint TopologyEpoch;
 
     // Car details
     public readonly string LiveryId;
@@ -52,7 +53,7 @@ public readonly struct TrainsetSpawnPart
     public readonly BrakeSystemData BrakeData;
 
     public TrainsetSpawnPart(
-          ushort netId, string liveryId, string carId, string carGuid, bool exploded, TrainCarHealthData carHealthData,
+          ushort netId, uint topologyEpoch, string liveryId, string carId, string carGuid, bool exploded, TrainCarHealthData carHealthData,
           bool playerSpawnedCar, RestorationType restorationType, LocoRestorationController.RestorationState restorationState, ushort secondCarNetId, ushort[] transportingCarNetIds,
           PaintTheme paintExterior, PaintTheme paintInterior,
           CouplingData frontCoupling, CouplingData rearCoupling,
@@ -60,6 +61,7 @@ public readonly struct TrainsetSpawnPart
           BogieData bogie1, BogieData bogie2, BrakeSystemData brakeData)
     {
         NetId = netId;
+        TopologyEpoch = topologyEpoch;
         LiveryId = liveryId;
         CarId = carId;
         CarGuid = carGuid;
@@ -89,6 +91,7 @@ public readonly struct TrainsetSpawnPart
     public static void Serialize(NetDataWriter writer, TrainsetSpawnPart data)
     {
         writer.Put(data.NetId);
+        writer.Put(data.TopologyEpoch);
         writer.Put(data.LiveryId);
         writer.Put(data.CarId);
 
@@ -142,6 +145,7 @@ public readonly struct TrainsetSpawnPart
     public static TrainsetSpawnPart Deserialize(NetDataReader reader)
     {
         ushort netId = reader.GetUShort();
+        uint topologyEpoch = reader.GetUInt();
         string liveryId = reader.GetString();
         string carId = reader.GetString();
         string carGuid = new Guid(reader.GetBytesWithLength()).ToString();
@@ -188,7 +192,7 @@ public readonly struct TrainsetSpawnPart
         var brakeSet = BrakeSystemData.Deserialize(reader);
 
         return new TrainsetSpawnPart(
-            netId, liveryId, carId, carGuid, exploded, healthData,
+            netId, topologyEpoch, liveryId, carId, carGuid, exploded, healthData,
             playerSpawnedCar,
             restorationType, restorationState, secondCarNetId, transportationCarNetIds,
             exteriorPaint, interiorPaint,
@@ -228,6 +232,7 @@ public readonly struct TrainsetSpawnPart
 
         return new TrainsetSpawnPart(
                 networkedTrainCar.NetId,
+                networkedTrainCar.TopologyEpoch,
                 trainCar.carLivery.id,
                 trainCar.ID,
                 trainCar.CarGUID,

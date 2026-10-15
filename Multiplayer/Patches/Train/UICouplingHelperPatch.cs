@@ -11,13 +11,30 @@ namespace Multiplayer.Patches.Train;
 public static class UICouplingHelperPatch
 {
     [HarmonyPatch(nameof(UICouplingHelper.HandleCoupling))]
+    [HarmonyPrefix]
+    private static void BeforeHandleCoupling(Coupler coupler, out bool __state)
+    {
+        __state = coupler != null && coupler.IsCoupled();
+    }
+
+    [HarmonyPatch(nameof(UICouplingHelper.HandleCoupling))]
     [HarmonyPostfix]
-    private static void HandleCoupling(UICouplingHelper __instance, Coupler coupler, bool advanced)
+    private static void HandleCoupling(UICouplingHelper __instance, Coupler coupler, bool advanced, bool __state)
     {
         Multiplayer.LogDebug(() => $"UICouplingHelper.HandleCoupling({coupler?.train?.ID}, {advanced})");
 
-        if (coupler == null)
+        if (coupler == null || UnloadWatcher.isUnloading || NetworkLifecycle.Instance.IsProcessingPacket)
             return;
+
+        // Native UI has already applied the action, including its chain visuals.
+        // Do not restart ChainScript: that can reset the FSM/drag anchors and
+        // emit additional Park/Couple events while its transition is running.
+        // A failed/no-op UI action must not be broadcast as an uncouple.
+        if (__state == coupler.IsCoupled())
+        {
+            Multiplayer.LogDebug(() => $"UI coupling made no topology change for {coupler.train?.ID}; no network action sent.");
+            return;
+        }
 
         Coupler otherCoupler = null;
         CouplerInteractionType interaction = CouplerInteractionType.NoAction;
@@ -37,11 +54,6 @@ public static class UICouplingHelperPatch
             if (otherCoupler == null)
                 return;
 
-            /* fix for bug in vanilla game */
-            coupler.SetChainTight(true);
-            coupler.ChainScript.enabled = false;
-            coupler.ChainScript.enabled = true;
-            /* end fix for bug */
         }
         else
         {
@@ -52,11 +64,6 @@ public static class UICouplingHelperPatch
                 interaction |= CouplerInteractionType.HoseDisconnect | CouplerInteractionType.CockClose;
             }
 
-            /* fix for bug in vanilla game */
-            coupler.state = ChainCouplerInteraction.State.Parked;
-            coupler.ChainScript.enabled = false;
-            coupler.ChainScript.enabled = true;
-            /* end fix for bug */
         }
 
         NetworkLifecycle.Instance.Client.SendCouplerInteraction(interaction, coupler, otherCoupler);

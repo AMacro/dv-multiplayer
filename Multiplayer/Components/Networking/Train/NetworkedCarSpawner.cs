@@ -125,6 +125,7 @@ public static class NetworkedCarSpawner
         //Add networked components
         NetworkedTrainCar networkedTrainCar = trainCar.gameObject.GetOrAddComponent<NetworkedTrainCar>();
         networkedTrainCar.NetId = spawnPart.NetId;
+        networkedTrainCar.TopologyEpoch = spawnPart.TopologyEpoch;
 
         //Setup positions and bogies
         Transform trainTransform = trainCar.transform;
