@@ -43,6 +43,14 @@ internal class SkinManager
         if (skinManager == null || skinManager.Enabled == false)
             return;
 
+        // SkinManager can load after Multiplayer. If it isn't loaded yet,
+        // ModToggle will call this again once SkinManager becomes active.
+        if (!skinManager.Loaded)
+        {
+            Multiplayer.LogDebug(() => "SkinManager mod found but not loaded yet, waiting for it to load.");
+            return;
+        }
+
         Multiplayer.Log("SkinManager mod found...");
         try
         {
